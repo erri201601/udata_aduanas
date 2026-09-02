@@ -1,0 +1,38 @@
+[Unit]
+Description=ADUANERO OS — API (FastAPI)
+Documentation=file:///home/udata/Documentos/aduanas/README.md
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=exec
+WorkingDirectory=/home/udata/Documentos/aduanas
+EnvironmentFile=/home/udata/Documentos/aduanas/.env
+
+# Se enlaza a la IP del tailnet (${TEAM_BIND_ADDR}), no a 0.0.0.0: el equipo
+# llega por Tailscale y nada queda expuesto a la LAN ni a Internet (§3 y §41).
+# Persona 1 también usa esa misma IP desde su propia laptop.
+ExecStart=/home/udata/Documentos/aduanas/.venv/bin/uvicorn apps.api.main:app \
+    --host ${TEAM_BIND_ADDR} \
+    --port ${API_PORT} \
+    --proxy-headers
+
+Restart=on-failure
+RestartSec=5s
+# Si Tailscale tarda en levantar, el bind falla; reintentar sin rendirse.
+StartLimitBurst=10
+StartLimitIntervalSec=120
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aduanero-api
+
+# Endurecimiento básico
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/udata/Documentos/aduanas
+ProtectHome=false
+
+[Install]
+WantedBy=default.target

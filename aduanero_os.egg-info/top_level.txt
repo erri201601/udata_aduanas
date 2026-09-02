@@ -1,0 +1,7 @@
+apps
+core
+database
+graph
+ingestion
+rag
+synthetic

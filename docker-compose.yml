@@ -1,0 +1,149 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ADUANERO OS — infraestructura local (Sprint 0)
+# Host de referencia: laptop de Persona 1 (ADUANERO DEV SERVER).
+#
+# PUERTOS: 5432 y 8000 YA están ocupados en esta laptop por otros procesos.
+#          Postgres se publica en 5433 y la API en 8080.
+#
+# SEGURIDAD (§3 y §41): cada puerto se publica DOS veces y ninguna es pública:
+#          1. 127.0.0.1          — fijo, para la propia laptop de Persona 1.
+#          2. ${TEAM_BIND_ADDR}  — la IP de Tailscale, para Persona 2 y 3.
+#
+#          TEAM_BIND_ADDR vale 127.0.0.2 por defecto: es loopback, así que si
+#          alguien levanta el stack sin Tailscale no expone nada, y al ser
+#          distinta de 127.0.0.1 tampoco choca con el primer binding.
+#          NUNCA poner 0.0.0.0 ahí.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: aduanero-os
+
+services:
+
+  postgres:
+    # Imagen oficial de pgvector sobre PostgreSQL 16: trae la extensión ya compilada.
+    image: pgvector/pgvector:pg16
+    container_name: aduanero-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aduanero}
+      POSTGRES_USER: ${POSTGRES_USER:-aduanero_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD es obligatorio en .env}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+      TZ: America/Mexico_City
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+      - "${TEAM_BIND_ADDR:-127.0.0.2}:${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Se ejecuta solo la primera vez, con el volumen vacío.
+      - ./infrastructure/docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aduanero_app} -d ${POSTGRES_DB:-aduanero}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [aduanero]
+
+  neo4j:
+    image: neo4j:5.26-community
+    container_name: aduanero-neo4j
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: "${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:?NEO4J_PASSWORD es obligatorio en .env}"
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 1G
+      NEO4J_server_memory_pagecache_size: 512m
+      NEO4J_PLUGINS: '["apoc"]'
+    ports:
+      - "127.0.0.1:${NEO4J_HTTP_PORT:-7474}:7474"                     # Browser
+      - "127.0.0.1:${NEO4J_BOLT_PORT:-7687}:7687"                     # Bolt
+      - "${TEAM_BIND_ADDR:-127.0.0.2}:${NEO4J_HTTP_PORT:-7474}:7474"
+      - "${TEAM_BIND_ADDR:-127.0.0.2}:${NEO4J_BOLT_PORT:-7687}:7687"
+    volumes:
+      - neo4jdata:/data
+      - neo4jlogs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    networks: [aduanero]
+
+  redis:
+    image: redis:7-alpine
+    container_name: aduanero-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD es obligatorio en .env}
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+      - "${TEAM_BIND_ADDR:-127.0.0.2}:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    networks: [aduanero]
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    container_name: aduanero-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-aduanero_minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD es obligatorio en .env}
+    ports:
+      - "127.0.0.1:${MINIO_API_PORT:-9000}:9000"                       # API S3
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"                   # Consola web
+      - "${TEAM_BIND_ADDR:-127.0.0.2}:${MINIO_API_PORT:-9000}:9000"
+      - "${TEAM_BIND_ADDR:-127.0.0.2}:${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [aduanero]
+
+  # Crea los buckets al arrancar y termina. No es un servicio permanente.
+  minio-init:
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    container_name: aduanero-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 '${MINIO_ROOT_USER:-aduanero_minio}' '${MINIO_ROOT_PASSWORD}' &&
+      mc mb --ignore-existing local/${MINIO_BUCKET_RAW:-aduanero-raw} &&
+      mc mb --ignore-existing local/${MINIO_BUCKET_DOCS:-aduanero-docs} &&
+      mc version enable local/${MINIO_BUCKET_RAW:-aduanero-raw} &&
+      echo 'buckets listos';
+      "
+    networks: [aduanero]
+    restart: "no"
+
+volumes:
+  pgdata:
+  neo4jdata:
+  neo4jlogs:
+  redisdata:
+  miniodata:
+
+networks:
+  aduanero:
+    driver: bridge
