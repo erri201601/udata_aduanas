@@ -47,7 +47,7 @@ test: ## Ejecuta los tests
 
 lint: ## ruff + mypy
 	$(VENV)/ruff check .
-	$(VENV)/mypy apps core database
+	$(VENV)/mypy apps core database schemas
 
 fmt: ## Formatea y autocorrige
 	$(VENV)/ruff format .
