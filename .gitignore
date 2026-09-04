@@ -1,18 +1,23 @@
-# ── Secretos (§40 maestro) ───────────────────────────────────────────────────
+# ── Secrets (§40 maestro / §10.10 Persona 1) ────────────────────────────────
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+credentials.json
+service_account*.json
 
-# ── Python ───────────────────────────────────────────────────────────────────
+# ── Python ─────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
-*.egg-info/
-.eggs/
-build/
-dist/
 .venv/
 venv/
+env/
+*.egg-info/
+dist/
+build/
+.eggs/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -31,3 +36,36 @@ coverage.xml
 
 # ── Artefactos de transporte Git ─────────────────────────────────────────────
 *.bundle
+coverage.xml
+htmlcov/
+
+# ── Node / frontend ────────────────────────────────────────────────────────
+node_modules/
+apps/web/dist/
+apps/web/.vite/
+*.tsbuildinfo
+
+# ── Datos: nunca versionar RAW ni artefactos pesados (§12 maestro) ─────────
+data/
+!data/.gitkeep
+*.sqlite
+*.db
+*.dump
+*.parquet
+storage/
+minio_data/
+neo4j_data/
+pgdata/
+
+# ── Salidas de ejecución ───────────────────────────────────────────────────
+logs/
+*.log
+.run/
+
+# ── Editor / SO ────────────────────────────────────────────────────────────
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+*.swp
