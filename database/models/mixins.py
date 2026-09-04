@@ -100,15 +100,55 @@ class RegulatoryMixin:
 
 
 class AIDecisionMixin:
-    """Metadatos de toda fila que es producto de una decisión de IA (§3 TAREA_P2)."""
+    """Metadatos de toda fila que es producto de una decisión de IA (§3 TAREA_P2).
+
+    `model_provider` es NULL cuando la fila no nace de una llamada a un LLM:
+    una regla determinista del RGI Engine, una corrección humana
+    (`data_origin = HUMAN_VALIDATED`) o una decisión importada de un
+    histórico. Pero si hubo llamada, el resto de su telemetría no puede
+    faltar — eso lo impone `ai_call_completeness_check` en el
+    `__table_args__` de cada tabla que hereda este mixin, no una columna
+    `NOT NULL` (decisión de Persona 1: una columna NOT NULL habría obligado
+    a inventar un valor de relleno en los casos sin modelo).
+    """
 
     model_provider: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     model_name: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    prompt_id: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     prompt_version: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    input_tokens: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
+    attempts: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
+    finish_reason: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     # 0.0000 a 1.0000.
     confidence: Mapped[Decimal | None] = mapped_column(sa.Numeric(5, 4), nullable=True)
+    # DEFAULT true: el sistema falla hacia cautela (regla 2 CLAUDE.md). Bajarlo
+    # a false es una decisión explícita del motor de clasificación con
+    # evidencia suficiente, nunca el valor de partida.
     requires_human_review: Mapped[bool] = mapped_column(
-        sa.Boolean, nullable=False, server_default=sa.false()
+        sa.Boolean, nullable=False, server_default=sa.true()
+    )
+
+
+def ai_call_completeness_check() -> sa.CheckConstraint:
+    """CHECK de `AIDecisionMixin`: si hubo llamada a un modelo, su telemetría viene completa.
+
+    `model_provider IS NULL` es válido (decisión sin LLM). En cuanto hay
+    proveedor, el resto de la telemetría de esa llamada no puede quedar a
+    medias. Se repite por tabla —no vive en el mixin— porque `__table_args__`
+    no se compone entre clases de una jerarquía de mixins en SQLAlchemy: cada
+    subclase ya declara el suyo con sus propios índices y constraints.
+
+    El nombre es solo `ai_call_complete`: `NAMING_CONVENTION` (`database/models/base.py`)
+    ya antepone `ck_%(table_name)s_`, igual que con `check_enum`.
+    """
+    return sa.CheckConstraint(
+        "model_provider IS NULL OR ("
+        "model_name IS NOT NULL AND input_tokens IS NOT NULL AND "
+        "output_tokens IS NOT NULL AND latency_ms IS NOT NULL AND "
+        "attempts IS NOT NULL)",
+        name="ai_call_complete",
     )
 
 

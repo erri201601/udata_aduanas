@@ -34,6 +34,7 @@ from database.models.mixins import (
     SyntheticMixin,
     TimestampMixin,
     UUIDPrimaryKeyMixin,
+    ai_call_completeness_check,
     check_enum,
 )
 
@@ -85,6 +86,7 @@ class ProductDna(
     __tablename__ = "product_dnas"
     __table_args__ = (
         sa.UniqueConstraint("product_id", "version", name="uq_product_dnas_product_id_version"),
+        ai_call_completeness_check(),
         {"schema": _SCHEMA},
     )
 
@@ -146,6 +148,7 @@ class ClassificationDecision(
     __tablename__ = "classification_decisions"
     __table_args__ = (
         sa.Index("ix_classification_decisions_product", "product_id", "operation_date"),
+        ai_call_completeness_check(),
         {"schema": _SCHEMA},
     )
 
@@ -227,6 +230,7 @@ class RiskFinding(
     __tablename__ = "risk_findings"
     __table_args__ = (
         sa.Index("ix_risk_findings_severity", "severity"),
+        ai_call_completeness_check(),
         {"schema": _SCHEMA},
     )
 
@@ -264,7 +268,10 @@ class OpportunityFinding(
     """Oportunidad de ahorro. `POTENTIAL` nunca se presenta como garantizado (§23)."""
 
     __tablename__ = "opportunity_findings"
-    __table_args__ = ({"schema": _SCHEMA},)
+    __table_args__ = (
+        ai_call_completeness_check(),
+        {"schema": _SCHEMA},
+    )
 
     pedimento_id: Mapped[uuid.UUID | None] = mapped_column(
         sa.ForeignKey("operational.pedimentos.id", ondelete="CASCADE"), nullable=True
