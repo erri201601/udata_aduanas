@@ -28,3 +28,6 @@ coverage.xml
 
 # ── Alembic ──────────────────────────────────────────────────────────────────
 # Las versiones SÍ se versionan; nada que ignorar aquí de momento.
+
+# ── Artefactos de transporte Git ─────────────────────────────────────────────
+*.bundle
