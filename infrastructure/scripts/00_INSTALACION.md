@@ -256,3 +256,39 @@ rsync -az ~/backups/aduanero/ otro-equipo:~/backups/aduanero/
 ```
 
 Con Tailscale, cualquier nodo del equipo sirve como destino.
+
+---
+
+## 10. La API como servicio permanente
+
+El equipo consume la API por Tailscale, así que no puede depender de que
+Persona 1 tenga una terminal abierta.
+
+```bash
+cp infrastructure/systemd-aduanero-api.service ~/.config/systemd/user/aduanero-api.service
+systemctl --user daemon-reload
+systemctl --user enable --now aduanero-api.service
+sudo loginctl enable-linger udata     # para que sobreviva al cierre de sesión
+```
+
+Se enlaza a `${TEAM_BIND_ADDR}` (la IP de Tailscale), **no** a `0.0.0.0`.
+
+```bash
+make service-status    # ¿está viva?
+make service-restart   # tras mergear un PR — NO recarga sola
+make service-logs      # logs en vivo
+```
+
+### ⚠️ El servicio no recarga solo
+
+A diferencia de `make api`, que usa `--reload`, el servicio arranca una vez y
+se queda con ese código. **Después de mergear cualquier PR que toque
+`apps/api/`, hay que reiniciarlo** o el equipo seguirá viendo la versión
+anterior sin saberlo.
+
+### Rutas
+
+El servicio apunta a `/home/udata/Documentos/udata_aduanas`. Existe un
+directorio anterior, `/home/udata/Documentos/aduanas`, con el scaffold
+original: **está obsoleto y nadie debe trabajar ahí.** Si la IP de Tailscale
+cambia, actualiza `TEAM_BIND_ADDR` en `.env` y reinicia.
