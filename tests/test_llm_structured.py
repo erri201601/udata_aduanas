@@ -103,9 +103,7 @@ def test_agotar_intentos_conserva_la_salida_cruda() -> None:
     provider = _provider_que_responde("nada", "tampoco", "sigue mal")
 
     with pytest.raises(StructuredOutputError) as exc:
-        provider.generate_structured(
-            [Message(role="user", content="x")], Ficha, max_attempts=3
-        )
+        provider.generate_structured([Message(role="user", content="x")], Ficha, max_attempts=3)
 
     assert exc.value.attempts == 3
     assert exc.value.raw_output == "sigue mal"
@@ -118,9 +116,7 @@ def test_un_valor_fuera_de_rango_no_pasa() -> None:
     provider = _provider_que_responde(fuera, fuera)
 
     with pytest.raises(StructuredOutputError):
-        provider.generate_structured(
-            [Message(role="user", content="x")], Ficha, max_attempts=2
-        )
+        provider.generate_structured([Message(role="user", content="x")], Ficha, max_attempts=2)
 
 
 def test_max_attempts_invalido_se_rechaza() -> None:

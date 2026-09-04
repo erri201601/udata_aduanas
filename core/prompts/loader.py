@@ -61,9 +61,7 @@ class Prompt(BaseModel):
         ejemplos de JSON, y las llaves de `format` chocarían con ellos.
         """
         try:
-            return Template(self.body).substitute(
-                {k: str(v) for k, v in variables.items()}
-            )
+            return Template(self.body).substitute({k: str(v) for k, v in variables.items()})
         except KeyError as exc:
             raise PromptError(
                 f"{self.prompt_id} v{self.prompt_version}: falta la variable {exc}"
@@ -170,9 +168,7 @@ class PromptRegistry:
             if f"{family}.{name}" == prompt_id
         }
         if not candidates:
-            raise PromptError(
-                f"prompt desconocido: {prompt_id!r}; disponibles: {self.list_ids()}"
-            )
+            raise PromptError(f"prompt desconocido: {prompt_id!r}; disponibles: {self.list_ids()}")
 
         chosen = version or max(candidates, key=_parse_version)
         if chosen not in candidates:
@@ -191,8 +187,6 @@ def _cached_registry(root: Path | None) -> PromptRegistry:
     return PromptRegistry(root)
 
 
-def load_prompt(
-    prompt_id: str, version: str | None = None, *, root: Path | None = None
-) -> Prompt:
+def load_prompt(prompt_id: str, version: str | None = None, *, root: Path | None = None) -> Prompt:
     """Atajo para cargar un prompt del registro por defecto."""
     return _cached_registry(root).get(prompt_id, version)

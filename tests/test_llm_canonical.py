@@ -103,9 +103,7 @@ def test_el_agregado_de_los_reintentos_llega_completo() -> None:
 
 def test_los_opcionales_viajan_como_none() -> None:
     """Un proveedor puede no reportar `finish_reason`; no se inventa un valor."""
-    campos = to_canonical_fields(
-        _metadata(prompt_id=None, prompt_version=None, finish_reason=None)
-    )
+    campos = to_canonical_fields(_metadata(prompt_id=None, prompt_version=None, finish_reason=None))
 
     assert campos["prompt_id"] is None
     assert campos["prompt_version"] is None

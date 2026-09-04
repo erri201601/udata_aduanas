@@ -33,10 +33,10 @@ llevan ejemplos de JSON y las llaves chocarían.
 ```python
 from core.prompts import load_prompt
 
-prompt = load_prompt("product_dna.extract")        # última versión
-prompt = load_prompt("product_dna.extract", "0.1") # versión fija
+prompt = load_prompt("product_dna.extract")  # última versión
+prompt = load_prompt("product_dna.extract", "0.1")  # versión fija
 texto = prompt.render(documento=ficha_tecnica)
-prompt.reference   # prompt_id, prompt_version, content_hash -> a la decisión
+prompt.reference  # prompt_id, prompt_version, content_hash -> a la decisión
 ```
 
 ## Cambiar un prompt

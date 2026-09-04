@@ -66,8 +66,7 @@ def test_ningun_sdk_de_proveedor_en_core(repo_root: Path) -> None:
     ]
 
     assert not infracciones, (
-        "SDK de proveedor dentro de core/ (§29 maestro, regla 1 de TAREA_P3): "
-        f"{infracciones}"
+        f"SDK de proveedor dentro de core/ (§29 maestro, regla 1 de TAREA_P3): {infracciones}"
     )
 
 

@@ -223,9 +223,7 @@ def test_gemini_traduce_assistant_a_model() -> None:
         return httpx.Response(
             200,
             json={
-                "candidates": [
-                    {"content": {"parts": [{"text": "ok"}]}, "finishReason": "STOP"}
-                ],
+                "candidates": [{"content": {"parts": [{"text": "ok"}]}, "finishReason": "STOP"}],
                 "usageMetadata": {"promptTokenCount": 5, "candidatesTokenCount": 2},
             },
         )
@@ -315,9 +313,7 @@ def test_openai_omite_temperature_por_defecto() -> None:
             },
         )
 
-    OpenAIProvider("llave", client=_client(handler)).generate(
-        [Message(role="user", content="x")]
-    )
+    OpenAIProvider("llave", client=_client(handler)).generate([Message(role="user", content="x")])
 
     assert "temperature" not in capturado[0]
 
@@ -335,8 +331,6 @@ def test_gemini_omite_temperature_por_defecto() -> None:
             },
         )
 
-    GeminiProvider("llave", client=_client(handler)).generate(
-        [Message(role="user", content="x")]
-    )
+    GeminiProvider("llave", client=_client(handler)).generate([Message(role="user", content="x")])
 
     assert "temperature" not in capturado[0]["generationConfig"]
