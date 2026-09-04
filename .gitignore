@@ -22,6 +22,20 @@ build/
 .mypy_cache/
 .ruff_cache/
 .coverage
+htmlcov/
+coverage.xml
+
+# ── Editores / SO ────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# ── Alembic ──────────────────────────────────────────────────────────────────
+# Las versiones SÍ se versionan; nada que ignorar aquí de momento.
+
+# ── Artefactos de transporte Git ─────────────────────────────────────────────
+*.bundle
 coverage.xml
 htmlcov/
 
