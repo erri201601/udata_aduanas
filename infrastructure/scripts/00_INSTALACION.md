@@ -191,3 +191,68 @@ Actualiza `TEAM_BIND_ADDR` en `.env`, y después:
 systemctl --user restart aduanero-api
 docker compose up -d
 ```
+
+
+---
+
+## 9. Respaldos
+
+La base compartida no se puede reconstruir: contiene decisiones, evidencia y
+hallazgos. El bucket RAW de MinIO tampoco, en la práctica — los documentos se
+podrían volver a descargar, pero la fuente puede haber cambiado, y entonces se
+rompe la trazabilidad que exige §13 del maestro.
+
+### Automático
+
+Un timer de systemd corre a las 03:00 todos los días.
+
+```bash
+cp infrastructure/systemd-aduanero-backup.service ~/.config/systemd/user/aduanero-backup.service
+cp infrastructure/systemd-aduanero-backup.timer   ~/.config/systemd/user/aduanero-backup.timer
+systemctl --user daemon-reload
+systemctl --user enable --now aduanero-backup.timer
+```
+
+`Persistent=true`: si la laptop estaba apagada a las 3, el respaldo corre al
+encenderla. Sin eso, un fin de semana sin encender la máquina son tres días sin
+respaldo y nadie se entera.
+
+### Manual
+
+```bash
+make backup         # respalda y verifica la restauración
+make backup-list    # lista lo disponible
+make backup-timer   # estado del timer y últimas corridas
+```
+
+### Restaurar
+
+```bash
+./infrastructure/scripts/restore.sh                            # lista
+./infrastructure/scripts/restore.sh <archivo.dump>             # a una base desechable
+./infrastructure/scripts/restore.sh <archivo.dump> --en-vivo   # SOBRESCRIBE aduanero
+```
+
+Por defecto restaura a una base nueva, nunca sobre producción. `--en-vivo` pide
+escribir `SOBRESCRIBIR` y, antes de pisar nada, guarda un dump del estado
+actual.
+
+### Qué se guarda
+
+| | |
+|---|---|
+| Ubicación | `~/backups/aduanero/` |
+| PostgreSQL | dump `-Fc` comprimido, con su `.sha256` |
+| MinIO | espejo incremental de `aduanero-raw` y `aduanero-docs` |
+| Retención | 14 diarios · 8 semanales (domingo) |
+
+### ⚠️ Estos respaldos NO son suficientes por sí solos
+
+Viven en el mismo disco que la base. Si ese disco muere, se pierden los dos.
+Copiarlos fuera es obligatorio:
+
+```bash
+rsync -az ~/backups/aduanero/ otro-equipo:~/backups/aduanero/
+```
+
+Con Tailscale, cualquier nodo del equipo sirve como destino.

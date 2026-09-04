@@ -1,0 +1,14 @@
+[Unit]
+Description=ADUANERO OS — respaldo diario
+
+[Timer]
+OnCalendar=03:00
+# Persistent: si la laptop estaba apagada a las 3, el respaldo corre al
+# encenderla. Sin esto, un fin de semana sin encender la máquina son tres días
+# sin respaldo y nadie se entera.
+Persistent=true
+# Evita que tres máquinas del equipo peguen a la vez si algún día se replica.
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

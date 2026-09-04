@@ -1,0 +1,17 @@
+[Unit]
+Description=ADUANERO OS — respaldo de PostgreSQL y MinIO
+Documentation=file:///home/udata/Documentos/udata_aduanas/infrastructure/scripts/backup.sh
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/udata/Documentos/udata_aduanas
+# --verify restaura el dump en una base desechable y compara el número de
+# tablas. Un respaldo que nunca se ha restaurado no es un respaldo: es un
+# archivo. Cuesta segundos y es lo único que distingue una cosa de la otra.
+ExecStart=/home/udata/Documentos/udata_aduanas/infrastructure/scripts/backup.sh --verify
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aduanero-backup
+Nice=10
+IOSchedulingClass=idle
