@@ -278,14 +278,22 @@ def test_una_sola_cabeza_de_migracion() -> None:
 
 
 @pytest.fixture
-def pg_session() -> Iterator[Session]:
+def pg_session(monkeypatch: pytest.MonkeyPatch) -> Iterator[Session]:
     """Sesión contra el Postgres local. Salta el test si no hay conexión.
+
+    `tests/conftest.py::_isolated_env` (autouse) vacía `POSTGRES_PASSWORD` y
+    `ADUANERO_ENV_FILE` para que los tests unit no toquen infraestructura real
+    por accidente. Los tests integration sí la necesitan: aquí se deshace ese
+    aislamiento sólo para esta sesión, leyendo el `.env` real.
 
     Cada test corre dentro de una transacción que se revierte al final: no deja
     rastro en la base local.
     """
     from apps.api.config import get_settings
 
+    monkeypatch.setenv("ADUANERO_ENV_FILE", ".env")
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
     get_settings.cache_clear()
     engine = sa.create_engine(get_settings().sqlalchemy_url)
     try:
@@ -302,26 +310,37 @@ def pg_session() -> Iterator[Session]:
         trans.rollback()
         conn.close()
         engine.dispose()
+        get_settings.cache_clear()
 
 
 @pytest.mark.integration
 def test_check_rechaza_data_origin_invalido(pg_session: Session) -> None:
-    from database.models import LegalDocument
+    """El `CHECK` de la base rechaza un valor inválido.
 
-    pg_session.add(
-        LegalDocument(
-            title="x",
-            short_name="x",
-            kind="LAW",
-            data_origin="INVENTADO",
-            valid_from=date(2022, 1, 1),
-            source_url="https://x",
-            content_hash="h",
-            retrieved_at=datetime(2026, 1, 1, tzinfo=UTC),
+    Inserta con SQL crudo, sin pasar por el `sa.Enum` del ORM (que ya valida
+    en Python): así se prueba de verdad el `CHECK` de PostgreSQL, la última
+    línea de defensa si algo escribe sin pasar por los modelos.
+    """
+    with pytest.raises(sa.exc.IntegrityError, match="ck_legal_documents_data_origin"):
+        pg_session.execute(
+            sa.text(
+                "INSERT INTO regulatory.legal_documents "
+                "(title, short_name, kind, data_origin, valid_from, "
+                " source_url, content_hash, retrieved_at) "
+                "VALUES (:title, :short_name, :kind, :data_origin, :valid_from, "
+                " :source_url, :content_hash, :retrieved_at)"
+            ),
+            {
+                "title": "x",
+                "short_name": "x",
+                "kind": "LAW",
+                "data_origin": "INVENTADO",
+                "valid_from": date(2022, 1, 1),
+                "source_url": "https://x",
+                "content_hash": "h",
+                "retrieved_at": datetime(2026, 1, 1, tzinfo=UTC),
+            },
         )
-    )
-    with pytest.raises(sa.exc.IntegrityError):
-        pg_session.flush()
 
 
 @pytest.mark.integration
