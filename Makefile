@@ -3,7 +3,7 @@
 SHELL := /bin/bash
 VENV  := .venv/bin
 
-.PHONY: help venv install up down logs ps api test lint fmt migrate revision reset-db health smoke service-status service-restart service-logs
+.PHONY: help venv install up down logs ps api test lint fmt migrate revision reset-db health smoke service-status service-restart service-logs backup backup-list backup-timer
 
 help: ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -65,6 +65,16 @@ smoke: ## Verifica el stack completo (extensiones, buckets, auth, exposición)
 health: ## Consulta los health checks
 	@curl -s http://localhost:8080/health | python3 -m json.tool
 	@curl -s http://localhost:8080/health/ready | python3 -m json.tool
+
+backup: ## Respalda PostgreSQL y MinIO, y verifica la restauración
+	./infrastructure/scripts/backup.sh --verify
+
+backup-list: ## Lista los respaldos disponibles
+	./infrastructure/scripts/restore.sh
+
+backup-timer: ## Estado del respaldo automático diario
+	systemctl --user list-timers aduanero-backup --no-pager
+	journalctl --user -u aduanero-backup -n 20 --no-pager
 
 reset-db: ## ⚠️ BORRA todos los volúmenes y vuelve a levantar
 	@read -p "Esto borra TODOS los datos. Escribe 'si' para continuar: " ok; \
