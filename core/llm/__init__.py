@@ -20,6 +20,7 @@ from core.llm.base import (
     HTTPModelProvider,
     ModelProvider,
 )
+from core.llm.canonical import CanonicalAIFields, to_canonical_fields
 from core.llm.errors import (
     ContentFilterError,
     ModelProviderError,
@@ -52,6 +53,7 @@ __all__ = [
     "DEFAULT_TIMEOUT_SECONDS",
     "PROVIDERS",
     "CallMetadata",
+    "CanonicalAIFields",
     "ContentFilterError",
     "HTTPModelProvider",
     "Message",
@@ -71,4 +73,5 @@ __all__ = [
     "available_providers",
     "build_provider",
     "get_default_provider",
+    "to_canonical_fields",
 ]
