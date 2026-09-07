@@ -491,16 +491,80 @@ def test_close_previous_fraction_versions_no_toca_si_no_hay_version_mas_nueva(
     assert vieja.valid_to is None
 
 
+def _nico_abierto(pg_session: Session, *, full_code: str, valid_from: date, data_origin: str):
+    from database.models import Nico
+
+    fraccion = _fraccion_abierta(
+        pg_session, code=full_code[:8], valid_from=valid_from, data_origin=data_origin
+    )
+    fila = Nico(
+        tariff_fraction_id=fraccion.id,
+        code=full_code[8:],
+        full_code=full_code,
+        description="x",
+        data_origin=data_origin,
+        valid_from=valid_from,
+        source_url="https://x",
+        content_hash="h",
+        retrieved_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    pg_session.add(fila)
+    pg_session.flush()
+    return fila
+
+
 @pytest.mark.integration
-def test_ningun_codigo_tiene_dos_versiones_vigentes_el_mismo_dia(pg_session: Session) -> None:
-    """Regresión (Persona 1, 2026-09-08): dos fuentes cargaron `84713001` sin cerrar
-    la anterior, y las dos decían estar vigentes hoy. Guardia general, no solo del
-    cargador: sea cual sea el camino por el que entren los datos, esto no debe pasar."""
-    duplicados = pg_session.execute(
-        sa.text("""
-            SELECT code FROM regulatory.tariff_fractions
-            WHERE valid_to IS NULL GROUP BY code HAVING COUNT(*) > 1
+def test_close_previous_nico_versions_cierra_la_anterior(pg_session: Session) -> None:
+    from ingestion.snice.load import _close_previous_nico_versions
+
+    vieja = _nico_abierto(
+        pg_session, full_code="9999990100", valid_from=date(2022, 1, 1), data_origin="SYNTHETIC"
+    )
+
+    _close_previous_nico_versions(
+        pg_session, full_code="9999990100", new_valid_from=date(2022, 6, 7)
+    )
+    pg_session.expire(vieja)
+
+    assert vieja.valid_to == date(2022, 6, 7) - timedelta(days=1)
+
+
+def _sin_solapes(pg_session: Session, *, tabla: str, columna_codigo: str) -> list:
+    """Dos filas del mismo código NO deben cubrir la misma fecha (§14 maestro):
+
+        A.valid_from <= COALESCE(B.valid_to, 'infinity')
+        AND B.valid_from <= COALESCE(A.valid_to, 'infinity')
+
+    Sin esto el sistema no puede afirmar qué versión regía una operación.
+    `valid_to IS NULL` sólo no basta: dos filas pueden solaparse aunque una
+    ya tenga fecha de cierre (Persona 1, 2026-09-08).
+    """
+    return pg_session.execute(
+        sa.text(f"""
+            SELECT a.{columna_codigo}, a.valid_from, a.valid_to, b.valid_from, b.valid_to
+            FROM {tabla} a
+            JOIN {tabla} b
+              ON a.{columna_codigo} = b.{columna_codigo} AND a.id < b.id
+            WHERE a.valid_from <= COALESCE(b.valid_to, 'infinity'::date)
+              AND b.valid_from <= COALESCE(a.valid_to, 'infinity'::date)
         """)
     ).fetchall()
 
-    assert duplicados == []
+
+@pytest.mark.integration
+def test_ninguna_fraccion_tiene_vigencias_solapadas(pg_session: Session) -> None:
+    """Regresión (Persona 1, 2026-09-08): `84713001` tenía dos versiones que se
+    solapaban (seed SYNTHETIC vs ingesta OFFICIAL). Guardia general, no solo del
+    cargador: sea cual sea el camino por el que entren los datos, esto no debe pasar."""
+    assert (
+        _sin_solapes(pg_session, tabla="regulatory.tariff_fractions", columna_codigo="code") == []
+    )
+
+
+@pytest.mark.integration
+def test_ningun_nico_tiene_vigencias_solapadas(pg_session: Session) -> None:
+    """Por `full_code`, NUNCA por `code`: `code` es solo el sufijo de 2 dígitos —
+    1129 fracciones comparten el NICO "00" legítimamente, y agrupar por ahí
+    produce falsos positivos (el error que cometió Persona 1 al reportar "19
+    duplicados" que no existían)."""
+    assert _sin_solapes(pg_session, tabla="regulatory.nicos", columna_codigo="full_code") == []
