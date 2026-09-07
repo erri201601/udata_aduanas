@@ -208,6 +208,19 @@ jobs:
           alembic downgrade base
           alembic upgrade head
 
+      - name: El seed carga contra una base real
+        # El seed llevaba días roto y nadie se enteró: viola
+        # ck_product_dnas_ai_call_complete desde que se añadió la telemetría,
+        # porque NADIE lo ejecutaba. Los tests que lo cubrían usaban mocks de
+        # sesión, así que verificaban qué filas se construyen pero no que la
+        # base las acepte — y las restricciones son justo lo que un mock no ve.
+        run: |
+          python -m database.seeds.canonical_v0_1
+          psql -h localhost -p 5433 -U aduanero_app -d aduanero_mig -tAc \
+            "SELECT count(*) FROM intelligence.product_attributes" | grep -qv '^0$' \
+            || { echo "::error::el seed no dejó filas"; exit 1; }
+          echo "Seed cargado y verificado."
+
       - name: Sin cambios de modelo fuera de migración
         # Si alguien toca un modelo y olvida la migración, --autogenerate
         # detecta la diferencia. El check debe salir vacío.
