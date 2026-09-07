@@ -53,6 +53,15 @@ src = ["apps", "core", "database", "ingestion", "rag", "graph", "synthetic", "te
 select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "TCH", "ARG", "PTH", "RUF"]
 ignore = ["E501"]
 
+[tool.ruff.lint.flake8-type-checking]
+# Pydantic resuelve las anotaciones en tiempo de ejecución para construir el
+# modelo. Mover un tipo usado en un campo a TYPE_CHECKING rompe la clase con
+# NameError, así que ruff no debe proponerlo para estas bases.
+runtime-evaluated-base-classes = [
+    "pydantic.BaseModel",
+    "pydantic_settings.BaseSettings",
+]
+
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["ARG", "TC001", "TC002", "TC003"]
 "database/migrations/*" = ["N999", "ARG", "TC001", "TC003"]
