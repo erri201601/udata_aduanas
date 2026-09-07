@@ -15,6 +15,10 @@ Uso:
     python -m ingestion.snice.cli --target local  --chapters 84 85
     python -m ingestion.snice.cli --target shared --chapters 84 85
 
+`--raw-only` sube el RAW y verifica, sin tocar la base — para recapturar el
+crudo en un destino cuyos datos ya están cargados (Persona 1, 2026-09-08:
+el RAW nunca llegó al MinIO compartido aunque las filas sí a la base).
+
 `--target local` usa `DATABASE_URL`/`POSTGRES_*` y el MinIO de tu `.env`
 (siempre local). `--target shared` exige `ADUANERO_SHARED_URL` y
 `ADUANERO_SHARED_MINIO_URL` en el entorno — nunca los escribas ni los pegues
@@ -82,18 +86,27 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--chapters",
-        required=True,
+        required=False,
         nargs="+",
         metavar="NN",
-        help="Capítulos de 2 dígitos a cargar, p. ej. --chapters 84 85",
+        help="Capítulos de 2 dígitos a cargar, p. ej. --chapters 84 85 (ignorado con --raw-only)",
+    )
+    parser.add_argument(
+        "--raw-only",
+        action="store_true",
+        help="Solo sube y verifica el RAW en --target; no toca la base.",
     )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    chapters = frozenset(args.chapters)
-    database_url = _database_url(args.target)
+    if not args.raw_only and not args.chapters:
+        raise SystemExit("--chapters es obligatorio salvo con --raw-only")
+    chapters = frozenset(args.chapters or ())
+    # `--raw-only` no toca la base: no le exigimos su URL, que puede no
+    # estar configurada si solo se va a recapturar el crudo.
+    database_url = None if args.raw_only else _database_url(args.target)
     minio_target = _minio_target(args.target)
 
     log.info("snice.cli.start", target=args.target, chapters=sorted(chapters))
@@ -128,6 +141,12 @@ def main(argv: list[str] | None = None) -> int:
         for key in (tarifa_key, nico_key, ligie_key):
             raw.verify_stored(target=minio_target, minio_key=key)
 
+        if args.raw_only:
+            for capture in (tarifa_capture, nico_capture, ligie_capture):
+                print(f"RAW OK ({args.target}): {capture.minio_key}  sha256={capture.content_hash}")
+            log.info("snice.cli.done", target=args.target, raw_only=True)
+            return 0
+
         fa_result = tariff.parse_fracciones(
             tariff.iter_fraccion_rows(tarifa_path),
             chapters,
@@ -150,6 +169,7 @@ def main(argv: list[str] | None = None) -> int:
     if fa_result.rate_warnings:
         print(f"Advertencias de tasa: {len(fa_result.rate_warnings)}")
 
+    assert database_url is not None  # solo llegamos aquí sin --raw-only
     engine = create_engine(database_url)
     with Session(engine) as session:
         n_fracciones, n_nicos = load.load_chapters(
