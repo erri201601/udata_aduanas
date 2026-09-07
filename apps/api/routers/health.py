@@ -75,19 +75,20 @@ async def _check_postgres(settings: Settings) -> ServiceCheck:
         return ServiceCheck(status="not_configured", detail="sin POSTGRES_PASSWORD")
 
     def probe() -> None:
-        from sqlalchemy import create_engine, text
+        from sqlalchemy import text
 
-        engine = create_engine(settings.sqlalchemy_url, pool_pre_ping=True)
-        try:
-            with engine.connect() as conn:
-                conn.execute(text("SELECT 1"))
-                found = conn.execute(
-                    text("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
-                ).scalar()
-                if not found:
-                    raise RuntimeError("extensión pgvector ausente")
-        finally:
-            engine.dispose()
+        from apps.api.db import get_engine
+
+        # Engine compartido, no uno por sondeo: cuatro servicios se comprueban
+        # en paralelo y crear un engine por llamada abría —y tiraba— una
+        # conexión nueva cada vez contra una base que vive tras Tailscale.
+        with get_engine().connect() as conn:
+            conn.execute(text("SELECT 1"))
+            found = conn.execute(
+                text("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
+            ).scalar()
+            if not found:
+                raise RuntimeError("extensión pgvector ausente")
 
     return await _timed(probe)
 
