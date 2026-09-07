@@ -202,6 +202,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/evidence/{decision_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Dossier §49 de una decisión */
+        get: operations["obtener_dossier_evidence__decision_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -475,6 +492,51 @@ export interface components {
          * @enum {string}
          */
         DataOrigin: "OFFICIAL" | "PUBLIC" | "LICENSED" | "SYNTHETIC" | "HUMAN_VALIDATED";
+        /**
+         * DossierRead
+         * @description Las diez respuestas, más lo que no se pudo responder.
+         */
+        DossierRead: {
+            /**
+             * Decision Id
+             * Format: uuid
+             */
+            decision_id: string;
+            /** What */
+            what: string;
+            /** Why */
+            why: string;
+            /** Which Rule */
+            which_rule: string;
+            /** Which Source */
+            which_source?: string[];
+            /** Source Version */
+            source_version?: string[];
+            /** Validity */
+            validity?: string[];
+            /** Data Used */
+            data_used?: {
+                [key: string]: unknown;
+            };
+            /** Confidence */
+            confidence?: string | null;
+            /** Money Impact */
+            money_impact: string;
+            /** Requires Human Review */
+            requires_human_review: boolean;
+            /** Unanswered */
+            unanswered?: string[];
+            /**
+             * Is Complete
+             * @default false
+             */
+            is_complete: boolean;
+            /**
+             * Uninterpretable Evidences
+             * @default 0
+             */
+            uninterpretable_evidences: number;
+        };
         /**
          * EvidenceKind
          * @description Tipo de evidencia en evidence_records. Espejo de core.evidence.kinds.EvidenceKind.
@@ -1289,6 +1351,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PedimentoFindings"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    obtener_dossier_evidence__decision_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                decision_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DossierRead"];
                 };
             };
             /** @description Validation Error */

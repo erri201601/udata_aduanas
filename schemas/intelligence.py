@@ -137,6 +137,8 @@ class ClassificationDecisionBase(DataOriginFields, AIDecisionFields, SyntheticFi
     nico_id: uuid.UUID | None = None
     reasoning: str | None = None
     rgi_path: list[str] = Field(default_factory=list)
+    # NULL = no se conservó la traza. `[]` significaría "no hubo pasos".
+    rgi_trace: list[dict] | None = None
     legal_rule_ids: list[uuid.UUID] = Field(default_factory=list)
     engine_version: str | None = None
     evidence_id: uuid.UUID | None = None
