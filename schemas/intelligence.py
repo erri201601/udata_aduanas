@@ -19,6 +19,7 @@ from schemas.enums import (
     AttributeStatus,
     ClassificationStatus,
     ErrorType,
+    EvidenceKind,
     FindingSeverity,
     OpportunityStatus,
     TradeFlow,
@@ -40,6 +41,7 @@ class EvidenceRecordBase(DataOriginFields):
     model_name: str | None = None
     prompt_version: str | None = None
     created_by: str = Field(default="engine", max_length=16)
+    evidence_kind: EvidenceKind | None = None
 
 
 class EvidenceRecordCreate(EvidenceRecordBase):
