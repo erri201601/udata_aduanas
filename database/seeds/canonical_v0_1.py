@@ -9,6 +9,13 @@ jurídico son inventados para la demo. La ingestión real de fuentes P0 (LIGIE,
 NICO, RGCE…) los reemplaza por filas `OFFICIAL`. Nada de esto se presenta como
 real en la UI.
 
+**Los cuatro estados de atributo** (§16) aparecen todos, a propósito:
+`OBSERVED` y `EXTRACTED` con confianza alta, `INFERRED` con confianza baja y
+`MISSING` sin valor ni evidencia. Una pantalla probada sólo con datos completos
+y sólidos se ve perfecta y falla justo donde importa: `INFERRED` es el dato que
+el agente aduanal debe mirar con desconfianza, y `MISSING` el que impide que el
+sistema invente un valor.
+
 Uso:
     python -m database.seeds.canonical_v0_1        # contra el .env local
 """
@@ -19,6 +26,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from apps.api.config import get_settings
+from core.evidence import builder
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -49,6 +57,29 @@ SCENARIO_SLUG = "demo-laptop-v0-1"
 SEED = 20260101
 _SYNTHETIC = "SYNTHETIC"
 _RETRIEVED_AT = datetime(2026, 1, 1, tzinfo=UTC)
+
+
+# Telemetría de la llamada al modelo, completa.
+#
+# `ck_<tabla>_ai_call_complete` exige que si hay `model_provider`, estén también
+# model_name, input_tokens, output_tokens, latency_ms y attempts. La regla es
+# correcta: una fila que dice "lo produjo Anthropic" sin decir qué modelo ni
+# cuánto costó no es auditable.
+#
+# Los valores son inventados, y eso está bien AQUÍ y sólo aquí: son fixtures
+# marcadas SYNTHETIC. En producción los llena core/llm/canonical.py con la
+# telemetría real de la llamada.
+_TELEMETRIA: dict[str, object] = {
+    "model_provider": "anthropic",
+    "model_name": "claude-sonnet-5",
+    "prompt_id": "product_dna/extract",
+    "prompt_version": "0.1",
+    "input_tokens": 1842,
+    "output_tokens": 316,
+    "latency_ms": 2410,
+    "attempts": 1,
+    "finish_reason": "stop",
+}
 
 
 def seed(session: Session) -> SyntheticScenario:
@@ -166,12 +197,40 @@ def seed(session: Session) -> SyntheticScenario:
         version=1,
         input_kinds=["text"],
         summary="Laptop portátil, 14 pulgadas, 8 GB RAM, peso 1.4 kg.",
+        # El voltaje no aparece en ninguna entrada: se declara ausente en vez
+        # de inventarlo. Inventarlo cambiaría la fracción arancelaria.
+        missing_information=["voltage_v"],
         evidence_id=evidence.id,
         confidence=Decimal("0.9100"),
-        model_provider="anthropic",
+        **_TELEMETRIA,
         **syn,
     )
     session.add(dna)
+    session.flush()
+
+    # La evidencia del atributo inferido se construye con el Evidence Contract,
+    # no a mano: si faltara `prompt_version` reventaría aquí, porque una salida
+    # de modelo irreproducible no es evidencia (§49).
+    campos_inferencia = builder.model_output(
+        summary=(
+            "El chasis de aluminio se dedujo de la gama del fabricante; "
+            "no aparece declarado en la ficha técnica."
+        ),
+        model_provider="anthropic",
+        model_name="claude-sonnet-5",
+        prompt_id="product_dna/extract",
+        prompt_version="0.1",
+        confidence=Decimal("0.5800"),
+        excerpt='Shenzhen Demo Electronics — línea Demo 14"',
+    ).to_record_fields()
+    # `evidence_kind` todavía no tiene columna (nota en core/evidence/__init__).
+    campos_inferencia.pop("evidence_kind")
+    inferencia = EvidenceRecord(
+        subject_kind="product_attribute",
+        data_origin=_SYNTHETIC,
+        **campos_inferencia,
+    )
+    session.add(inferencia)
     session.flush()
 
     session.add_all(
@@ -193,6 +252,33 @@ def seed(session: Session) -> SyntheticScenario:
                 unit="GB",
                 status="OBSERVED",
                 confidence=Decimal("0.9900"),
+                data_origin=_SYNTHETIC,
+            ),
+            # INFERRED: el modelo lo dedujo de la marca, no lo leyó en ninguna
+            # entrada. Confianza baja a propósito — es el caso que el agente
+            # aduanal debe mirar con desconfianza, y la UI tiene que
+            # distinguirlo de un dato observado (§16 y §33).
+            ProductAttribute(
+                product_dna_id=dna.id,
+                name="chassis_material",
+                value="aluminio",
+                status="INFERRED",
+                confidence=Decimal("0.5800"),
+                evidence_reference=inferencia.id,
+                data_origin=_SYNTHETIC,
+            ),
+            # MISSING: sin valor y SIN evidencia. Un dato que no está no tiene
+            # respaldo que citar; se declara faltante y su nombre viaja en
+            # `missing_information` del DNA, que es lo que dispara la petición
+            # de información al importador.
+            ProductAttribute(
+                product_dna_id=dna.id,
+                name="voltage_v",
+                value=None,
+                unit="V",
+                status="MISSING",
+                confidence=None,
+                evidence_reference=None,
                 data_origin=_SYNTHETIC,
             ),
         ]
@@ -287,7 +373,7 @@ def seed(session: Session) -> SyntheticScenario:
         engine_version="0.1.0",
         evidence_id=evidence.id,
         confidence=Decimal("0.9100"),
-        model_provider="anthropic",
+        **_TELEMETRIA,
         **syn,
     )
     session.add(decision)

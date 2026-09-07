@@ -362,7 +362,11 @@ def test_valid_to_null_significa_vigente(pg_session: Session) -> None:
     pg_session.flush()
     encontrado = pg_session.scalar(
         sa.select(LegalDocument).where(
-            LegalDocument.short_name == "LV",
+            # Acotado a la fila de este test. Sin esto, la consulta pregunta por
+            # CUALQUIER documento vigente y sólo acierta si la base está vacía:
+            # en cuanto se cargó el seed, empezó a devolver el suyo. Un test de
+            # integración no puede suponer que es el único habitante de la base.
+            LegalDocument.id == doc.id,
             LegalDocument.valid_from <= date(2024, 3, 15),
             (LegalDocument.valid_to.is_(None)) | (LegalDocument.valid_to >= date(2024, 3, 15)),
         )
