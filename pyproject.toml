@@ -24,6 +24,8 @@ dependencies = [
     "structlog>=24.4",
     "httpx>=0.28",
     "python-dateutil>=2.9",
+    # Ingestión — fuentes oficiales publican XLSX (SNICE: LIGIE, NICO)
+    "openpyxl>=3.1",
 ]
 
 [project.optional-dependencies]
@@ -34,6 +36,7 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.13",
     "types-python-dateutil",
+    "types-openpyxl",
 ]
 
 [build-system]
@@ -41,7 +44,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["apps", "core", "database", "ingestion", "rag", "graph", "synthetic"]
+packages = ["apps", "core", "database", "ingestion", "rag", "graph", "synthetic", "schemas"]
 
 # ── Ruff ─────────────────────────────────────────────────────────────────────
 [tool.ruff]
@@ -50,12 +53,41 @@ line-length = 100
 src = ["apps", "core", "database", "ingestion", "rag", "graph", "synthetic", "tests"]
 
 [tool.ruff.lint]
+# El signo × se usa a propósito en las fórmulas del Money Finder, que se
+# muestran a quien audita un cálculo: "100000 × 0.15" se lee como aritmética y
+# "100000 * 0.15" se lee como código. Ruff lo marca como confundible con la
+# letra x —precaución razonable contra homoglifos— y aquí lo permitimos
+# explícitamente en vez de silenciar la regla entera.
+allowed-confusables = ["×"]
 select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "TCH", "ARG", "PTH", "RUF"]
 ignore = ["E501"]
 
+# El signo × se usa a propósito en las fórmulas del Money Finder, que se
+# muestran a quien audita un cálculo: "100000 × 0.15" se lee como aritmética y
+# "100000 * 0.15" se lee como código. Ruff lo marca como confundible con la
+# letra x —una precaución razonable contra homoglifos— y aquí lo permitimos
+# explícitamente en vez de silenciar la regla entera.
+[tool.ruff.lint.flake8-type-checking]
+# Pydantic resuelve las anotaciones en tiempo de ejecución para construir el
+# modelo. Mover un tipo usado en un campo a TYPE_CHECKING rompe la clase con
+# NameError, así que ruff no debe proponerlo para estas bases.
+runtime-evaluated-base-classes = [
+    "pydantic.BaseModel",
+    "pydantic_settings.BaseSettings",
+]
+
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["ARG"]
-"database/migrations/*" = ["N999", "ARG"]
+# Cada RGIRule implementa la misma firma de §17 aunque no todas usen todos los
+# argumentos: la RGI 2 no consulta el catálogo, la RGI 3 c) no necesita
+# intérprete. Son argumentos que impone el protocolo, no descuidos, y
+# renombrarlos con guion bajo rompería las llamadas por palabra clave.
+"core/rgi_engine/rules.py" = ["ARG002"]
+"tests/*" = ["ARG", "TC001", "TC002", "TC003"]
+"database/migrations/*" = ["N999", "ARG", "TC001", "TC003"]
+# SQLAlchemy y Pydantic resuelven las anotaciones en tiempo de ejecución: los
+# tipos usados ahí no pueden moverse a un bloque TYPE_CHECKING.
+"database/models/*" = ["TC001", "TC002", "TC003"]
+"schemas/*" = ["TC001", "TC002", "TC003"]
 
 # ── Mypy: typing obligatorio (§13 DoD Persona 1) ─────────────────────────────
 [tool.mypy]

@@ -1,0 +1,324 @@
+name: CI
+
+# Se ejecuta en todo PR hacia develop o main, y en los push directos a esas
+# ramas (que no deberían existir, pero si ocurren queremos enterarnos).
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+concurrency:
+  # Un push nuevo sobre el mismo PR cancela la corrida anterior: no tiene
+  # sentido gastar minutos verificando código ya superado.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # El dev server corre 3.12.3. Probar en una versión más nueva no demuestra
+  # nada sobre producción: código válido en 3.13/3.14 puede romper en 3.12.
+  PYTHON_VERSION: "3.12"
+
+jobs:
+
+  # ───────────────────────────────────────────────────────────────────────────
+  lint:
+    name: Lint y formato
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: ruff check
+        run: ruff check . --output-format=github
+
+      - name: ruff format --check
+        run: ruff format --check .
+
+  # ───────────────────────────────────────────────────────────────────────────
+  types:
+    name: Tipos (mypy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: mypy
+        # Los paquetes se descubren en tiempo de ejecución: schemas/ está vacío
+        # hasta que entre el Canonical Model, y mypy falla si le pasas un
+        # directorio sin archivos .py. Así el CI sobrevive a la transición.
+        run: |
+          objetivos=""
+          for d in apps core database schemas ingestion rag graph synthetic; do
+            if [ -d "$d" ] && find "$d" -name '*.py' -not -name '__init__.py' | grep -q .; then
+              objetivos="$objetivos $d"
+            fi
+          done
+          if [ -z "$objetivos" ]; then
+            echo "No hay módulos con código todavía."; exit 0
+          fi
+          echo "Analizando:$objetivos"
+          mypy $objetivos
+
+  # ───────────────────────────────────────────────────────────────────────────
+  test:
+    name: Tests (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.12 es el piso: es lo que corre el dev server. Si alguien desarrolla
+        # en una versión más nueva, este job es el que lo detecta.
+        python: ["3.12"]
+
+    services:
+      postgres:
+        # La misma imagen que docker-compose.yml, para que pgvector esté
+        # disponible sin compilarla.
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: aduanero_test
+          POSTGRES_USER: aduanero_app
+          POSTGRES_PASSWORD: ci_only_not_a_secret
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U aduanero_app -d aduanero_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5433"
+      POSTGRES_DB: aduanero_test
+      POSTGRES_USER: aduanero_app
+      POSTGRES_PASSWORD: ci_only_not_a_secret
+      DATABASE_URL: postgresql+psycopg://aduanero_app:ci_only_not_a_secret@localhost:5433/aduanero_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Preparar la base (extensiones y esquemas)
+        # Replica infrastructure/docker/postgres/init/01_extensions.sql, que en
+        # local lo ejecuta el entrypoint de la imagen y aquí no corre.
+        env:
+          PGPASSWORD: ci_only_not_a_secret
+        run: |
+          psql -h localhost -p 5433 -U aduanero_app -d aduanero_test <<'SQL'
+          CREATE EXTENSION IF NOT EXISTS vector;
+          CREATE EXTENSION IF NOT EXISTS pg_trgm;
+          CREATE EXTENSION IF NOT EXISTS unaccent;
+          CREATE EXTENSION IF NOT EXISTS btree_gin;
+          CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+          CREATE SCHEMA IF NOT EXISTS regulatory;
+          CREATE SCHEMA IF NOT EXISTS operational;
+          CREATE SCHEMA IF NOT EXISTS intelligence;
+          CREATE SCHEMA IF NOT EXISTS raw;
+          SQL
+
+      - name: pytest
+        run: pytest -v --cov=core --cov=apps --cov-report=term-missing
+
+  # ───────────────────────────────────────────────────────────────────────────
+  migrations:
+    name: Migraciones reversibles
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: aduanero_mig
+          POSTGRES_USER: aduanero_app
+          POSTGRES_PASSWORD: ci_only_not_a_secret
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U aduanero_app -d aduanero_mig"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql+psycopg://aduanero_app:ci_only_not_a_secret@localhost:5433/aduanero_mig
+      PGPASSWORD: ci_only_not_a_secret
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Preparar la base
+        run: |
+          psql -h localhost -p 5433 -U aduanero_app -d aduanero_mig <<'SQL'
+          CREATE EXTENSION IF NOT EXISTS vector;
+          CREATE EXTENSION IF NOT EXISTS pg_trgm;
+          CREATE EXTENSION IF NOT EXISTS unaccent;
+          CREATE EXTENSION IF NOT EXISTS btree_gin;
+          CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+          CREATE SCHEMA IF NOT EXISTS regulatory;
+          CREATE SCHEMA IF NOT EXISTS operational;
+          CREATE SCHEMA IF NOT EXISTS intelligence;
+          CREATE SCHEMA IF NOT EXISTS raw;
+          SQL
+
+      - name: Ida y vuelta completa
+        # El ciclo upgrade -> downgrade -> upgrade es la única prueba real de
+        # que cada downgrade() deshace lo suyo. Un downgrade con "pass" pasa
+        # el primer upgrade y falla aquí.
+        run: |
+          alembic upgrade head
+          alembic downgrade base
+          alembic upgrade head
+
+      - name: El seed carga contra una base real
+        # El seed llevaba días roto y nadie se enteró: viola
+        # ck_product_dnas_ai_call_complete desde que se añadió la telemetría,
+        # porque NADIE lo ejecutaba. Los tests que lo cubrían usaban mocks de
+        # sesión, así que verificaban qué filas se construyen pero no que la
+        # base las acepte — y las restricciones son justo lo que un mock no ve.
+        run: |
+          python -m database.seeds.canonical_v0_1
+          psql -h localhost -p 5433 -U aduanero_app -d aduanero_mig -tAc \
+            "SELECT count(*) FROM intelligence.product_attributes" | grep -qv '^0$' \
+            || { echo "::error::el seed no dejó filas"; exit 1; }
+          echo "Seed cargado y verificado."
+
+      - name: Sin cambios de modelo fuera de migración
+        # Si alguien toca un modelo y olvida la migración, --autogenerate
+        # detecta la diferencia. El check debe salir vacío.
+        run: |
+          alembic revision --autogenerate -m "ci_drift_check" --rev-id ci_drift
+          archivo=$(ls database/migrations/versions/*ci_drift*.py 2>/dev/null | head -1)
+          if [ -z "$archivo" ]; then
+            echo "::error::alembic no generó el archivo de comprobación"; exit 1
+          fi
+          # Una migración vacía sólo tiene 'pass' en upgrade y downgrade.
+          if grep -qE '^\s+op\.' "$archivo"; then
+            echo "::error::Los modelos divergen de las migraciones. Cambios sin migrar:"
+            sed -n '/def upgrade/,/def downgrade/p' "$archivo"
+            exit 1
+          fi
+          echo "Modelos y migraciones sincronizados."
+          rm -f "$archivo"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  web:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ¿Existe el frontend?
+        id: check
+        run: |
+          if [ -f apps/web/package.json ]; then
+            echo "existe=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "existe=false" >> "$GITHUB_OUTPUT"
+            echo "apps/web todavía no existe en esta rama; nada que construir."
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.check.outputs.existe == 'true'
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Instalar, tipar y construir
+        if: steps.check.outputs.existe == 'true'
+        working-directory: apps/web
+        run: |
+          npm ci
+          npx tsc -b --noEmit
+          npm run build
+
+  # ───────────────────────────────────────────────────────────────────────────
+  hygiene:
+    name: Higiene del repositorio
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ningún secreto versionado
+        run: |
+          fallos=0
+
+          if git ls-files --error-unmatch .env >/dev/null 2>&1; then
+            echo "::error file=.env::.env está versionado. Debe purgarse del historial."
+            fallos=1
+          fi
+
+          sospechosos=$(git ls-files | grep -E '\.pem$|\.key$|(^|/)credentials\.json$|(^|/)service_account.*\.json$' || true)
+          if [ -n "$sospechosos" ]; then
+            echo "::error::Archivos de credenciales versionados:"; echo "$sospechosos"
+            fallos=1
+          fi
+
+          # Valores reales en la plantilla: .env.example debe ir con los
+          # campos de secreto vacíos.
+          if [ -f .env.example ]; then
+            con_valor=$(grep -E '^(POSTGRES_PASSWORD|NEO4J_PASSWORD|REDIS_PASSWORD|MINIO_ROOT_PASSWORD|OPENAI_API_KEY|ANTHROPIC_API_KEY|GOOGLE_API_KEY)=.+' .env.example || true)
+            if [ -n "$con_valor" ]; then
+              echo "::error file=.env.example::Valores reales en la plantilla:"; echo "$con_valor"
+              fallos=1
+            fi
+          fi
+
+          exit $fallos
+
+      - name: Ningún artefacto generado
+        run: |
+          basura=$(git ls-files | grep -E '\.pyc$|__pycache__|\.egg-info|\.bundle$|(^|/)node_modules/' || true)
+          if [ -n "$basura" ]; then
+            echo "::error::Artefactos generados versionados ($(echo "$basura" | wc -l) archivos):"
+            echo "$basura" | head -20
+            echo "Corrige con: git rm -r --cached <ruta> y revisa .gitignore"
+            exit 1
+          fi
+          echo "Sin artefactos generados."
+
+      - name: .gitignore presente
+        run: |
+          test -f .gitignore || { echo "::error::Falta .gitignore"; exit 1; }
+          echo ".gitignore presente."

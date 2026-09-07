@@ -1,0 +1,241 @@
+:root {
+  --fondo: #0f1115;
+  --panel: #171a21;
+  --borde: #262b36;
+  --texto: #e6e8ec;
+  --tenue: #8d95a5;
+  --acento: #4f8cff;
+  --ok: #2ea86b;
+  --mal: #e5484d;
+  --aviso: #f5a524;
+
+  color-scheme: dark;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--fondo);
+  color: var(--texto);
+}
+
+code {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 0.9em;
+  color: var(--tenue);
+}
+
+.app {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  min-height: 100vh;
+}
+
+/* ── Navegación ─────────────────────────────────────────────────────────── */
+
+.lateral {
+  background: var(--panel);
+  border-right: 1px solid var(--borde);
+  padding: 1.5rem 1rem;
+}
+
+.marca { padding: 0 0.75rem 1.5rem; line-height: 1.3; }
+.marca strong { display: block; letter-spacing: 0.06em; }
+.marca span { color: var(--tenue); font-size: 0.8rem; }
+
+.menu { list-style: none; margin: 0; padding: 0; }
+
+.menu__item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.15rem;
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  color: var(--tenue);
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu__item:hover { background: #1e222b; color: var(--texto); }
+
+.menu__item--activo {
+  background: #1e2532;
+  color: var(--texto);
+  box-shadow: inset 2px 0 0 var(--acento);
+}
+
+.menu__pendiente {
+  font-size: 0.68rem;
+  font-style: normal;
+  color: var(--tenue);
+  opacity: 0.65;
+}
+
+/* ── Pantalla ───────────────────────────────────────────────────────────── */
+
+.contenido { padding: 2.5rem 3rem; }
+
+.pantalla__encabezado {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 2rem;
+  margin-bottom: 1.75rem;
+}
+
+.pantalla h1 { margin: 0 0 0.35rem; font-size: 1.5rem; }
+.pantalla__sub { margin: 0; color: var(--tenue); font-size: 0.9rem; }
+
+.boton {
+  padding: 0.5rem 1rem;
+  background: var(--acento);
+  border: 0;
+  border-radius: 6px;
+  color: #fff;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.boton:disabled { opacity: 0.55; cursor: default; }
+
+/* ── Resumen y servicios ────────────────────────────────────────────────── */
+
+.resumen {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+}
+
+.resumen p { margin: 0.2rem 0 0; color: var(--tenue); font-size: 0.85rem; }
+
+.resumen__punto {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--tenue);
+  flex-shrink: 0;
+}
+
+.resumen--ready .resumen__punto { background: var(--ok); }
+.resumen--degraded .resumen__punto { background: var(--aviso); }
+
+.servicios {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 0.85rem;
+}
+
+.servicio {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.3rem;
+  padding: 1rem 1.15rem;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-left: 3px solid var(--tenue);
+  border-radius: 10px;
+}
+
+.servicio--up { border-left-color: var(--ok); }
+.servicio--down { border-left-color: var(--mal); }
+.servicio--not_configured { border-left-color: var(--aviso); }
+
+.servicio__nombre { font-weight: 600; font-size: 0.95rem; }
+
+.servicio__estado {
+  color: var(--tenue);
+  font-size: 0.8rem;
+  text-align: right;
+}
+
+.servicio--up .servicio__estado { color: var(--ok); }
+.servicio--down .servicio__estado { color: var(--mal); }
+
+.servicio__latencia { color: var(--tenue); font-size: 0.8rem; }
+
+.servicio__detalle {
+  grid-column: 1 / -1;
+  color: var(--mal);
+  font-size: 0.78rem;
+}
+
+/* ── Avisos ─────────────────────────────────────────────────────────────── */
+
+.alerta {
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+  background: rgba(229, 72, 77, 0.08);
+  border: 1px solid rgba(229, 72, 77, 0.35);
+  border-radius: 10px;
+}
+
+.alerta p { margin: 0.4rem 0 0; font-size: 0.87rem; }
+.alerta__pista { color: var(--tenue); }
+
+.vacio { color: var(--tenue); }
+
+/* ── Procedencia del dato (§33) ─────────────────────────────────────────── */
+
+.badge-origen {
+  display: inline-block;
+  padding: 0.28rem 0.6rem;
+  border-radius: 5px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.badge-origen--synthetic {
+  background: var(--aviso);
+  color: #1a1200;
+}
+
+.badge-origen--official,
+.badge-origen--public,
+.badge-origen--licensed {
+  background: rgba(79, 140, 255, 0.15);
+  border: 1px solid rgba(79, 140, 255, 0.5);
+  color: #9dbcff;
+}
+
+.aviso-sintetico {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.85rem 1.15rem;
+  margin-bottom: 1.5rem;
+  background: rgba(245, 165, 36, 0.09);
+  border: 1px solid rgba(245, 165, 36, 0.4);
+  border-radius: 10px;
+}
+
+.aviso-sintetico p { margin: 0; font-size: 0.87rem; }
+
+.pendiente {
+  padding: 3rem;
+  background: var(--panel);
+  border: 1px dashed var(--borde);
+  border-radius: 10px;
+  text-align: center;
+}
+
+.pendiente p { margin: 0; color: var(--tenue); }
+.pendiente__nota { margin-top: 0.5rem !important; font-size: 0.85rem; }

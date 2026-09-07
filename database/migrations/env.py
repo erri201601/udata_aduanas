@@ -11,7 +11,7 @@ from logging.config import fileConfig
 from alembic import context
 from apps.api.config import get_settings
 from database.models import Base
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import CheckConstraint, engine_from_config, pool
 
 config = context.config
 
@@ -36,6 +36,18 @@ def include_object(obj, name, type_, reflected, compare_to) -> bool:  # type: ig
     if type_ == "table":
         schema = getattr(obj, "schema", None) or "public"
         if schema not in PROJECT_SCHEMAS:
+            return False
+    # Alembic 1.19 no empareja los CHECK creados por Enum(native_enum=False)
+    # con su equivalente en la metadata y propone borrarlos en la migración
+    # siguiente. Si existe el mismo CHECK nombrado en el modelo, se conserva.
+    if type_ == "check_constraint" and reflected and compare_to is None:
+        table = obj.table
+        table_key = f"{table.schema}.{table.name}" if table.schema else table.name
+        metadata_table = target_metadata.tables.get(table_key)
+        if metadata_table is not None and any(
+            isinstance(constraint, CheckConstraint) and constraint.name == name
+            for constraint in metadata_table.constraints
+        ):
             return False
     return True
 

@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from apps.api.config import get_settings
+from apps.api.db import dispose_engine
 from apps.api.logging import configure_logging, get_logger
 from apps.api.routers import health
 
@@ -45,6 +46,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         port=settings.api_port,
     )
     yield
+    # Devuelve las conexiones al servidor. Sin esto, cada reinicio en desarrollo
+    # deja un pool colgado en el PostgreSQL compartido del dev server.
+    dispose_engine()
     log.info("api.shutdown", app=settings.app_name)
 
 
