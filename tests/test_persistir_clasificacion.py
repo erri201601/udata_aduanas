@@ -237,3 +237,41 @@ def test_el_descarte_lleva_su_motivo_real() -> None:
 
     assert motivo
     assert "8528" in motivo or "partidas" in motivo
+
+
+# ── La traza estructurada ────────────────────────────────────────────────────
+
+
+def test_la_traza_guarda_una_entrada_por_regla() -> None:
+    """El acta de CÓMO se decidió, congelada en la fila.
+
+    Reejecutar el motor para explicar una decisión pasada daría un razonamiento
+    distinto al que se firmó —la tarifa pudo cambiar—, y una auditoría que
+    muestra otra cosa que lo firmado es peor que no tener auditoría.
+    """
+    from database.repositories.classification import _traza
+
+    traza = _traza(resultado())
+
+    assert [p["rule_id"] for p in traza] == ["RGI-1", "RGI-6"]
+    assert all(p["status"] for p in traza)
+    assert all(p["reasoning_summary"] for p in traza)
+
+
+def test_la_traza_conserva_los_candidatos_de_cada_paso() -> None:
+    """Sin ellos no se puede reconstruir qué alternativas había en cada punto."""
+    from database.repositories.classification import _traza
+
+    traza = _traza(resultado(headings=[PARTIDA, ALTERNA]))
+
+    rgi1 = next(p for p in traza if p["rule_id"] == "RGI-1")
+    assert set(rgi1["candidate_codes"]) == {"8471", "8528"}
+
+
+def test_la_traza_es_serializable_a_json() -> None:
+    """Va a una columna JSONB: un Decimal suelto rompería la inserción."""
+    import json
+
+    from database.repositories.classification import _traza
+
+    json.dumps(_traza(resultado()))  # no debe lanzar

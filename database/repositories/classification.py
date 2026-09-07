@@ -76,6 +76,7 @@ def save_classification(
         **_niveles(fraccion),
         reasoning=_razonamiento(outcome),
         rgi_path=[p.rule_id for p in outcome.trace.steps],
+        rgi_trace=_traza(outcome),
         engine_version=outcome.trace.engine_version,
         input_snapshot=_snapshot(outcome),
         missing_information=list(outcome.trace.missing_information),
@@ -124,16 +125,36 @@ def _niveles(fraccion: str | None) -> dict[str, str | None]:
     }
 
 
+def _traza(outcome: ClassificationOutcome) -> list[dict[str, Any]]:
+    """La traza estructurada: una entrada por regla evaluada.
+
+    Es el acta de CÓMO se decidió, y por eso se congela en la fila en vez de
+    poder reconstruirse. Reejecutar el motor para explicar una decisión pasada
+    daría un razonamiento distinto al que se firmó —la tarifa pudo cambiar—, y
+    una auditoría que muestra otra cosa que lo firmado es peor que no tener
+    auditoría.
+    """
+    return [
+        {
+            "rule_id": p.rule_id,
+            "status": p.status.value,
+            "reasoning_summary": p.reasoning_summary,
+            "candidate_codes": [c.code for c in p.candidate_codes],
+            "confidence": str(p.confidence) if p.confidence is not None else None,
+            "source_ids": [str(s) for s in p.source_ids],
+            "missing_information": list(p.missing_information),
+        }
+        for p in outcome.trace.steps
+    ]
+
+
 def _razonamiento(outcome: ClassificationOutcome) -> str:
-    """El razonamiento completo, paso a paso.
+    """El resumen legible, para quien lee sin abrir la traza.
 
-    Concatenado en un texto porque `classification_decisions` todavía no tiene
-    la columna `rgi_trace` que guarde la traza estructurada. Cuando exista, esto
-    pasa a ser el resumen y la traza va aparte, consultable.
-
-    Mientras tanto se conserva el razonamiento de CADA regla y no sólo uno
-    global: perderlo haría imposible responder «¿con qué regla?» del §49 con el
-    detalle que una auditoría pide.
+    La traza estructurada vive en `rgi_trace`; esto es su versión en prosa.
+    Conserva el razonamiento de CADA regla y no sólo uno global: perderlo haría
+    imposible responder «¿con qué regla?» del §49 con el detalle que una
+    auditoría pide.
     """
     partes = [
         f"{p.rule_id}: {p.reasoning_summary}" for p in outcome.trace.steps if p.reasoning_summary
