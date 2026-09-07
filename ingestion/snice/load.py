@@ -99,6 +99,7 @@ def to_tariff_fraction_row(
         unit=parsed.unit,
         igi_rate=parsed.igi_rate,
         ige_rate=parsed.ige_rate,
+        specificity=parsed.specificity,
         legal_document_id=document.id,
         data_origin="OFFICIAL",
         source_id=source.id,
