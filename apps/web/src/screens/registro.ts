@@ -46,6 +46,12 @@ export const PANTALLAS: DefinicionPantalla[] = [
     implementada: true,
   },
   {
+    id: 'evidence',
+    titulo: 'Evidencia',
+    descripcion: 'Las diez preguntas del §49 sobre una decisión',
+    implementada: true,
+  },
+  {
     id: 'regulatory-sentinel',
     titulo: 'Regulatory Sentinel',
     descripcion: 'Vigilancia de DOF y cambios regulatorios',
