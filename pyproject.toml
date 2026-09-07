@@ -50,9 +50,20 @@ line-length = 100
 src = ["apps", "core", "database", "ingestion", "rag", "graph", "synthetic", "tests"]
 
 [tool.ruff.lint]
+# El signo × se usa a propósito en las fórmulas del Money Finder, que se
+# muestran a quien audita un cálculo: "100000 × 0.15" se lee como aritmética y
+# "100000 * 0.15" se lee como código. Ruff lo marca como confundible con la
+# letra x —precaución razonable contra homoglifos— y aquí lo permitimos
+# explícitamente en vez de silenciar la regla entera.
+allowed-confusables = ["×"]
 select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "TCH", "ARG", "PTH", "RUF"]
 ignore = ["E501"]
 
+# El signo × se usa a propósito en las fórmulas del Money Finder, que se
+# muestran a quien audita un cálculo: "100000 × 0.15" se lee como aritmética y
+# "100000 * 0.15" se lee como código. Ruff lo marca como confundible con la
+# letra x —una precaución razonable contra homoglifos— y aquí lo permitimos
+# explícitamente en vez de silenciar la regla entera.
 [tool.ruff.lint.flake8-type-checking]
 # Pydantic resuelve las anotaciones en tiempo de ejecución para construir el
 # modelo. Mover un tipo usado en un campo a TYPE_CHECKING rompe la clase con
