@@ -59,6 +59,29 @@ _SYNTHETIC = "SYNTHETIC"
 _RETRIEVED_AT = datetime(2026, 1, 1, tzinfo=UTC)
 
 
+# Telemetría de la llamada al modelo, completa.
+#
+# `ck_<tabla>_ai_call_complete` exige que si hay `model_provider`, estén también
+# model_name, input_tokens, output_tokens, latency_ms y attempts. La regla es
+# correcta: una fila que dice "lo produjo Anthropic" sin decir qué modelo ni
+# cuánto costó no es auditable.
+#
+# Los valores son inventados, y eso está bien AQUÍ y sólo aquí: son fixtures
+# marcadas SYNTHETIC. En producción los llena core/llm/canonical.py con la
+# telemetría real de la llamada.
+_TELEMETRIA: dict[str, object] = {
+    "model_provider": "anthropic",
+    "model_name": "claude-sonnet-5",
+    "prompt_id": "product_dna/extract",
+    "prompt_version": "0.1",
+    "input_tokens": 1842,
+    "output_tokens": 316,
+    "latency_ms": 2410,
+    "attempts": 1,
+    "finish_reason": "stop",
+}
+
+
 def seed(session: Session) -> SyntheticScenario:
     """Inserta el escenario demo. Idempotente por `SCENARIO_SLUG`."""
     existing = session.scalar(
@@ -179,7 +202,7 @@ def seed(session: Session) -> SyntheticScenario:
         missing_information=["voltage_v"],
         evidence_id=evidence.id,
         confidence=Decimal("0.9100"),
-        model_provider="anthropic",
+        **_TELEMETRIA,
         **syn,
     )
     session.add(dna)
@@ -350,7 +373,7 @@ def seed(session: Session) -> SyntheticScenario:
         engine_version="0.1.0",
         evidence_id=evidence.id,
         confidence=Decimal("0.9100"),
-        model_provider="anthropic",
+        **_TELEMETRIA,
         **syn,
     )
     session.add(decision)
