@@ -1,0 +1,127 @@
+"""Lectura de decisiones de clasificación (§18 y §49).
+
+Lo que hace defendible una clasificación no es el código que devuelve, sino
+poder explicar cómo se llegó a él. Un agente aduanal firma con su nombre: si
+el sistema le da una caja negra con un número, no puede usarlo.
+
+Por eso el detalle no devuelve sólo la fracción: devuelve la ruta de reglas,
+las alternativas consideradas con su motivo de rechazo, y las evidencias con
+su TIPO. Esa última distinción no es cosmética — `LEGAL_SOURCE` es fundamento
+jurídico y `MODEL_OUTPUT` no lo es, y presentarlos igual arruina la
+credibilidad de todo lo demás.
+
+Sólo lectura. Persistir decisiones es del orquestador.
+"""
+
+from __future__ import annotations
+
+import uuid
+from typing import Annotated
+
+import sqlalchemy as sa
+from database.models import (
+    ClassificationCandidate,
+    ClassificationDecision,
+    EvidenceRecord,
+)
+from fastapi import APIRouter, HTTPException, Query, status
+from pydantic import Field
+from schemas.intelligence import (
+    ClassificationCandidateRead,
+    ClassificationDecisionRead,
+    EvidenceRecordRead,
+)
+
+from apps.api.db import SessionDep
+
+router = APIRouter(prefix="/classifications", tags=["classifications"])
+
+LIMITE_MAXIMO = 200
+
+#: Los únicos tipos de evidencia que sostienen una afirmación jurídica (§8.1).
+#: `MODEL_OUTPUT` interpreta y `COMPARABLE` —CBP CROSS, EBTI— es apoyo
+#: interpretativo de otra jurisdicción: ninguno de los dos fundamenta.
+TIPOS_QUE_FUNDAMENTAN = frozenset({"LEGAL_SOURCE"})
+
+
+class ClassificationDetail(ClassificationDecisionRead):
+    """Una decisión con todo lo necesario para defenderla.
+
+    Va todo junto porque quien audita necesita verlo junto: separar los
+    candidatos o la evidencia en otra petición convertiría "explicar una
+    decisión" en tres viajes y una reconstrucción manual.
+    """
+
+    candidates: list[ClassificationCandidateRead] = Field(default_factory=list)
+    evidences: list[EvidenceRecordRead] = Field(default_factory=list)
+
+    trace_available: bool = False
+    """¿Está la traza paso a paso?
+
+    Hoy la base guarda `rgi_path` —sólo los identificadores de regla— y un
+    `reasoning` global, pero no el razonamiento de CADA paso. La bandera
+    existe para que la pantalla lo diga en vez de pintar una explicación
+    parcial como si fuera completa.
+    """
+
+
+@router.get("", summary="Lista las decisiones de clasificación")
+def listar_decisiones(
+    session: SessionDep,
+    product_id: uuid.UUID | None = None,
+    limit: Annotated[int, Query(ge=1, le=LIMITE_MAXIMO)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> list[ClassificationDecisionRead]:
+    """Decisiones, de la más reciente a la más antigua."""
+    sentencia = sa.select(ClassificationDecision)
+    if product_id is not None:
+        sentencia = sentencia.where(ClassificationDecision.product_id == product_id)
+
+    filas = session.scalars(
+        sentencia.order_by(ClassificationDecision.operation_date.desc()).limit(limit).offset(offset)
+    ).all()
+    return [ClassificationDecisionRead.model_validate(f, from_attributes=True) for f in filas]
+
+
+@router.get("/{decision_id}", summary="Una decisión con su traza y evidencias")
+def obtener_decision(decision_id: uuid.UUID, session: SessionDep) -> ClassificationDetail:
+    decision = session.get(ClassificationDecision, decision_id)
+    if decision is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "decisión no encontrada")
+
+    candidatos = session.scalars(
+        sa.select(ClassificationCandidate)
+        .where(ClassificationCandidate.classification_decision_id == decision_id)
+        .order_by(ClassificationCandidate.rank)
+    ).all()
+
+    # La decisión apunta a una evidencia principal; el resto se localiza por el
+    # vínculo blando que ya usa evidence_records (subject_kind + subject_id).
+    evidencias = session.scalars(
+        sa.select(EvidenceRecord).where(
+            sa.or_(
+                EvidenceRecord.id == decision.evidence_id,
+                sa.and_(
+                    EvidenceRecord.subject_kind == "classification_decision",
+                    EvidenceRecord.subject_id == decision_id,
+                ),
+            )
+        )
+    ).all()
+
+    detalle = ClassificationDetail.model_validate(decision, from_attributes=True)
+    return detalle.model_copy(
+        update={
+            "candidates": [
+                ClassificationCandidateRead.model_validate(c, from_attributes=True)
+                for c in candidatos
+            ],
+            "evidences": [
+                EvidenceRecordRead.model_validate(e, from_attributes=True) for e in evidencias
+            ],
+            # Sin razonamiento por paso, la traza no está completa. Decirlo es
+            # parte del contrato: una explicación parcial presentada como
+            # completa es peor que no dar ninguna.
+            "trace_available": False,
+        }
+    )

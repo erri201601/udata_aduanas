@@ -108,6 +108,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/classifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Lista las decisiones de clasificación
+         * @description Decisiones, de la más reciente a la más antigua.
+         */
+        get: operations["listar_decisiones_classifications_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/classifications/{decision_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Una decisión con su traza y evidencias */
+        get: operations["obtener_decision_classifications__decision_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -118,12 +155,326 @@ export interface components {
          * @enum {string}
          */
         AttributeStatus: "OBSERVED" | "EXTRACTED" | "INFERRED" | "MISSING";
+        /** ClassificationCandidateRead */
+        ClassificationCandidateRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            data_origin: components["schemas"]["DataOrigin"];
+            /** Source Id */
+            source_id?: string | null;
+            /**
+             * Classification Decision Id
+             * Format: uuid
+             */
+            classification_decision_id: string;
+            /** Rank */
+            rank: number;
+            /** Fraction Code */
+            fraction_code?: string | null;
+            /** Nico Code */
+            nico_code?: string | null;
+            /** Tariff Fraction Id */
+            tariff_fraction_id?: string | null;
+            /** Confidence */
+            confidence?: string | null;
+            /** Reasoning */
+            reasoning?: string | null;
+            /**
+             * Is Selected
+             * @default false
+             */
+            is_selected: boolean;
+            /** Rejected Reason */
+            rejected_reason?: string | null;
+        };
+        /** ClassificationDecisionRead */
+        ClassificationDecisionRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Synthetic Scenario Id */
+            synthetic_scenario_id?: string | null;
+            /** Seed */
+            seed?: number | null;
+            /** Model Provider */
+            model_provider?: string | null;
+            /** Model Name */
+            model_name?: string | null;
+            /** Prompt Id */
+            prompt_id?: string | null;
+            /** Prompt Version */
+            prompt_version?: string | null;
+            /** Input Tokens */
+            input_tokens?: number | null;
+            /** Output Tokens */
+            output_tokens?: number | null;
+            /** Latency Ms */
+            latency_ms?: number | null;
+            /** Attempts */
+            attempts?: number | null;
+            /** Finish Reason */
+            finish_reason?: string | null;
+            /** Confidence */
+            confidence?: string | null;
+            /**
+             * Requires Human Review
+             * @default true
+             */
+            requires_human_review: boolean;
+            data_origin: components["schemas"]["DataOrigin"];
+            /** Source Id */
+            source_id?: string | null;
+            /** Product Id */
+            product_id?: string | null;
+            /** Product Dna Id */
+            product_dna_id?: string | null;
+            trade_flow: components["schemas"]["TradeFlow"];
+            /**
+             * Operation Date
+             * Format: date
+             */
+            operation_date: string;
+            status: components["schemas"]["ClassificationStatus"];
+            /** Chapter */
+            chapter?: string | null;
+            /** Heading */
+            heading?: string | null;
+            /** Subheading */
+            subheading?: string | null;
+            /** Fraction Code */
+            fraction_code?: string | null;
+            /** Nico Code */
+            nico_code?: string | null;
+            /** Tariff Fraction Id */
+            tariff_fraction_id?: string | null;
+            /** Nico Id */
+            nico_id?: string | null;
+            /** Reasoning */
+            reasoning?: string | null;
+            /** Rgi Path */
+            rgi_path?: string[];
+            /** Legal Rule Ids */
+            legal_rule_ids?: string[];
+            /** Engine Version */
+            engine_version?: string | null;
+            /** Evidence Id */
+            evidence_id?: string | null;
+            /** Input Snapshot */
+            input_snapshot?: {
+                [key: string]: unknown;
+            };
+            /** Missing Information */
+            missing_information?: string[];
+            /** Estimated Impact Amount */
+            estimated_impact_amount?: string | null;
+            /** Estimated Impact Amount Currency */
+            estimated_impact_amount_currency?: string | null;
+        };
+        /**
+         * ClassificationDetail
+         * @description Una decisión con todo lo necesario para defenderla.
+         *
+         *     Va todo junto porque quien audita necesita verlo junto: separar los
+         *     candidatos o la evidencia en otra petición convertiría "explicar una
+         *     decisión" en tres viajes y una reconstrucción manual.
+         */
+        ClassificationDetail: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Synthetic Scenario Id */
+            synthetic_scenario_id?: string | null;
+            /** Seed */
+            seed?: number | null;
+            /** Model Provider */
+            model_provider?: string | null;
+            /** Model Name */
+            model_name?: string | null;
+            /** Prompt Id */
+            prompt_id?: string | null;
+            /** Prompt Version */
+            prompt_version?: string | null;
+            /** Input Tokens */
+            input_tokens?: number | null;
+            /** Output Tokens */
+            output_tokens?: number | null;
+            /** Latency Ms */
+            latency_ms?: number | null;
+            /** Attempts */
+            attempts?: number | null;
+            /** Finish Reason */
+            finish_reason?: string | null;
+            /** Confidence */
+            confidence?: string | null;
+            /**
+             * Requires Human Review
+             * @default true
+             */
+            requires_human_review: boolean;
+            data_origin: components["schemas"]["DataOrigin"];
+            /** Source Id */
+            source_id?: string | null;
+            /** Product Id */
+            product_id?: string | null;
+            /** Product Dna Id */
+            product_dna_id?: string | null;
+            trade_flow: components["schemas"]["TradeFlow"];
+            /**
+             * Operation Date
+             * Format: date
+             */
+            operation_date: string;
+            status: components["schemas"]["ClassificationStatus"];
+            /** Chapter */
+            chapter?: string | null;
+            /** Heading */
+            heading?: string | null;
+            /** Subheading */
+            subheading?: string | null;
+            /** Fraction Code */
+            fraction_code?: string | null;
+            /** Nico Code */
+            nico_code?: string | null;
+            /** Tariff Fraction Id */
+            tariff_fraction_id?: string | null;
+            /** Nico Id */
+            nico_id?: string | null;
+            /** Reasoning */
+            reasoning?: string | null;
+            /** Rgi Path */
+            rgi_path?: string[];
+            /** Legal Rule Ids */
+            legal_rule_ids?: string[];
+            /** Engine Version */
+            engine_version?: string | null;
+            /** Evidence Id */
+            evidence_id?: string | null;
+            /** Input Snapshot */
+            input_snapshot?: {
+                [key: string]: unknown;
+            };
+            /** Missing Information */
+            missing_information?: string[];
+            /** Estimated Impact Amount */
+            estimated_impact_amount?: string | null;
+            /** Estimated Impact Amount Currency */
+            estimated_impact_amount_currency?: string | null;
+            /** Candidates */
+            candidates?: components["schemas"]["ClassificationCandidateRead"][];
+            /** Evidences */
+            evidences?: components["schemas"]["EvidenceRecordRead"][];
+            /**
+             * Trace Available
+             * @default false
+             */
+            trace_available: boolean;
+        };
+        /**
+         * ClassificationStatus
+         * @description §18 maestro — cómo termina una evaluación de clasificación.
+         * @enum {string}
+         */
+        ClassificationStatus: "RESOLVED" | "INSUFFICIENT_INFORMATION" | "HUMAN_REVIEW_REQUIRED";
         /**
          * DataOrigin
          * @description §9 maestro — los cinco orígenes de dato. Cerrado.
          * @enum {string}
          */
         DataOrigin: "OFFICIAL" | "PUBLIC" | "LICENSED" | "SYNTHETIC" | "HUMAN_VALIDATED";
+        /**
+         * EvidenceKind
+         * @description Tipo de evidencia en evidence_records. Espejo de core.evidence.kinds.EvidenceKind.
+         * @enum {string}
+         */
+        EvidenceKind: "LEGAL_SOURCE" | "MODEL_OUTPUT" | "DETERMINISTIC" | "HUMAN" | "COMPARABLE";
+        /** EvidenceRecordRead */
+        EvidenceRecordRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            data_origin: components["schemas"]["DataOrigin"];
+            /** Source Id */
+            source_id?: string | null;
+            /** Subject Kind */
+            subject_kind?: string | null;
+            /** Subject Id */
+            subject_id?: string | null;
+            /** Summary */
+            summary?: string | null;
+            /** Source Ids */
+            source_ids?: string[];
+            /** Legal Rule Ids */
+            legal_rule_ids?: string[];
+            /** Document Refs */
+            document_refs?: {
+                [key: string]: unknown;
+            }[];
+            /** Content Hashes */
+            content_hashes?: string[];
+            /** Engine Version */
+            engine_version?: string | null;
+            /** Model Provider */
+            model_provider?: string | null;
+            /** Model Name */
+            model_name?: string | null;
+            /** Prompt Version */
+            prompt_version?: string | null;
+            /**
+             * Created By
+             * @default engine
+             */
+            created_by: string;
+            evidence_kind?: components["schemas"]["EvidenceKind"] | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -345,6 +696,12 @@ export interface components {
             /** Detail */
             detail?: string | null;
         };
+        /**
+         * TradeFlow
+         * @description Sentido de la operación.
+         * @enum {string}
+         */
+        TradeFlow: "IMPORT" | "EXPORT";
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -488,6 +845,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProductDnaDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listar_decisiones_classifications_get: {
+        parameters: {
+            query?: {
+                product_id?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClassificationDecisionRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    obtener_decision_classifications__decision_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                decision_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClassificationDetail"];
                 };
             };
             /** @description Validation Error */

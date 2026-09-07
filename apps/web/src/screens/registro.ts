@@ -31,7 +31,7 @@ export const PANTALLAS: DefinicionPantalla[] = [
     id: 'classification',
     titulo: 'Classification',
     descripcion: 'Motor de RGI y fracción arancelaria propuesta',
-    implementada: false,
+    implementada: true,
   },
   {
     id: 'pedimento-shadow',
