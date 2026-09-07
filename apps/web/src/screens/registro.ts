@@ -25,7 +25,7 @@ export const PANTALLAS: DefinicionPantalla[] = [
     id: 'product-dna',
     titulo: 'Product DNA',
     descripcion: 'Atributos técnicos que determinan la clasificación',
-    implementada: false,
+    implementada: true,
   },
   {
     id: 'classification',

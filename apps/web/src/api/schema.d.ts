@@ -47,10 +47,88 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Lista los productos del catálogo
+         * @description Productos ordenados por SKU, que es lo que el usuario reconoce.
+         */
+        get: operations["listar_productos_products_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/products/{product_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Un producto del catálogo */
+        get: operations["obtener_producto_products__product_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/products/{product_id}/dna": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Product DNA vigente del producto, con sus atributos
+         * @description El DNA marcado como vigente.
+         *
+         *     Se filtra por `is_current` y no por la versión más alta: un DNA se puede
+         *     reemplazar por una revisión humana que no sea la última generada, y la
+         *     columna es la que decide cuál rige.
+         */
+        get: operations["obtener_dna_products__product_id__dna_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AttributeStatus
+         * @description §16 maestro — estado de un atributo de Product DNA.
+         * @enum {string}
+         */
+        AttributeStatus: "OBSERVED" | "EXTRACTED" | "INFERRED" | "MISSING";
+        /**
+         * DataOrigin
+         * @description §9 maestro — los cinco orígenes de dato. Cerrado.
+         * @enum {string}
+         */
+        DataOrigin: "OFFICIAL" | "PUBLIC" | "LICENSED" | "SYNTHETIC" | "HUMAN_VALIDATED";
+        /** HTTPValidationError */
+        HTTPValidationError: {
+            /** Detail */
+            detail?: components["schemas"]["ValidationError"][];
+        };
         /**
          * LivenessResponse
          * @description Respuesta de liveness.
@@ -70,6 +148,170 @@ export interface components {
             version: string;
             /** Timestamp */
             timestamp: string;
+        };
+        /** ProductAttributeRead */
+        ProductAttributeRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            data_origin: components["schemas"]["DataOrigin"];
+            /** Source Id */
+            source_id?: string | null;
+            /**
+             * Product Dna Id
+             * Format: uuid
+             */
+            product_dna_id: string;
+            /** Name */
+            name: string;
+            /** Value */
+            value?: string | null;
+            /** Unit */
+            unit?: string | null;
+            status: components["schemas"]["AttributeStatus"];
+            /** Confidence */
+            confidence?: string | null;
+            /** Evidence Reference */
+            evidence_reference?: string | null;
+        };
+        /**
+         * ProductDnaDetail
+         * @description Un Product DNA con sus atributos.
+         *
+         *     Van juntos porque nunca se necesitan por separado: un DNA sin sus
+         *     atributos no dice nada, y la pantalla tendría que encadenar dos peticiones
+         *     para pintar una sola vista.
+         */
+        ProductDnaDetail: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Synthetic Scenario Id */
+            synthetic_scenario_id?: string | null;
+            /** Seed */
+            seed?: number | null;
+            /** Model Provider */
+            model_provider?: string | null;
+            /** Model Name */
+            model_name?: string | null;
+            /** Prompt Id */
+            prompt_id?: string | null;
+            /** Prompt Version */
+            prompt_version?: string | null;
+            /** Input Tokens */
+            input_tokens?: number | null;
+            /** Output Tokens */
+            output_tokens?: number | null;
+            /** Latency Ms */
+            latency_ms?: number | null;
+            /** Attempts */
+            attempts?: number | null;
+            /** Finish Reason */
+            finish_reason?: string | null;
+            /** Confidence */
+            confidence?: string | null;
+            /**
+             * Requires Human Review
+             * @default true
+             */
+            requires_human_review: boolean;
+            data_origin: components["schemas"]["DataOrigin"];
+            /** Source Id */
+            source_id?: string | null;
+            /**
+             * Product Id
+             * Format: uuid
+             */
+            product_id: string;
+            /**
+             * Version
+             * @default 1
+             */
+            version: number;
+            /**
+             * Is Current
+             * @default true
+             */
+            is_current: boolean;
+            /** Input Kinds */
+            input_kinds?: string[];
+            /** Summary */
+            summary?: string | null;
+            /** Missing Information */
+            missing_information?: string[];
+            /** Evidence Id */
+            evidence_id?: string | null;
+            /** Attributes */
+            attributes?: components["schemas"]["ProductAttributeRead"][];
+        };
+        /** ProductRead */
+        ProductRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Synthetic Scenario Id */
+            synthetic_scenario_id?: string | null;
+            /** Seed */
+            seed?: number | null;
+            data_origin: components["schemas"]["DataOrigin"];
+            /** Source Id */
+            source_id?: string | null;
+            /** Client Id */
+            client_id?: string | null;
+            /** Supplier Id */
+            supplier_id?: string | null;
+            /** Sku */
+            sku: string;
+            /** Commercial Name */
+            commercial_name: string;
+            /** Description */
+            description?: string | null;
+            /** Brand */
+            brand?: string | null;
+            /** Model */
+            model?: string | null;
+            /** Manufacturer Name */
+            manufacturer_name?: string | null;
+            /** Country Of Manufacture */
+            country_of_manufacture?: string | null;
+            /** Unit Of Measure */
+            unit_of_measure?: string | null;
         };
         /**
          * ReadinessResponse
@@ -102,6 +344,19 @@ export interface components {
             latency_ms?: number | null;
             /** Detail */
             detail?: string | null;
+        };
+        /** ValidationError */
+        ValidationError: {
+            /** Location */
+            loc: (string | number)[];
+            /** Message */
+            msg: string;
+            /** Error Type */
+            type: string;
+            /** Input */
+            input?: unknown;
+            /** Context */
+            ctx?: Record<string, never>;
         };
     };
     responses: never;
@@ -148,6 +403,100 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReadinessResponse"];
+                };
+            };
+        };
+    };
+    listar_productos_products_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    obtener_producto_products__product_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                product_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    obtener_dna_products__product_id__dna_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                product_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductDnaDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
