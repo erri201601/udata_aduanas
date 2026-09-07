@@ -215,11 +215,13 @@ from core.evidence import builder, contract, questions
 
 ev = builder.model_output(
     summary="El voltaje 220V aparece en la ficha técnica.",
-    model_provider=meta.model_provider, model_name=meta.model_name,
-    prompt_id=meta.prompt_id, prompt_version=meta.prompt_version,
+    model_provider=meta.model_provider,
+    model_name=meta.model_name,
+    prompt_id=meta.prompt_id,
+    prompt_version=meta.prompt_version,
     confidence=Decimal("0.92"),
 )
-fila = ev.to_record_fields()   # dict plano
+fila = ev.to_record_fields()  # dict plano
 ```
 
 **Deuda:** `evidence_records` no tiene columna `evidence_kind`. Hoy el tipo se
