@@ -11,6 +11,7 @@ rechaza — nunca se rellena con texto inventado.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING
@@ -42,6 +43,7 @@ class ParsedFraction:
     unit: str | None
     igi_rate: Decimal | None
     ige_rate: Decimal | None
+    specificity: int
     source_document: str
     source_url: str
     content_hash: str
@@ -108,6 +110,35 @@ def _split_code(raw_code: str) -> tuple[str, str, str, str] | None:
     return digits, digits[:2], digits[:4], digits[:6]
 
 
+_RESIDUAL_RE = re.compile(r"^\s*(los|las)\s+dem[aá]s\b", re.IGNORECASE)
+_EXCLUSIONARY_RE = re.compile(r"\b(excepto|salvo)\b", re.IGNORECASE)
+_NUMERIC_RE = re.compile(r"\d")
+
+
+def specificity_of(description: str) -> int:
+    """Qué tan específico es `description` frente a sus hermanas (RGI 3 a)).
+
+    Niveles sobre patrones reales del texto, no una puntuación inventada:
+      0 — catch-all ("Los demás"/"Las demás"): el cajón de sastre por
+          definición, siempre debe perder un desempate.
+      1 — se define por exclusión ("excepto"/"salvo" otra subpartida): es
+          residual aunque no diga "los demás" literalmente.
+      2 — descripción afirmativa, sin calificador numérico.
+      3 — descripción afirmativa con un umbral numérico concreto (peso,
+          potencia, capacidad...): el calificador más específico posible.
+
+    Sin esto, `TariffCatalog` no puede desempatar RGI 3 a) y todo escala a
+    `HUMAN_REVIEW_REQUIRED` (Persona 1, 2026-09-07).
+    """
+    if _RESIDUAL_RE.match(description):
+        return 0
+    if _EXCLUSIONARY_RE.search(description):
+        return 1
+    if _NUMERIC_RE.search(description):
+        return 3
+    return 2
+
+
 def parse_fracciones(
     rows: Iterable[tuple[object, ...]],
     chapters: frozenset[str],
@@ -153,16 +184,18 @@ def parse_fracciones(
         if ige_warning:
             rate_warnings.append(f"{raw_code} (IGE): {ige_warning}")
 
+        clean_description = str(description).strip()
         accepted.append(
             ParsedFraction(
                 code=code,
                 chapter=chapter,
                 heading=heading,
                 subheading=subheading,
-                description=str(description).strip(),
+                description=clean_description,
                 unit=(str(unit).strip() if unit else None),
                 igi_rate=igi_rate,
                 ige_rate=ige_rate,
+                specificity=specificity_of(clean_description),
                 source_document=SOURCE_DOCUMENT_TARIFA,
                 source_url=source_url,
                 content_hash=content_hash,

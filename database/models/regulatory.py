@@ -119,6 +119,12 @@ class TariffFraction(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Regul
     legal_document_id: Mapped[uuid.UUID | None] = mapped_column(
         sa.ForeignKey(f"{_SCHEMA}.legal_documents.id", ondelete="RESTRICT"), nullable=True
     )
+    # Qué tan específico es `description` frente a sus hermanas bajo la misma
+    # subpartida/partida (RGI 3 a)). Mayor = más específico. 0 = catch-all
+    # ("Los demás"/"Las demás"). Calculado por `ingestion.snice.tariff`, nunca
+    # a mano — ver ahí la heurística exacta. Sin esto, TariffCatalog no puede
+    # desempatar y todo cae a HUMAN_REVIEW_REQUIRED (Persona 1, 2026-09-07).
+    specificity: Mapped[int] = mapped_column(sa.Integer, nullable=False, server_default="0")
 
 
 class Nico(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base):
