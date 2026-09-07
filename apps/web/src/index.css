@@ -239,3 +239,132 @@ code {
 
 .pendiente p { margin: 0; color: var(--tenue); }
 .pendiente__nota { margin-top: 0.5rem !important; font-size: 0.85rem; }
+
+/* ── Product DNA ────────────────────────────────────────────────────────── */
+
+.selector {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-bottom: 1.5rem;
+  font-size: 0.85rem;
+  color: var(--tenue);
+}
+
+.selector select {
+  padding: 0.45rem 0.7rem;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  color: var(--texto);
+  font: inherit;
+  font-size: 0.87rem;
+}
+
+.ficha {
+  padding: 1.25rem 1.4rem;
+  margin-bottom: 1.25rem;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+}
+
+.ficha h2 { margin: 0 0 0.4rem; font-size: 1.1rem; }
+.ficha__resumen { margin: 0 0 1rem; color: var(--tenue); font-size: 0.9rem; }
+
+.ficha__meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.9rem;
+  margin: 0;
+}
+
+.ficha__meta div { display: flex; flex-direction: column; gap: 0.15rem; }
+.ficha__meta dt { font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--tenue); }
+.ficha__meta dd { margin: 0; font-size: 0.88rem; }
+
+/* Lo que falta es tan importante como lo que hay: sin estos datos no se
+   puede clasificar, y el sistema no los inventa. */
+.faltantes {
+  padding: 1.1rem 1.35rem;
+  margin-bottom: 1.5rem;
+  background: rgba(245, 165, 36, 0.09);
+  border-left: 3px solid var(--aviso);
+  border-radius: 0 8px 8px 0;
+}
+
+.faltantes p { margin: 0.4rem 0 0.6rem; font-size: 0.87rem; color: var(--tenue); }
+.faltantes ul { margin: 0; padding-left: 1.1rem; display: flex; flex-wrap: wrap; gap: 0.2rem 1.2rem; }
+.faltantes code { color: var(--aviso); }
+
+.tabla-scroll { overflow-x: auto; }
+
+.atributos { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+
+.atributos th {
+  padding: 0 1rem 0.6rem 0;
+  border-bottom: 1px solid var(--borde);
+  color: var(--tenue);
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.atributos td {
+  padding: 0.7rem 1rem 0.7rem 0;
+  border-bottom: 1px solid var(--borde);
+  vertical-align: middle;
+}
+
+.atributo__nombre { font-family: ui-monospace, Menlo, monospace; font-size: 0.83rem; }
+.unidad { color: var(--tenue); }
+.sin-dato { color: var(--tenue); opacity: 0.6; }
+.evidencia { font-size: 0.78rem; color: var(--acento); }
+
+/* Una franja lateral por estado: el ojo distingue la fila antes de leerla. */
+.fila { border-left: 3px solid transparent; }
+.fila td:first-child { padding-left: 0.75rem; }
+.fila--observed  { border-left-color: var(--ok); }
+.fila--extracted { border-left-color: var(--acento); }
+.fila--inferred  { border-left-color: var(--aviso); }
+.fila--missing   { border-left-color: var(--mal); opacity: 0.72; }
+
+.estado {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: help;
+}
+
+.estado--observed  { background: rgba(46, 168, 107, 0.16); color: var(--ok); }
+.estado--extracted { background: rgba(79, 140, 255, 0.16); color: var(--acento); }
+.estado--inferred  { background: rgba(245, 165, 36, 0.18); color: var(--aviso); }
+.estado--missing   { background: rgba(229, 72, 77, 0.15);  color: var(--mal); }
+
+.confianza { display: inline-flex; align-items: center; gap: 0.5rem; }
+
+.confianza__pista {
+  width: 56px;
+  height: 5px;
+  background: var(--borde);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.confianza__valor { display: block; height: 100%; border-radius: 3px; }
+.confianza__valor--alta  { background: var(--ok); }
+.confianza__valor--media { background: var(--acento); }
+.confianza__valor--baja  { background: var(--aviso); }
+
+.confianza__cifra {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 0.76rem;
+  color: var(--tenue);
+  font-variant-numeric: tabular-nums;
+}

@@ -89,8 +89,10 @@ def test_los_estados_con_valor_declaran_confianza() -> None:
 def test_la_inferencia_deja_evidencia_de_modelo() -> None:
     """El atributo INFERRED se sostiene en una evidencia MODEL_OUTPUT.
 
-    `created_by == "model"` es hoy la única proyección del tipo: la columna
-    `evidence_kind` todavía no existe (nota en `core/evidence/__init__.py`).
+    Desde el PR #17 la columna `evidence_kind` existe, así que el tipo se
+    guarda tal cual en vez de proyectarse sólo sobre `created_by`. Esa
+    distinción es la que impide que un precedente de CBP CROSS se lea como
+    fundamento mexicano.
     """
     from database.models import EvidenceRecord
 
@@ -100,6 +102,7 @@ def test_la_inferencia_deja_evidencia_de_modelo() -> None:
     ]
 
     assert len(de_modelo) == 1
+    assert de_modelo[0].evidence_kind == "MODEL_OUTPUT"
     assert de_modelo[0].model_provider
     assert de_modelo[0].model_name
     # Sin prompt_version la salida es irreproducible; el builder lo exige.

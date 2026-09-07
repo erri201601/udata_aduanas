@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
 import { Placeholder } from './screens/Placeholder'
+import { ProductDna } from './screens/ProductDna'
 import { SystemStatus } from './screens/SystemStatus'
 import { PANTALLAS } from './screens/registro'
 
@@ -33,9 +34,9 @@ export default function App() {
       </nav>
 
       <main className="contenido">
-        {pantalla.implementada ? (
-          <SystemStatus />
-        ) : (
+        {pantalla.id === 'system-status' && <SystemStatus />}
+        {pantalla.id === 'product-dna' && <ProductDna />}
+        {!pantalla.implementada && (
           <Placeholder titulo={pantalla.titulo} descripcion={pantalla.descripcion} />
         )}
       </main>
