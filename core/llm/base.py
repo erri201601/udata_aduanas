@@ -62,8 +62,17 @@ class ModelProvider(Protocol):
         model: str | None = ...,
         max_tokens: int = ...,
         temperature: float | None = ...,
+        prompt_id: str | None = ...,
+        prompt_version: str | None = ...,
     ) -> ModelResponse:
-        """Texto libre a partir de una conversación."""
+        """Texto libre a partir de una conversación.
+
+        `prompt_id` y `prompt_version` viajan a `CallMetadata` y de ahí al
+        Canonical Model. No son opcionales por comodidad: el Evidence Contract
+        exige `prompt_version` para construir una evidencia de modelo (§49), y
+        si el protocolo no dejara pasarlos, nadie que respete §29 podría
+        producir evidencia trazable.
+        """
         ...
 
     def generate_structured(
@@ -76,6 +85,8 @@ class ModelProvider(Protocol):
         max_tokens: int = ...,
         temperature: float | None = ...,
         max_attempts: int = ...,
+        prompt_id: str | None = ...,
+        prompt_version: str | None = ...,
     ) -> StructuredResponse[T]:
         """Salida validada contra un modelo Pydantic, con reintentos."""
         ...
