@@ -641,3 +641,66 @@ code {
 .sev--medium   { background: rgba(79, 140, 255, 0.16); color: var(--acento); }
 .sev--low,
 .sev--info     { background: var(--fondo); color: var(--tenue); border: 1px solid var(--borde); }
+
+/* ── Evidencia · §49 ────────────────────────────────────────────────────── */
+
+.dossier-estado {
+  padding: 1rem 1.3rem;
+  margin-bottom: 1.5rem;
+  border-left: 3px solid var(--ok);
+  border-radius: 0 8px 8px 0;
+  background: rgba(46, 168, 107, 0.09);
+}
+
+.dossier-estado--incompleto {
+  background: rgba(245, 165, 36, 0.09);
+  border-left-color: var(--aviso);
+}
+
+.dossier-estado p { margin: 0.45rem 0 0; font-size: 0.87rem; color: var(--tenue); max-width: 68ch; }
+
+.preguntas { list-style: none; margin: 0; padding: 0; counter-reset: p; display: grid; gap: 0.7rem; }
+
+.pregunta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+}
+
+/* Un hueco NO se disimula: se ve distinto y se ve peor. Es el punto. */
+.pregunta--sin-responder {
+  background: rgba(245, 165, 36, 0.06);
+  border-color: rgba(245, 165, 36, 0.4);
+  border-style: dashed;
+}
+
+.pregunta__num {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem; height: 1.6rem;
+  border-radius: 50%;
+  background: var(--fondo);
+  color: var(--tenue);
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.pregunta--sin-responder .pregunta__num { background: var(--aviso); color: #1a1200; }
+
+.pregunta__cuerpo h3 { margin: 0 0 0.4rem; font-size: 0.92rem; }
+.pregunta__cuerpo p { margin: 0; font-size: 0.89rem; line-height: 1.55; max-width: 70ch; }
+.pregunta__hueco { color: var(--aviso); font-style: italic; }
+
+.respuesta-lista { margin: 0; padding-left: 1.1rem; font-size: 0.89rem; display: grid; gap: 0.2rem; }
+
+.respuesta-datos { margin: 0; display: grid; gap: 0.3rem; font-size: 0.86rem; }
+.respuesta-datos div { display: flex; gap: 0.6rem; }
+.respuesta-datos dt { color: var(--tenue); font-family: ui-monospace, Menlo, monospace; font-size: 0.8rem; }
+.respuesta-datos dd { margin: 0; }
+
+.sin-responder ul { margin: 0; padding-left: 1.2rem; display: grid; gap: 0.35rem; font-size: 0.88rem; color: var(--aviso); }

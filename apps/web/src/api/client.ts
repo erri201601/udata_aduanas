@@ -22,6 +22,7 @@ export type PedimentoRead = components['schemas']['PedimentoRead']
 export type PedimentoFindings = components['schemas']['PedimentoFindings']
 export type RiskFindingRead = components['schemas']['RiskFindingRead']
 export type Severity = RiskFindingRead['severity']
+export type DossierRead = components['schemas']['DossierRead']
 export type ServiceCheck = components['schemas']['ServiceCheck']
 export type ServiceStatus = ServiceCheck['status']
 
@@ -120,4 +121,13 @@ export async function fetchPedimentoFindings(
   signal?: AbortSignal,
 ): Promise<PedimentoFindings> {
   return pedir<PedimentoFindings>(`/findings/pedimentos/${pedimentoId}`, signal)
+}
+
+
+/** Dossier §49 de una decisión: las diez preguntas y lo que falta. */
+export async function fetchDossier(
+  decisionId: string,
+  signal?: AbortSignal,
+): Promise<DossierRead> {
+  return pedir<DossierRead>(`/evidence/${decisionId}`, signal)
 }
