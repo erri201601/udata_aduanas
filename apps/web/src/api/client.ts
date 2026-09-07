@@ -18,6 +18,10 @@ export type ClassificationDetail = components['schemas']['ClassificationDetail']
 export type ClassificationCandidateRead = components['schemas']['ClassificationCandidateRead']
 export type EvidenceRecordRead = components['schemas']['EvidenceRecordRead']
 export type EvidenceKind = NonNullable<EvidenceRecordRead['evidence_kind']>
+export type PedimentoRead = components['schemas']['PedimentoRead']
+export type PedimentoFindings = components['schemas']['PedimentoFindings']
+export type RiskFindingRead = components['schemas']['RiskFindingRead']
+export type Severity = RiskFindingRead['severity']
 export type ServiceCheck = components['schemas']['ServiceCheck']
 export type ServiceStatus = ServiceCheck['status']
 
@@ -102,4 +106,18 @@ export async function fetchClassification(
   signal?: AbortSignal,
 ): Promise<ClassificationDetail> {
   return pedir<ClassificationDetail>(`/classifications/${decisionId}`, signal)
+}
+
+
+/** Pedimentos revisables. */
+export async function fetchPedimentos(signal?: AbortSignal): Promise<PedimentoRead[]> {
+  return pedir<PedimentoRead[]>('/findings/pedimentos', signal)
+}
+
+/** Un pedimento con sus hallazgos y su cobertura declarada. */
+export async function fetchPedimentoFindings(
+  pedimentoId: string,
+  signal?: AbortSignal,
+): Promise<PedimentoFindings> {
+  return pedir<PedimentoFindings>(`/findings/pedimentos/${pedimentoId}`, signal)
 }

@@ -43,7 +43,7 @@ export const PANTALLAS: DefinicionPantalla[] = [
     id: 'finding-detail',
     titulo: 'Finding Detail',
     descripcion: 'Hallazgo con su evidencia y trazabilidad',
-    implementada: false,
+    implementada: true,
   },
   {
     id: 'regulatory-sentinel',
