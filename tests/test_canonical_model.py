@@ -400,3 +400,37 @@ def test_decimal_de_dinero_sobrevive_ida_y_vuelta(pg_session: Session) -> None:
     pg_session.expire(inv)
     assert inv.total_amount == exacto
     assert isinstance(inv.total_amount, Decimal)
+
+
+@pytest.mark.integration
+def test_evidence_kind_acepta_los_cinco_valores_de_core_evidence(pg_session: Session) -> None:
+    """`to_record_fields()` (core/evidence) ya produce `evidence_kind`; la fila lo acepta."""
+    from core.evidence import builder
+    from database.models import EvidenceRecord
+
+    ev = builder.deterministic(
+        summary="Regla RGI 1 aplicada.",
+        rule_id="RGI1",
+        engine_version="rgi-engine-0.1",
+    )
+    campos = ev.to_record_fields()
+    assert campos["evidence_kind"] == "DETERMINISTIC"
+
+    fila = EvidenceRecord(data_origin="OFFICIAL", **campos)
+    pg_session.add(fila)
+    pg_session.flush()
+    pg_session.expire(fila)
+    assert fila.evidence_kind == "DETERMINISTIC"
+
+
+@pytest.mark.integration
+def test_check_rechaza_evidence_kind_invalido(pg_session: Session) -> None:
+    """El `CHECK` de la base rechaza un valor fuera del vocabulario de `EVIDENCE_KIND`."""
+    with pytest.raises(sa.exc.IntegrityError, match="ck_evidence_records_evidence_kind"):
+        pg_session.execute(
+            sa.text(
+                "INSERT INTO intelligence.evidence_records "
+                "(data_origin, evidence_kind) VALUES (:data_origin, :evidence_kind)"
+            ),
+            {"data_origin": "OFFICIAL", "evidence_kind": "INVENTADO"},
+        )

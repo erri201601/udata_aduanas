@@ -79,3 +79,15 @@ REGULATORY_EVENT_KIND: Final = (
     "ERRATA",
     "NOTICE",
 )
+
+# Tipo de evidencia en evidence_records. Espejo de core.evidence.kinds.EvidenceKind
+# (Evidence Contract) — created_by (16 chars) no distingue una norma recuperada
+# de un precedente extranjero, y esa distinción es la que impide que un caso
+# de CBP/EBTI se lea como fundamento jurídico mexicano. Aprobado por Persona 1.
+EVIDENCE_KIND: Final = (
+    "LEGAL_SOURCE",
+    "MODEL_OUTPUT",
+    "DETERMINISTIC",
+    "HUMAN",
+    "COMPARABLE",
+)

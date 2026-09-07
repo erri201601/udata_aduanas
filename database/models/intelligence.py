@@ -24,6 +24,7 @@ from database.models.enums import (
     ATTRIBUTE_STATUS,
     CLASSIFICATION_STATUS,
     ERROR_TYPE,
+    EVIDENCE_KIND,
     FINDING_SEVERITY,
     OPPORTUNITY_STATUS,
     TRADE_FLOW,
@@ -76,6 +77,13 @@ class EvidenceRecord(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Base)
     model_name: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     prompt_version: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     created_by: Mapped[str] = mapped_column(sa.String(16), nullable=False, server_default="engine")
+    # Nullable: las filas existentes no lo tienen. created_by (16 chars) no
+    # distingue una norma recuperada de un precedente de CBP/EBTI, y esa
+    # distinción es la que impide que un caso extranjero se lea como
+    # fundamento mexicano (decisión de Persona 1, cambio al Canonical Model).
+    evidence_kind: Mapped[str | None] = mapped_column(
+        check_enum(EVIDENCE_KIND, "evidence_kind"), nullable=True
+    )
 
 
 class ProductDna(

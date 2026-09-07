@@ -106,3 +106,13 @@ class RegulatoryEventKind(StrEnum):
     REPEAL = "REPEAL"
     ERRATA = "ERRATA"
     NOTICE = "NOTICE"
+
+
+class EvidenceKind(StrEnum):
+    """Tipo de evidencia en evidence_records. Espejo de core.evidence.kinds.EvidenceKind."""
+
+    LEGAL_SOURCE = "LEGAL_SOURCE"
+    MODEL_OUTPUT = "MODEL_OUTPUT"
+    DETERMINISTIC = "DETERMINISTIC"
+    HUMAN = "HUMAN"
+    COMPARABLE = "COMPARABLE"
