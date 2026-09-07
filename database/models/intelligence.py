@@ -186,6 +186,14 @@ class ClassificationDecision(
     rgi_path: Mapped[list[str]] = mapped_column(
         ARRAY(sa.String(8)), nullable=False, server_default="{}"
     )
+    # Traza completa del RGI: una entrada por paso (rule_id, status,
+    # reasoning_summary, candidate_codes, confidence, source_ids,
+    # missing_information). Nullable a propósito, SIN default: NULL dice "de
+    # esta decisión no conservamos la traza"; un `[]` diría "no hubo pasos",
+    # que sería inventar un hecho que no ocurrió. `rgi_path`/`reasoning` ya
+    # dicen QUÉ se decidió — esto es lo único que dice CÓMO (Persona 1,
+    # 2026-09-08).
+    rgi_trace: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     legal_rule_ids: Mapped[list[uuid.UUID]] = mapped_column(
         ARRAY(sa.Uuid(as_uuid=True)), nullable=False, server_default="{}"
     )
