@@ -182,6 +182,17 @@ def seed(session: Session) -> SyntheticScenario:
 
     evidence = EvidenceRecord(
         subject_kind="classification_decision",
+        # Sin `evidence_kind` la Evidence UI no puede meterla en el dossier
+        # —suponerle un tipo sería inventar la procedencia de un dato— y la
+        # pantalla de Classification la marca "Tipo no declarado".
+        #
+        # No se usa `builder.legal_source()` aquí, a diferencia de la evidencia
+        # de inferencia: exige `source_id`, y los ids los genera el servidor
+        # (`gen_random_uuid()`), así que no existen hasta el flush contra
+        # PostgreSQL real. Usarlo dejaría el seed inejecutable con la sesión
+        # simulada de los tests.
+        evidence_kind="LEGAL_SOURCE",
+        created_by="engine",
         summary="Clasificación demo sustentada en TIGIE capítulo 84.",
         source_ids=[source.id],
         content_hashes=["sha256:demo"],
