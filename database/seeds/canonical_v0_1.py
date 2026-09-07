@@ -223,8 +223,6 @@ def seed(session: Session) -> SyntheticScenario:
         confidence=Decimal("0.5800"),
         excerpt='Shenzhen Demo Electronics — línea Demo 14"',
     ).to_record_fields()
-    # `evidence_kind` todavía no tiene columna (nota en core/evidence/__init__).
-    campos_inferencia.pop("evidence_kind")
     inferencia = EvidenceRecord(
         subject_kind="product_attribute",
         data_origin=_SYNTHETIC,
