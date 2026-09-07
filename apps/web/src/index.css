@@ -368,3 +368,175 @@ code {
   color: var(--tenue);
   font-variant-numeric: tabular-nums;
 }
+
+/* ── Classification ─────────────────────────────────────────────────────── */
+
+.veredicto {
+  padding: 1.4rem 1.6rem;
+  margin-bottom: 1.25rem;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-left: 4px solid var(--ok);
+  border-radius: 10px;
+}
+
+.veredicto--insufficient_information,
+.veredicto--human_review_required { border-left-color: var(--aviso); }
+.veredicto--blocked { border-left-color: var(--mal); }
+
+.veredicto__codigo {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 1.9rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.veredicto__codigo em { font-style: normal; color: var(--tenue); font-size: 1.1rem; margin-left: 0.4rem; }
+.veredicto__codigo--sin { font-size: 1.25rem; color: var(--aviso); }
+.veredicto__nota { margin: 0.35rem 0 0; color: var(--tenue); font-size: 0.87rem; }
+
+.revision {
+  padding: 0.95rem 1.25rem;
+  margin-bottom: 1.5rem;
+  background: rgba(245, 165, 36, 0.09);
+  border-left: 3px solid var(--aviso);
+  border-radius: 0 8px 8px 0;
+}
+
+.revision p { margin: 0.4rem 0 0; font-size: 0.87rem; color: var(--tenue); }
+.revision code { margin-right: 0.5rem; color: var(--aviso); }
+
+.seccion {
+  margin: 2.25rem 0 1rem;
+  font-size: 0.73rem;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--tenue);
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--borde);
+}
+
+/* La ruta de reglas se lee como una secuencia, porque lo es. */
+.ruta {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+  padding: 0;
+}
+
+.ruta li {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.75rem;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+}
+
+.ruta li + li::before { content: '→'; color: var(--tenue); margin-right: 0.45rem; }
+.ruta--final { border-color: var(--ok) !important; }
+.ruta__regla { font-family: ui-monospace, Menlo, monospace; font-size: 0.85rem; }
+.ruta__marca { font-size: 0.7rem; color: var(--ok); }
+
+.razonamiento {
+  max-width: 68ch;
+  margin: 0 0 1rem;
+  font-size: 0.92rem;
+  line-height: 1.65;
+}
+
+.traza-parcial {
+  padding: 0.95rem 1.25rem;
+  background: rgba(79, 140, 255, 0.07);
+  border-left: 3px solid var(--acento);
+  border-radius: 0 8px 8px 0;
+}
+
+.traza-parcial p { margin: 0.4rem 0 0; font-size: 0.86rem; color: var(--tenue); max-width: 66ch; }
+
+.descartes { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.7rem; }
+
+.descartes li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.9rem;
+  align-items: start;
+  padding: 0.85rem 1.1rem;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  opacity: 0.85;
+}
+
+.descartes__codigo {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 0.85rem;
+  color: var(--tenue);
+  text-decoration: line-through;
+}
+
+.descartes p { margin: 0; font-size: 0.88rem; }
+
+/* Lo jurídico y lo interpretativo NO pueden verse igual. */
+.evidencias {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr));
+  gap: 1rem;
+}
+
+.evidencias__grupo {
+  padding: 1.1rem 1.25rem;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+}
+
+.evidencias__grupo--juridica { border-color: rgba(46, 168, 107, 0.45); }
+
+.evidencias__grupo h3 {
+  margin: 0 0 0.85rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--tenue);
+}
+
+.evidencias__grupo--juridica h3 { color: var(--ok); }
+
+.evidencia-ficha { margin-bottom: 0.9rem; }
+.evidencia-ficha:last-child { margin-bottom: 0; }
+.evidencia-ficha p { margin: 0.45rem 0 0; font-size: 0.87rem; line-height: 1.55; }
+.evidencia-ficha__meta { color: var(--tenue); font-size: 0.78rem !important; }
+
+.sin-fundamento { margin: 0; font-size: 0.87rem; color: var(--mal); }
+
+.evidencia-tipo {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: var(--fondo);
+  border: 1px solid var(--borde);
+  color: var(--tenue);
+  cursor: help;
+}
+
+.evidencia-tipo--fundamenta {
+  background: rgba(46, 168, 107, 0.16);
+  border-color: rgba(46, 168, 107, 0.5);
+  color: var(--ok);
+}
+
+.evidencia-tipo--indefinida {
+  border-style: dashed;
+  color: var(--tenue);
+  opacity: 0.85;
+}

@@ -13,6 +13,11 @@ export type ProductRead = components['schemas']['ProductRead']
 export type ProductDnaDetail = components['schemas']['ProductDnaDetail']
 export type ProductAttributeRead = components['schemas']['ProductAttributeRead']
 export type AttributeStatus = ProductAttributeRead['status']
+export type ClassificationDecisionRead = components['schemas']['ClassificationDecisionRead']
+export type ClassificationDetail = components['schemas']['ClassificationDetail']
+export type ClassificationCandidateRead = components['schemas']['ClassificationCandidateRead']
+export type EvidenceRecordRead = components['schemas']['EvidenceRecordRead']
+export type EvidenceKind = NonNullable<EvidenceRecordRead['evidence_kind']>
 export type ServiceCheck = components['schemas']['ServiceCheck']
 export type ServiceStatus = ServiceCheck['status']
 
@@ -81,4 +86,20 @@ async function pedir<T>(ruta: string, signal?: AbortSignal): Promise<T> {
   }
 
   return (await respuesta.json()) as T
+}
+
+
+/** Decisiones de clasificación, de la más reciente a la más antigua. */
+export async function fetchClassifications(
+  signal?: AbortSignal,
+): Promise<ClassificationDecisionRead[]> {
+  return pedir<ClassificationDecisionRead[]>('/classifications', signal)
+}
+
+/** Una decisión con sus candidatos y evidencias. */
+export async function fetchClassification(
+  decisionId: string,
+  signal?: AbortSignal,
+): Promise<ClassificationDetail> {
+  return pedir<ClassificationDetail>(`/classifications/${decisionId}`, signal)
 }

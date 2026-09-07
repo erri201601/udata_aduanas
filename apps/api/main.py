@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from apps.api.config import get_settings
 from apps.api.db import dispose_engine
 from apps.api.logging import configure_logging, get_logger
-from apps.api.routers import health, products
+from apps.api.routers import classifications, health, products
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -77,6 +77,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(products.router)
+    app.include_router(classifications.router)
     return app
 
 
