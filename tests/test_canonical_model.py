@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import MagicMock
 
@@ -434,3 +434,73 @@ def test_check_rechaza_evidence_kind_invalido(pg_session: Session) -> None:
             ),
             {"data_origin": "OFFICIAL", "evidence_kind": "INVENTADO"},
         )
+
+
+# ── Vigencia sin solapar (§14 maestro) — ingestion.snice.load ────────────────
+
+
+def _fraccion_abierta(pg_session: Session, *, code: str, valid_from: date, data_origin: str):
+    from database.models import TariffFraction
+
+    fila = TariffFraction(
+        code=code,
+        chapter=code[:2],
+        heading=code[:4],
+        subheading=code[:6],
+        description="x",
+        data_origin=data_origin,
+        valid_from=valid_from,
+        source_url="https://x",
+        content_hash="h",
+        retrieved_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    pg_session.add(fila)
+    pg_session.flush()
+    return fila
+
+
+@pytest.mark.integration
+def test_close_previous_fraction_versions_cierra_la_anterior(pg_session: Session) -> None:
+    """Dos fuentes que cargan el mismo código no deben dejar dos filas "vigentes hoy"."""
+    from ingestion.snice.load import _close_previous_fraction_versions
+
+    vieja = _fraccion_abierta(
+        pg_session, code="99999901", valid_from=date(2022, 1, 1), data_origin="SYNTHETIC"
+    )
+
+    _close_previous_fraction_versions(pg_session, code="99999901", new_valid_from=date(2022, 6, 7))
+    pg_session.expire(vieja)
+
+    assert vieja.valid_to == date(2022, 6, 7) - timedelta(days=1)
+
+
+@pytest.mark.integration
+def test_close_previous_fraction_versions_no_toca_si_no_hay_version_mas_nueva(
+    pg_session: Session,
+) -> None:
+    """Si la fecha nueva no es posterior, no se toca nada — lo demás lo revienta el UNIQUE."""
+    from ingestion.snice.load import _close_previous_fraction_versions
+
+    vieja = _fraccion_abierta(
+        pg_session, code="99999902", valid_from=date(2022, 6, 7), data_origin="OFFICIAL"
+    )
+
+    _close_previous_fraction_versions(pg_session, code="99999902", new_valid_from=date(2022, 6, 7))
+    pg_session.expire(vieja)
+
+    assert vieja.valid_to is None
+
+
+@pytest.mark.integration
+def test_ningun_codigo_tiene_dos_versiones_vigentes_el_mismo_dia(pg_session: Session) -> None:
+    """Regresión (Persona 1, 2026-09-08): dos fuentes cargaron `84713001` sin cerrar
+    la anterior, y las dos decían estar vigentes hoy. Guardia general, no solo del
+    cargador: sea cual sea el camino por el que entren los datos, esto no debe pasar."""
+    duplicados = pg_session.execute(
+        sa.text("""
+            SELECT code FROM regulatory.tariff_fractions
+            WHERE valid_to IS NULL GROUP BY code HAVING COUNT(*) > 1
+        """)
+    ).fetchall()
+
+    assert duplicados == []
