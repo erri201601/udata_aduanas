@@ -362,6 +362,7 @@ def test_valid_to_null_significa_vigente(pg_session: Session) -> None:
     pg_session.flush()
     encontrado = pg_session.scalar(
         sa.select(LegalDocument).where(
+            LegalDocument.short_name == "LV",
             LegalDocument.valid_from <= date(2024, 3, 15),
             (LegalDocument.valid_to.is_(None)) | (LegalDocument.valid_to >= date(2024, 3, 15)),
         )

@@ -24,6 +24,8 @@ dependencies = [
     "structlog>=24.4",
     "httpx>=0.28",
     "python-dateutil>=2.9",
+    # Ingestión — fuentes oficiales publican XLSX (SNICE: LIGIE, NICO)
+    "openpyxl>=3.1",
 ]
 
 [project.optional-dependencies]
@@ -34,6 +36,7 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.13",
     "types-python-dateutil",
+    "types-openpyxl",
 ]
 
 [build-system]
