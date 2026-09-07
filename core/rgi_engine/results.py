@@ -1,0 +1,95 @@
+"""Resultado de evaluar una regla, y de la secuencia completa.
+
+Los campos son los que exige §18 del maestro. La razón de que sean tantos es
+que un `RGIResult` tiene que poder defenderse solo: quien lo lea seis meses
+después debe ver qué regla se aplicó, con qué hechos, contra qué fuentes y con
+cuánta confianza — sin volver a ejecutar nada.
+"""
+
+from __future__ import annotations
+
+from decimal import Decimal
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from core.rgi_engine.context import TariffCandidate
+from core.rgi_engine.states import TERMINAL, RGIStatus
+
+
+class RGIResult(BaseModel):
+    """Lo que devuelve una regla al evaluarse."""
+
+    model_config = ConfigDict(frozen=True)
+
+    rule_id: str
+    """'RGI-1', 'RGI-3a', 'RGI-6'…"""
+
+    status: RGIStatus
+    input_facts: dict[str, str] = Field(default_factory=dict)
+    candidate_codes: tuple[TariffCandidate, ...] = ()
+    reasoning_summary: str = ""
+    source_ids: tuple[Any, ...] = ()
+    confidence: Decimal | None = None
+    missing_information: tuple[str, ...] = ()
+
+    @property
+    def is_terminal(self) -> bool:
+        """¿Detiene la secuencia?"""
+        return self.status in TERMINAL
+
+    @property
+    def resolved_code(self) -> str | None:
+        """El código, sólo si la regla resolvió con un único candidato.
+
+        Devuelve `None` con dos candidatos aunque el estado sea `RESOLVED`:
+        una resolución ambigua no es una resolución.
+        """
+        if self.status is not RGIStatus.RESOLVED or len(self.candidate_codes) != 1:
+            return None
+        return self.candidate_codes[0].code
+
+
+class ClassificationTrace(BaseModel):
+    """La secuencia completa: qué se evaluó, en qué orden y con qué resultado.
+
+    Es lo que hace auditable al motor. Un prompt monolítico produciría el mismo
+    código final sin poder mostrar por qué se descartó cada alternativa, y ese
+    "por qué" es justo lo que se defiende ante una auditoría (§18).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    steps: tuple[RGIResult, ...] = ()
+    final_status: RGIStatus = RGIStatus.INSUFFICIENT_INFORMATION
+    resolved_code: str | None = None
+    confidence: Decimal | None = None
+    missing_information: tuple[str, ...] = ()
+    engine_version: str = "0.1.0"
+
+    @property
+    def applied_rule(self) -> str | None:
+        """Qué regla resolvió. Responde "¿con qué regla?" del §49."""
+        return self.steps[-1].rule_id if self.steps else None
+
+    @property
+    def requires_human_review(self) -> bool:
+        """¿Necesita que alguien lo mire?
+
+        Todo lo que no sea una resolución limpia. El sistema falla hacia la
+        cautela, igual que el default de la base.
+        """
+        return self.final_status is not RGIStatus.RESOLVED or self.resolved_code is None
+
+    def rejected(self) -> tuple[str, ...]:
+        """Por qué se descartó cada regla anterior a la que resolvió.
+
+        Lo más valioso de la traza para quien audita: no es que el sistema
+        eligiera 8471.30.01, es que descartó las alternativas por un motivo
+        que se puede leer.
+        """
+        return tuple(
+            f"{p.rule_id}: {p.reasoning_summary}"
+            for p in self.steps
+            if p.status is RGIStatus.CONTINUE and p.reasoning_summary
+        )
