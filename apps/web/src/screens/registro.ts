@@ -17,9 +17,9 @@ export const PANTALLAS: DefinicionPantalla[] = [
   },
   {
     id: 'executive-dashboard',
-    titulo: 'Executive Dashboard',
-    descripcion: 'Indicadores de operación y oportunidad',
-    implementada: false,
+    titulo: 'Panorama',
+    descripcion: 'Qué ha resuelto el sistema y qué sigue esperando',
+    implementada: true,
   },
   {
     id: 'product-dna',
