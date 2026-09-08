@@ -278,3 +278,37 @@ def test_sin_traza_conservada_se_declara() -> None:
 
     assert cuerpo["trace_available"] is False
     assert cuerpo["rgi_trace"] is None
+
+
+def test_la_traza_del_test_coincide_con_la_que_escribe_el_repositorio() -> None:
+    """El fixture no puede inventarse la forma de la traza.
+
+    Si `database.repositories.classification._traza()` cambia sus claves, este
+    test falla antes de que la pantalla empiece a leer campos que ya no
+    existen. Es la única forma de que un fixture siga siendo una prueba y no
+    una suposición.
+    """
+    from datetime import date
+
+    from core.classification.result import ClassificationOutcome
+    from core.rgi_engine.context import TariffCandidate
+    from core.rgi_engine.results import ClassificationTrace, RGIResult, RGIStatus
+    from database.repositories.classification import _traza
+
+    paso = RGIResult(
+        rule_id="RGI-1",
+        status=RGIStatus.RESOLVED,
+        reasoning_summary="La partida 8471 comprende máquinas de tratamiento de datos.",
+        candidate_codes=(
+            TariffCandidate(code="8471", text="máquinas automáticas", level="heading"),
+        ),
+        confidence=Decimal("0.91"),
+    )
+    outcome = ClassificationOutcome(
+        trace=ClassificationTrace(
+            steps=(paso,), final_status=RGIStatus.RESOLVED, resolved_code="84713001"
+        ),
+        operation_date=date(2026, 3, 15),
+    )
+
+    assert sorted(_traza(outcome)[0]) == sorted(TRAZA[0])
