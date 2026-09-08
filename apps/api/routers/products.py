@@ -18,7 +18,6 @@ from typing import Annotated
 
 import sqlalchemy as sa
 from core.classification import classify_product
-from core.product_dna import ExtractedAttribute, ProductDnaDraft
 from database.models import Product, ProductAttribute, ProductDna
 from database.repositories import save_classification
 from database.repositories.notes import LegalNotesRepository
@@ -29,6 +28,7 @@ from schemas.intelligence import ProductAttributeRead, ProductDnaRead
 from schemas.operational import ProductRead
 
 from apps.api.db import SessionDep
+from apps.api.dna import cargar_borrador, terminos, version_vigente
 
 router = APIRouter(prefix="/products", tags=["products"])
 
@@ -168,40 +168,15 @@ def clasificar(
     if session.get(Product, product_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "producto no encontrado")
 
-    dna_fila = session.scalars(
-        sa.select(ProductDna)
-        .where(ProductDna.product_id == product_id, ProductDna.is_current.is_(True))
-        .order_by(ProductDna.version.desc())
-    ).first()
+    dna_fila = version_vigente(session, product_id)
     if dna_fila is None:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             "el producto no tiene Product DNA vigente: primero hay que extraerlo",
         )
 
-    atributos = session.scalars(
-        sa.select(ProductAttribute).where(ProductAttribute.product_dna_id == dna_fila.id)
-    ).all()
-
-    borrador = ProductDnaDraft(
-        summary=dna_fila.summary,
-        missing_information=tuple(dna_fila.missing_information or ()),
-        input_kinds=tuple(dna_fila.input_kinds or ()),
-        attributes=tuple(
-            ExtractedAttribute(
-                name=a.name,
-                value=a.value,
-                unit=a.unit,
-                status=a.status,  # type: ignore[arg-type]
-                confidence=a.confidence,
-                # `locator` no se persiste: los estados ya vienen saneados de
-                # cuando se extrajo, así que rehacer el saneamiento aquí los
-                # degradaría una segunda vez sin motivo.
-                locator=a.value,
-            )
-            for a in atributos
-        ),
-    )
+    borrador = cargar_borrador(session, product_id)
+    assert borrador is not None  # `version_vigente` ya garantizó que existe
 
     notas = LegalNotesRepository(session)
     hay_notas = notas.hay_corpus(on_date=peticion.operation_date)
@@ -211,7 +186,7 @@ def clasificar(
         operation_date=peticion.operation_date,
         catalog=TariffCatalogRepository(session),
         notes=notas,
-        search_terms=peticion.search_terms or _terminos(borrador),
+        search_terms=peticion.search_terms or terminos(borrador),
         trade_flow=peticion.trade_flow,
     )
 
@@ -234,15 +209,3 @@ def clasificar(
         classified_without_legal_notes=not hay_notas,
         blocked_by=outcome.blocked_by,
     )
-
-
-def _terminos(dna: ProductDnaDraft) -> list[str]:
-    """Términos de búsqueda a partir de lo sólido del Product DNA.
-
-    Sólo lo observado o extraído: buscar en la nomenclatura con un dato
-    inferido llevaría al motor por una vía que nadie leyó en el documento.
-    """
-    terminos = [a.value for a in dna.solid() if a.value]
-    if dna.summary:
-        terminos.insert(0, dna.summary)
-    return terminos[:6]

@@ -24,6 +24,7 @@ from apps.api.routers import (
     evidence,
     findings,
     health,
+    pedimentos,
     products,
 )
 
@@ -86,6 +87,7 @@ def create_app() -> FastAPI:
     app.include_router(products.router)
     app.include_router(classifications.router)
     app.include_router(findings.router)
+    app.include_router(pedimentos.router)
     app.include_router(evidence.router)
     app.include_router(dashboard.router)
     return app
