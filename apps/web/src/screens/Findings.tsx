@@ -81,25 +81,52 @@ export function Findings() {
 
       {revision && (
         <>
-          {/* Lo primero que se lee: qué se sabe y qué no. */}
-          <div
-            className={`cobertura ${revision.coverage_known ? '' : 'cobertura--incierta'}`}
-            role="note"
-          >
-            {revision.coverage_known ? (
+          {/* Lo primero que se lee: qué se sabe y qué no.
+
+              Tres estados, no dos. Un pedimento que nadie miró, uno revisado
+              a medias y uno revisado entero son cosas distintas, y sólo del
+              tercero se puede decir que está limpio. */}
+          {!revision.coverage_known ? (
+            <div className="cobertura cobertura--incierta" role="note">
+              <strong>Este pedimento no se ha auditado.</strong>
+              <p>
+                No hay ninguna revisión registrada, así que{' '}
+                <em>ausencia de hallazgos no significa que esté limpio</em>:
+                significa que nadie lo ha mirado.
+              </p>
+            </div>
+          ) : revision.is_complete ? (
+            <div className="cobertura" role="note">
               <strong>Revisión completa.</strong>
-            ) : (
-              <>
-                <strong>No consta qué se pudo verificar.</strong>
-                <p>
-                  El sistema no registra qué partidas quedaron sin comprobar,
-                  así que <em>ausencia de hallazgos no significa que el
-                  pedimento esté limpio</em>. Con estos datos, lo único que se
-                  puede afirmar es lo que aparece abajo.
-                </p>
-              </>
-            )}
-          </div>
+              <p>
+                Se comprobaron todas las partidas
+                {revision.reviewed_at &&
+                  ` · ${new Date(revision.reviewed_at).toLocaleString('es-MX')}`}
+                . Esto sí autoriza a decir que el pedimento está limpio si no
+                hay hallazgos.
+              </p>
+            </div>
+          ) : (
+            <div className="cobertura cobertura--parcial" role="note">
+              <strong>
+                Revisión incompleta: {revision.unverifiable.length}{' '}
+                {revision.unverifiable.length === 1
+                  ? 'partida no se pudo comprobar'
+                  : 'partidas no se pudieron comprobar'}
+                .
+              </strong>
+              <p>
+                Lo que aparece abajo es lo encontrado{' '}
+                <em>en lo que sí se revisó</em>. Las partidas de esta lista
+                quedaron fuera:
+              </p>
+              <ul className="cobertura__pendientes">
+                {revision.unverifiable.map((razon) => (
+                  <li key={razon}>{razon}</li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <div className="resumen-hallazgos">
             <div className="cifra">
@@ -129,8 +156,9 @@ export function Findings() {
 
           {hallazgos.length === 0 ? (
             <p className="vacio">
-              Sin hallazgos en lo revisado.
-              {!revision.coverage_known && ' No equivale a un pedimento limpio.'}
+              {revision.coverage_known && revision.is_complete
+                ? 'Revisión completa sin hallazgos: el pedimento está limpio.'
+                : 'Sin hallazgos en lo revisado. No equivale a un pedimento limpio.'}
             </p>
           ) : (
             <ul className="hallazgos">

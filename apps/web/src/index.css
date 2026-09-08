@@ -788,3 +788,18 @@ code {
   font-size: 0.84rem;
   max-width: 66ch;
 }
+
+/* Revisión a medias: ni el verde de completa ni el rojo de sin auditar. */
+.cobertura--parcial {
+  background: rgba(245, 165, 36, 0.09);
+  border-left-color: var(--aviso);
+}
+
+.cobertura__pendientes {
+  margin: 0.5rem 0 0;
+  padding-left: 1.15rem;
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--tenue);
+}
