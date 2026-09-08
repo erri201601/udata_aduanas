@@ -1,0 +1,133 @@
+"""VALIDATED -> DATABASE: artículos de la Ley Aduanera a `regulatory.legal_rules`.
+
+`regulatory.legal_rules` estaba vacía (Persona 1, notas de
+`database/repositories/notes.py`): sin ella, la RGI 1 no puede descartar una
+partida por exclusión y el RAG jurídico de Persona 3 no tiene corpus. Esta
+carga la puebla con los 274 artículos numerados de la Ley Aduanera.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, date, datetime
+from typing import TYPE_CHECKING
+
+from database.models.regulatory import LegalDocument, LegalRule, LegalSource
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+    from ingestion.diputados.ley_aduanera import ParsedArticle
+
+DIPUTADOS_SLUG = "diputados"
+LEY_ADUANERA_SHORT_NAME = "LEY_ADUANERA"
+
+# "Última reforma publicada en el Diario Oficial de la Federación el 19 de
+# noviembre de 2025" — verificado en LeyesBiblio/ref/ladua.htm.
+LEY_ADUANERA_VALID_FROM = date(2025, 11, 19)
+LEY_ADUANERA_SOURCE_URL = "https://www.diputados.gob.mx/LeyesBiblio/pdf/LAdua.pdf"
+LEY_ADUANERA_SOURCE_DOCUMENT = "Ley Aduanera (DOF, última reforma 19-nov-2025)"
+
+
+def get_or_create_diputados_source(session: Session) -> LegalSource:
+    existing = session.query(LegalSource).filter_by(slug=DIPUTADOS_SLUG).one_or_none()
+    if existing is not None:
+        return existing
+
+    source = LegalSource(
+        slug=DIPUTADOS_SLUG,
+        name="Cámara de Diputados — Servicios Parlamentarios",
+        authority="Congreso de la Unión",
+        jurisdiction="MX",
+        kind="OFFICIAL",
+        base_url="https://www.diputados.gob.mx",
+        notes=(
+            "Mirror de texto consolidado, no el instrumento jurídico: las "
+            "reformas se publican en el DOF. Mismo criterio que SNICE para "
+            "la LIGIE (Persona 1, 2026-09-05)."
+        ),
+    )
+    session.add(source)
+    session.flush()
+    return source
+
+
+def get_or_create_ley_aduanera_document(
+    session: Session,
+    source: LegalSource,
+    *,
+    content_hash: str,
+    retrieved_at: datetime,
+) -> LegalDocument:
+    existing = (
+        session.query(LegalDocument).filter_by(short_name=LEY_ADUANERA_SHORT_NAME).one_or_none()
+    )
+    if existing is not None:
+        return existing
+
+    document = LegalDocument(
+        title="Ley Aduanera",
+        short_name=LEY_ADUANERA_SHORT_NAME,
+        kind="LAW",
+        data_origin="OFFICIAL",
+        source_id=source.id,
+        valid_from=LEY_ADUANERA_VALID_FROM,
+        source_url=LEY_ADUANERA_SOURCE_URL,
+        source_document=LEY_ADUANERA_SOURCE_DOCUMENT,
+        content_hash=content_hash,
+        retrieved_at=retrieved_at,
+    )
+    session.add(document)
+    session.flush()
+    return document
+
+
+def to_legal_rule_row(
+    parsed: ParsedArticle,
+    *,
+    source: LegalSource,
+    document: LegalDocument,
+    content_hash: str,
+    retrieved_at: datetime,
+) -> LegalRule:
+    return LegalRule(
+        legal_document_id=document.id,
+        rule_number=parsed.rule_number,
+        text=parsed.text,
+        data_origin="OFFICIAL",
+        source_id=source.id,
+        valid_from=parsed.valid_from_override or LEY_ADUANERA_VALID_FROM,
+        valid_to=parsed.valid_to,
+        source_url=LEY_ADUANERA_SOURCE_URL,
+        source_document=LEY_ADUANERA_SOURCE_DOCUMENT,
+        content_hash=content_hash,
+        retrieved_at=retrieved_at,
+    )
+
+
+def load_ley_aduanera(
+    session: Session,
+    *,
+    articulos: list[ParsedArticle],
+    content_hash: str,
+    retrieved_at: datetime | None = None,
+) -> int:
+    """Inserta los artículos parseados. Devuelve el número de filas insertadas."""
+    retrieved_at = retrieved_at or datetime.now(UTC)
+    source = get_or_create_diputados_source(session)
+    document = get_or_create_ley_aduanera_document(
+        session, source, content_hash=content_hash, retrieved_at=retrieved_at
+    )
+
+    for parsed in articulos:
+        session.add(
+            to_legal_rule_row(
+                parsed,
+                source=source,
+                document=document,
+                content_hash=content_hash,
+                retrieved_at=retrieved_at,
+            )
+        )
+
+    session.flush()
+    return len(articulos)

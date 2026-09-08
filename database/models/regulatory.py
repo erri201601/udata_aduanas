@@ -77,6 +77,12 @@ class LegalRule(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Regulatory
     __tablename__ = "legal_rules"
     __table_args__ = (
         sa.Index("ix_legal_rules_vigencia", "rule_number", "valid_from", "valid_to"),
+        sa.UniqueConstraint(
+            "legal_document_id",
+            "rule_number",
+            "valid_from",
+            name="uq_legal_rules_document_rule_valid_from",
+        ),
         {"schema": _SCHEMA},
     )
 
