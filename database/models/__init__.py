@@ -3,7 +3,7 @@
 Alembic importa este paquete para descubrir metadata. Cada modelo nuevo debe
 importarse aquí, o su tabla no aparecerá en las migraciones autogeneradas.
 
-24 entidades en 3 esquemas (§8 Persona 1 / §4 TAREA_P2):
+28 entidades en 3 esquemas (§8 Persona 1 / §4 TAREA_P2):
   regulatory   — dato normativo real (OFFICIAL/PUBLIC/LICENSED)
   operational  — clientes, proveedores, operaciones (hoy SYNTHETIC)
   intelligence — decisiones, evidencia, hallazgos
@@ -33,12 +33,16 @@ from database.models.operational import (
     SyntheticScenario,
 )
 from database.models.regulatory import (
+    CustomsOffice,
     LegalDocument,
     LegalRule,
     LegalSource,
     Nico,
+    NonTariffRegulation,
+    PedimentoClave,
     RegulatoryEvent,
     TariffFraction,
+    UnitOfMeasure,
 )
 
 __all__ = [
@@ -47,6 +51,7 @@ __all__ = [
     "ClassificationDecision",
     "Client",
     "Cove",
+    "CustomsOffice",
     "EvidenceRecord",
     "GroundTruthRecord",
     "Invoice",
@@ -55,8 +60,10 @@ __all__ = [
     "LegalRule",
     "LegalSource",
     "Nico",
+    "NonTariffRegulation",
     "OpportunityFinding",
     "Pedimento",
+    "PedimentoClave",
     "PedimentoItem",
     "Product",
     "ProductAttribute",
@@ -67,4 +74,5 @@ __all__ = [
     "Supplier",
     "SyntheticScenario",
     "TariffFraction",
+    "UnitOfMeasure",
 ]

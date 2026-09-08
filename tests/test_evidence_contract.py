@@ -12,7 +12,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
-from core.evidence import builder, contract, questions
+from core.evidence import SyntheticLegalBasisError, builder, contract, questions
 from core.evidence.errors import (
     EvidenceOutOfValidityError,
     IncompleteEvidenceError,
@@ -43,6 +43,7 @@ def norma_vigente(**cambios: object):  # type: ignore[no-untyped-def]
         "document_ref": LIGIE,
         "valid_from": date(2022, 7, 7),
         "content_hash": "sha256:aaaa1111bbbb2222",
+        "data_origin": "OFFICIAL",
     }
     kwargs.update(cambios)
     return builder.legal_source(**kwargs)  # type: ignore[arg-type]
@@ -58,6 +59,7 @@ def norma_vigente(**cambios: object):  # type: ignore[no-untyped-def]
         ("document_ref", None),
         ("valid_from", None),
         ("content_hash", None),
+        ("data_origin", None),
         ("content_hash", "   "),  # una cadena en blanco no documenta nada
     ],
 )
@@ -359,3 +361,79 @@ def test_la_evidencia_es_inmutable() -> None:
 
     with pytest.raises(Exception, match=r"frozen|immutable"):
         norma.summary = "otra cosa"  # type: ignore[misc]
+
+
+# ── Ley sintética no es ley ──────────────────────────────────────────────────
+
+
+def test_una_norma_sintetica_no_fundamenta() -> None:
+    """EL TEST QUE IMPORTA.
+
+    Una norma generada cumple TODOS los campos que exige `LEGAL_SOURCE`: tiene
+    `source_id`, `document_ref`, `valid_from` y un `content_hash`
+    perfectamente calculable sobre su propio texto. Por eso el contrato no la
+    distinguía, y por eso una clasificación fundada en un fixture del RAG o en
+    una fracción del seed saldría marcada como defendible.
+    """
+    sintetica = norma_vigente(data_origin="SYNTHETIC")
+
+    assert not sintetica.is_legal_basis
+    assert sintetica.is_synthetic
+
+    with pytest.raises(SyntheticLegalBasisError) as excinfo:
+        contract.assert_legal_basis([sintetica], claim="la fracción es 8471.30.01")
+
+    assert "SYNTHETIC" in str(excinfo.value)
+
+
+def test_el_error_de_lo_sintetico_se_distingue_del_tipo_equivocado() -> None:
+    """Son fallos distintos y un revisor tiene que poder separarlos.
+
+    «Usaste un precedente extranjero» se entiende y se corrige. «El texto que
+    citaste no existe» es de otro orden.
+    """
+    extranjera = builder.comparable(
+        summary="CBP clasificó un producto similar en 8471.30.0100.",
+        jurisdiction="US",
+        case_ref="NY N123456",
+        document_ref=LIGIE,
+    )
+
+    with pytest.raises(NotLegalBasisError):
+        contract.assert_legal_basis([extranjera], claim="la fracción es 8471.30.01")
+
+    with pytest.raises(SyntheticLegalBasisError):
+        contract.assert_legal_basis(
+            [norma_vigente(data_origin="SYNTHETIC")], claim="la fracción es 8471.30.01"
+        )
+
+
+@pytest.mark.parametrize("origen", ["OFFICIAL", "PUBLIC", "LICENSED", "HUMAN_VALIDATED"])
+def test_los_demas_origenes_si_fundamentan(origen: str) -> None:
+    """Lo que se rechaza es que el contenido sea inventado, no que la copia no
+    venga del DOF: `PUBLIC` y `LICENSED` son la misma norma por otra vía."""
+    norma = norma_vigente(data_origin=origen)
+
+    assert norma.is_legal_basis
+    contract.assert_legal_basis([norma], claim="la fracción es 8471.30.01")
+
+
+def test_una_norma_real_rescata_a_una_sintetica_presente() -> None:
+    """Basta UNA fuente válida. La sintética puede acompañar sin fundamentar."""
+    contract.assert_legal_basis(
+        [norma_vigente(data_origin="SYNTHETIC"), norma_vigente(data_origin="OFFICIAL")],
+        claim="la fracción es 8471.30.01",
+    )
+
+
+def test_un_origen_inventado_se_rechaza_al_construir() -> None:
+    """Los cinco valores son cerrados (regla 3 de CLAUDE.md)."""
+    with pytest.raises(ValueError, match="cinco valores"):
+        norma_vigente(data_origin="OFICIAL")
+
+
+def test_lo_sintetico_llega_marcado_a_la_tabla() -> None:
+    """§10: `SYNTHETIC` nunca se presenta como real, tampoco al persistirse."""
+    campos = norma_vigente(data_origin="SYNTHETIC").to_record_fields()
+
+    assert campos["data_origin"] == "SYNTHETIC"

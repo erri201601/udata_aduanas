@@ -159,6 +159,96 @@ class NicoUpdate(CanonicalModel):
     valid_to: date | None = None
 
 
+# ── customs_offices ─────────────────────────────────────────────────────────
+
+
+class CustomsOfficeBase(DataOriginFields, RegulatoryFields):
+    aduana: str = Field(max_length=2)
+    seccion: str | None = Field(default=None, max_length=2)
+    name: str
+
+
+class CustomsOfficeCreate(CustomsOfficeBase):
+    pass
+
+
+class CustomsOfficeRead(CustomsOfficeBase, IdentifiedRead):
+    pass
+
+
+class CustomsOfficeUpdate(CanonicalModel):
+    name: str | None = None
+    valid_to: date | None = None
+
+
+# ── units_of_measure ────────────────────────────────────────────────────────
+
+
+class UnitOfMeasureBase(DataOriginFields, RegulatoryFields):
+    code: str = Field(max_length=2)
+    description: str
+
+
+class UnitOfMeasureCreate(UnitOfMeasureBase):
+    pass
+
+
+class UnitOfMeasureRead(UnitOfMeasureBase, IdentifiedRead):
+    pass
+
+
+class UnitOfMeasureUpdate(CanonicalModel):
+    description: str | None = None
+    valid_to: date | None = None
+
+
+# ── pedimento_claves ────────────────────────────────────────────────────────
+
+
+class PedimentoClaveBase(DataOriginFields, RegulatoryFields):
+    code: str = Field(max_length=3)
+    # NULL = pendiente de cargar (deuda técnica), nunca "sin etiqueta"/"sin
+    # supuestos" — ver el comentario de columna en database/models/regulatory.py.
+    label: str | None = None
+    supuestos_de_aplicacion: str | None = None
+
+
+class PedimentoClaveCreate(PedimentoClaveBase):
+    pass
+
+
+class PedimentoClaveRead(PedimentoClaveBase, IdentifiedRead):
+    pass
+
+
+class PedimentoClaveUpdate(CanonicalModel):
+    label: str | None = None
+    supuestos_de_aplicacion: str | None = None
+    valid_to: date | None = None
+
+
+# ── non_tariff_regulations ──────────────────────────────────────────────────
+
+
+class NonTariffRegulationBase(DataOriginFields, RegulatoryFields):
+    code: str = Field(max_length=2)
+    issuing_agency: str
+    description: str
+
+
+class NonTariffRegulationCreate(NonTariffRegulationBase):
+    pass
+
+
+class NonTariffRegulationRead(NonTariffRegulationBase, IdentifiedRead):
+    pass
+
+
+class NonTariffRegulationUpdate(CanonicalModel):
+    description: str | None = None
+    valid_to: date | None = None
+
+
 # ── regulatory_events ───────────────────────────────────────────────────────
 
 

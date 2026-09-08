@@ -15,7 +15,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from core.evidence.kinds import LEGAL_BASIS_KINDS, EvidenceKind
+from core.evidence.kinds import LEGAL_BASIS_KINDS, LEGAL_BASIS_ORIGINS, EvidenceKind
 
 
 class DocumentRef(BaseModel):
@@ -43,6 +43,27 @@ class DocumentRef(BaseModel):
     content_hash: str | None = None
 
 
+class LegalRef(BaseModel):
+    """Una norma recuperada, lista para convertirse en evidencia.
+
+    Sustituye a la tupla `(DocumentRef, date, str)` que usaba el orquestador.
+    Al añadir `data_origin` habrían quedado dos cadenas adyacentes
+    —`content_hash` y `data_origin`— que se pueden intercambiar sin que nada
+    falle: el resultado sería una norma con el hash en el origen y el origen en
+    el hash, y `data_origin` acabaría siendo un sha256 que nunca es
+    `SYNTHETIC`, así que la comprobación que estamos añadiendo no dispararía
+    jamás. Con campos nombrados eso no puede pasar.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    document_ref: DocumentRef
+    valid_from: date
+    content_hash: str
+    data_origin: str
+    valid_to: date | None = None
+
+
 class Evidence(BaseModel):
     """Una pieza de respaldo de una afirmación del sistema.
 
@@ -65,6 +86,13 @@ class Evidence(BaseModel):
     """`None` significa vigente. NUNCA se inventa una fecha de fin (§14)."""
     content_hash: str | None = None
     legal_rule_ids: tuple[uuid.UUID, ...] = ()
+
+    data_origin: str | None = None
+    """De dónde salió el contenido: uno de los cinco valores cerrados.
+
+    Obligatorio en `LEGAL_SOURCE` y determinante: `SYNTHETIC` no fundamenta.
+    Ver `LEGAL_BASIS_ORIGINS`.
+    """
 
     # ── Salida de modelo (MODEL_OUTPUT) ──────────────────────────────────────
     model_provider: str | None = None
@@ -94,8 +122,21 @@ class Evidence(BaseModel):
 
     @property
     def is_legal_basis(self) -> bool:
-        """¿Puede esta evidencia sostener una afirmación jurídica por sí sola?"""
-        return self.kind in LEGAL_BASIS_KINDS
+        """¿Puede esta evidencia sostener una afirmación jurídica por sí sola?
+
+        Dos condiciones, no una: el TIPO correcto y un ORIGEN real. Una norma
+        sintética cumple todos los campos que exige `LEGAL_SOURCE` —tiene
+        `source_id`, `document_ref`, `valid_from` y un `content_hash`
+        perfectamente calculable— y aun así no es ley.
+        """
+        if self.kind not in LEGAL_BASIS_KINDS:
+            return False
+        return self.data_origin in LEGAL_BASIS_ORIGINS
+
+    @property
+    def is_synthetic(self) -> bool:
+        """¿El contenido es generado? Se presenta siempre marcado (§10, §33)."""
+        return self.data_origin == "SYNTHETIC"
 
     def covers(self, operation_date: date) -> bool:
         """¿Estaba vigente esta norma en la fecha de la operación? (§14)
@@ -131,7 +172,7 @@ class Evidence(BaseModel):
         if ref_hash and ref_hash not in hashes:
             hashes.append(ref_hash)
 
-        return {
+        campos: dict[str, Any] = {
             "evidence_kind": self.kind.value,
             "summary": self.summary,
             "source_ids": [self.source_id] if self.source_id else [],
@@ -144,6 +185,13 @@ class Evidence(BaseModel):
             "prompt_version": self.prompt_version,
             "created_by": _CREATED_BY[self.kind],
         }
+        # Sólo cuando consta. La columna es NOT NULL, así que emitir `None`
+        # obligaría a todo llamante a sobrescribirlo, y emitir la clave siempre
+        # choca con los que ya lo pasan por su cuenta. Quien no lo tenga aquí
+        # sigue poniéndolo al ensamblar, como hasta ahora.
+        if self.data_origin is not None:
+            campos["data_origin"] = self.data_origin
+        return campos
 
 
 #: `created_by` en la tabla admite 16 caracteres y hoy es lo único que

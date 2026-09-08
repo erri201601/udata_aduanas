@@ -57,6 +57,29 @@ class EvidenceKind(StrEnum):
     """
 
 
+#: Los cinco valores cerrados de `data_origin` (regla 3 de CLAUDE.md).
+#:
+#: No se crean valores nuevos sin aprobación de Persona 1. Vive aquí y no sólo
+#: en la capa de base porque `core/` tiene que poder rechazar un origen
+#: inválido sin consultar el esquema.
+DATA_ORIGINS: Final[frozenset[str]] = frozenset(
+    {"OFFICIAL", "PUBLIC", "LICENSED", "SYNTHETIC", "HUMAN_VALIDATED"}
+)
+
+#: Orígenes que pueden fundamentar jurídicamente. Todos menos `SYNTHETIC`.
+#:
+#: Ley sintética no es ley. Un chunk de fixture, un documento de prueba o una
+#: norma generada para poblar una demo cumplen igual de bien los campos que
+#: exige `LEGAL_SOURCE` —tienen `source_id`, `document_ref`, `valid_from` y un
+#: `content_hash` perfectamente calculable— y por eso el contrato no los
+#: distinguía. Una clasificación fundada en ellos saldría marcada como
+#: defendible.
+#:
+#: `PUBLIC` y `LICENSED` sí fundamentan: son la misma norma obtenida por otra
+#: vía. Lo que se rechaza es que el CONTENIDO sea inventado, no que la copia
+#: no venga del DOF (Persona 1, 2026-09-08).
+LEGAL_BASIS_ORIGINS: Final[frozenset[str]] = DATA_ORIGINS - {"SYNTHETIC"}
+
 #: Tipos que pueden sostener una afirmación jurídica por sí solos.
 #:
 #: Deliberadamente sólo uno. HUMAN valida una interpretación, pero la norma que
@@ -70,9 +93,10 @@ LEGAL_BASIS_KINDS: Final[frozenset[EvidenceKind]] = frozenset({EvidenceKind.LEGA
 #: falta uno, la evidencia no puede defenderse y no debe existir.
 REQUIRED_FIELDS: Final[dict[EvidenceKind, frozenset[str]]] = {
     # De qué fuente, qué versión, cuándo era vigente, cómo verificar que no
-    # cambió: sin los cuatro, la cita no es comprobable.
+    # cambió — y de dónde salió el contenido. Sin los cinco, la cita no es
+    # comprobable o no consta que sea real.
     EvidenceKind.LEGAL_SOURCE: frozenset(
-        {"source_id", "document_ref", "valid_from", "content_hash"}
+        {"source_id", "document_ref", "valid_from", "content_hash", "data_origin"}
     ),
     # Qué modelo, con qué prompt y en qué versión. Sin esto no se puede
     # reproducir ni auditar una salida.

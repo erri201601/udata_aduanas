@@ -12,7 +12,7 @@ from decimal import Decimal
 
 import pytest
 from core.classification import classify_product
-from core.evidence import DocumentRef
+from core.evidence import DocumentRef, LegalRef
 from core.product_dna import ExtractedAttribute, ProductDnaDraft
 from core.rgi_engine import TariffCandidate
 
@@ -96,7 +96,16 @@ def resultado(*, headings=None, legal=True):  # type: ignore[no-untyped-def]
         catalog=Catalogo(headings),
         notes=Notas(),
         search_terms=("máquinas automáticas",),
-        legal_refs=[(LIGIE, date(2022, 7, 7), "sha256:aaaa1111")] if legal else [],
+        legal_refs=[
+            LegalRef(
+                document_ref=LIGIE,
+                valid_from=date(2022, 7, 7),
+                content_hash="sha256:aaaa1111",
+                data_origin="OFFICIAL",
+            )
+        ]
+        if legal
+        else [],
     )
 
 
@@ -199,7 +208,14 @@ def test_sin_evidencia_de_modelo_no_se_inventa_telemetria() -> None:
         catalog=Catalogo(),
         notes=Notas(),
         search_terms=("máquinas",),
-        legal_refs=[(LIGIE, date(2022, 7, 7), "sha256:aaaa1111")],
+        legal_refs=[
+            LegalRef(
+                document_ref=LIGIE,
+                valid_from=date(2022, 7, 7),
+                content_hash="sha256:aaaa1111",
+                data_origin="OFFICIAL",
+            )
+        ],
     )
 
     assert _telemetria(r) == {}
