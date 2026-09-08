@@ -17,9 +17,9 @@ export const PANTALLAS: DefinicionPantalla[] = [
   },
   {
     id: 'executive-dashboard',
-    titulo: 'Executive Dashboard',
-    descripcion: 'Indicadores de operación y oportunidad',
-    implementada: false,
+    titulo: 'Panorama',
+    descripcion: 'Qué ha resuelto el sistema y qué sigue esperando',
+    implementada: true,
   },
   {
     id: 'product-dna',
@@ -56,6 +56,12 @@ export const PANTALLAS: DefinicionPantalla[] = [
     titulo: 'Regulatory Sentinel',
     descripcion: 'Vigilancia de DOF y cambios regulatorios',
     implementada: false,
+  },
+  {
+    id: 'human-review',
+    titulo: 'Revisión',
+    descripcion: 'Decisiones que el motor no pudo sostener solo',
+    implementada: true,
   },
   {
     id: 'copilot',

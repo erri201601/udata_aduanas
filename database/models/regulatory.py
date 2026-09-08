@@ -147,6 +147,115 @@ class Nico(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin
     correlation: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
 
 
+class CustomsOffice(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base):
+    """Aduana y sección aduanera (Apéndice 1, Anexo 22 RGCE).
+
+    `aduana` no basta como llave: es un catálogo de 2 dígitos que se repite
+    entre secciones distintas de la misma aduana (Persona 1, 2026-09-08 —
+    mismo problema que resolvió Opción B para las 4 tablas del Anexo 22).
+    `seccion` es NULL en las ~12 aduanas del documento real que no traen
+    número de sección propio (p. ej. instalaciones satélite de la aduana
+    17/Matamoros) — es el dato tal como lo publica el DOF, no un hueco de
+    parseo.
+    """
+
+    __tablename__ = "customs_offices"
+    __table_args__ = (
+        sa.Index("ix_customs_offices_vigencia", "aduana", "seccion", "valid_from", "valid_to"),
+        sa.UniqueConstraint("aduana", "seccion", name="uq_customs_offices_aduana_seccion"),
+        {"schema": _SCHEMA},
+    )
+
+    aduana: Mapped[str] = mapped_column(sa.String(2), nullable=False)
+    seccion: Mapped[str | None] = mapped_column(sa.String(2), nullable=True)
+    name: Mapped[str] = mapped_column(sa.Text, nullable=False)
+
+
+class UnitOfMeasure(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base):
+    """Unidad de medida del pedimento (Apéndice 7, Anexo 22 RGCE).
+
+    `code` se ve numérico (1 = Kilo, 2 = Gramo…) pero va como `VARCHAR`, igual
+    que las fracciones: es un código, no una cantidad (Persona 1, 2026-09-08).
+    """
+
+    __tablename__ = "units_of_measure"
+    __table_args__ = (
+        sa.Index("ix_units_of_measure_vigencia", "code", "valid_from", "valid_to"),
+        {"schema": _SCHEMA},
+    )
+
+    code: Mapped[str] = mapped_column(sa.String(2), nullable=False, unique=True)
+    description: Mapped[str] = mapped_column(sa.Text, nullable=False)
+
+
+class PedimentoClave(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base):
+    """Clave de pedimento (Apéndice 2, Anexo 22 RGCE).
+
+    `code` se extrae de forma mecánica y confiable (66 claves verificadas).
+    `label` y `supuestos_de_aplicacion` quedan NULL a propósito: el PDF del
+    DOF presenta la etiqueta y la lista de supuestos de aplicación en dos
+    columnas visuales lado a lado, y `pdftotext -layout` las intercala en el
+    mismo renglón de texto sin ningún separador confiable — se probó folio
+    por folio (numeral romano como falso punto final, columnas sin hueco
+    detectable) y no hay heurística de texto que las separe sin inventar
+    contenido. Requiere extracción por coordenadas (p. ej. `pdfplumber` sobre
+    las cajas de palabras) o transcripción manual — deuda documentada, mismo
+    criterio que las notas de capítulo de la LIGIE.
+    """
+
+    __tablename__ = "pedimento_claves"
+    __table_args__ = (
+        sa.Index("ix_pedimento_claves_vigencia", "code", "valid_from", "valid_to"),
+        {"schema": _SCHEMA},
+    )
+
+    code: Mapped[str] = mapped_column(sa.String(3), nullable=False, unique=True)
+    label: Mapped[str | None] = mapped_column(
+        sa.Text,
+        nullable=True,
+        comment=(
+            "Pendiente de cargar (deuda técnica): el layout de 2 columnas del "
+            "PDF impide separar la etiqueta de los supuestos de forma "
+            "confiable. NULL = no cargado, nunca 'sin etiqueta'."
+        ),
+    )
+    supuestos_de_aplicacion: Mapped[str | None] = mapped_column(
+        sa.Text,
+        nullable=True,
+        comment=(
+            "Pendiente de cargar (deuda técnica). Toda clave tiene supuestos "
+            "de aplicación en el documento real: NULL significa inequívocamente "
+            "'no cargado', nunca 'no tiene' (Persona 1, 2026-09-08)."
+        ),
+    )
+
+
+class NonTariffRegulation(
+    UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base
+):
+    """Identificador de regulación o restricción no arancelaria (Apéndice 9).
+
+    `code` se repite entre dependencias que emiten sus propios identificadores
+    con la misma clave de 2 caracteres — confirmado en el documento real:
+    "C1" y "C6" existen tanto bajo Secretaría de Economía como bajo Secretaría
+    de Energía, con significados distintos. La llave natural es
+    `(code, issuing_agency)`, no `code` solo.
+    """
+
+    __tablename__ = "non_tariff_regulations"
+    __table_args__ = (
+        sa.Index(
+            "ix_non_tariff_regulations_vigencia", "code", "issuing_agency", "valid_from", "valid_to"
+        ),
+        sa.UniqueConstraint("code", "issuing_agency", name="uq_non_tariff_regulations_code_agency"),
+        {"schema": _SCHEMA},
+    )
+
+    code: Mapped[str] = mapped_column(sa.String(2), nullable=False)
+    issuing_agency: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    description: Mapped[str] = mapped_column(sa.Text, nullable=False)
+
+
 class RegulatoryEvent(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base):
     """Salida del DOF Regulatory Watcher: una publicación relevante y su alcance."""
 

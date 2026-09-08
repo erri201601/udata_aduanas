@@ -3,7 +3,9 @@ import { useState } from 'react'
 import { Placeholder } from './screens/Placeholder'
 import { Classification } from './screens/Classification'
 import { Evidence } from './screens/Evidence'
+import { ExecutiveDashboard } from './screens/ExecutiveDashboard'
 import { Findings } from './screens/Findings'
+import { HumanReview } from './screens/HumanReview'
 import { ProductDna } from './screens/ProductDna'
 import { SystemStatus } from './screens/SystemStatus'
 import { PANTALLAS } from './screens/registro'
@@ -45,6 +47,7 @@ export default function App() {
       </nav>
 
       <main className="contenido">
+        {pantalla.id === 'executive-dashboard' && <ExecutiveDashboard />}
         {pantalla.id === 'system-status' && <SystemStatus />}
         {pantalla.id === 'product-dna' && (
           <ProductDna
@@ -56,6 +59,7 @@ export default function App() {
         )}
         {pantalla.id === 'finding-detail' && <Findings />}
         {pantalla.id === 'evidence' && <Evidence />}
+        {pantalla.id === 'human-review' && <HumanReview />}
         {!pantalla.implementada && (
           <Placeholder titulo={pantalla.titulo} descripcion={pantalla.descripcion} />
         )}

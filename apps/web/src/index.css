@@ -788,3 +788,147 @@ code {
   font-size: 0.84rem;
   max-width: 66ch;
 }
+
+/* Revisión a medias: ni el verde de completa ni el rojo de sin auditar. */
+.cobertura--parcial {
+  background: rgba(245, 165, 36, 0.09);
+  border-left-color: var(--aviso);
+}
+
+.cobertura__pendientes {
+  margin: 0.5rem 0 0;
+  padding-left: 1.15rem;
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--tenue);
+}
+
+/* ── Tablero ejecutivo ──────────────────────────────────────────────────── */
+
+.tablero {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11.5rem, 1fr));
+  gap: 1px;
+  background: var(--borde);
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 1.5rem;
+}
+
+.tablero__cifra {
+  background: var(--panel);
+  padding: 1.1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  border-top: 2px solid transparent;
+}
+
+/* Lo pendiente pesa igual que lo hecho: un tablero que sólo cuenta éxitos
+   sirve para vender, no para dirigir. */
+.tablero__cifra--atencion { border-top-color: var(--aviso); }
+.tablero__cifra--bien { border-top-color: var(--ok); }
+
+.tablero__valor {
+  font-size: 1.7rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.tablero__cifra--atencion .tablero__valor { color: var(--aviso); }
+.tablero__cifra--bien .tablero__valor { color: var(--ok); }
+
+.tablero__etiqueta { font-size: 0.8rem; color: var(--texto); }
+.tablero__nota { font-size: 0.72rem; color: var(--tenue); line-height: 1.4; margin-top: 0.15rem; }
+
+.tablero__pie {
+  margin: 2rem 0 0;
+  padding-top: 1rem;
+  border-top: 1px solid var(--borde);
+  font-size: 0.8rem;
+  color: var(--tenue);
+  max-width: 70ch;
+}
+
+/* ── Revisión humana ────────────────────────────────────────────────────── */
+
+.revisor { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 1.5rem; max-width: 22rem; }
+.revisor span { font-size: 0.75rem; color: var(--tenue); }
+.revisor em { font-size: 0.72rem; color: var(--tenue); font-style: normal; }
+
+.revisor input,
+.revision-fila__forma input {
+  padding: 0.45rem 0.7rem;
+  background: var(--fondo);
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  color: var(--texto);
+  font: inherit;
+  font-size: 0.87rem;
+}
+
+.revisiones { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.9rem; }
+
+.revision-fila {
+  padding: 1.1rem 1.3rem;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-left: 3px solid var(--aviso);
+  border-radius: 8px;
+}
+
+.revision-fila__cabecera {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.revision-fila__sku { margin-left: 0.6rem; font-size: 0.78rem; color: var(--tenue); }
+
+.revision-fila__codigo {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.revision-fila__razon { margin: 0 0 0.5rem; font-size: 0.88rem; line-height: 1.55; max-width: 72ch; }
+.revision-fila__meta { margin: 0 0 0.8rem; font-size: 0.78rem; color: var(--tenue); }
+.sin-traza { color: var(--aviso); }
+
+.revision-fila__forma {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.8rem;
+  margin-bottom: 0.8rem;
+}
+
+.revision-fila__forma label { display: flex; flex-direction: column; gap: 0.25rem; }
+.revision-fila__forma span { font-size: 0.72rem; color: var(--tenue); }
+.revision-fila__forma .ancho { grid-column: 1 / -1; }
+
+/* Confirmar y corregir pesan lo mismo: si aceptar fuera más barato
+   visualmente, la bandeja se vaciaría sin leer. */
+.revision-fila__acciones { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+
+.boton--plano {
+  background: transparent;
+  border: 1px solid var(--borde);
+  color: var(--texto);
+}
+
+.boton--plano:hover:not(:disabled) { border-color: var(--acento); }
+
+.revisiones__pie {
+  margin: 2rem 0 0;
+  padding-top: 1rem;
+  border-top: 1px solid var(--borde);
+  font-size: 0.8rem;
+  color: var(--tenue);
+  max-width: 70ch;
+}

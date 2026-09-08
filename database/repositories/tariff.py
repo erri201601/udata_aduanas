@@ -29,6 +29,7 @@ from database.models import TariffFraction
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from datetime import date
+    from decimal import Decimal
 
     from sqlalchemy.orm import Session
 
@@ -159,3 +160,21 @@ class TariffCatalogRepository:
             )
             for f in filas
         ]
+
+    def igi_rate(self, *, on_date: date, fraction_code: str) -> Decimal | None:
+        """La tasa de IGI de una fracción, vigente en la fecha de la operación.
+
+        `None` significa que no se sabe —la fracción no existe en la tarifa
+        cargada, o existe sin tasa—, no que sea cero. La diferencia decide si un
+        hallazgo se cuantifica o se queda sin monto, y una tasa inventada en
+        cero produciría una cifra plausible y falsa.
+
+        No forma parte del `TariffCatalog` que consume el motor de RGI: ese
+        clasifica, y para clasificar la tasa es irrelevante. La usa el Money
+        Finder, que es otra cosa.
+        """
+        return self._session.scalars(
+            sa.select(TariffFraction.igi_rate)
+            .where(_vigentes(on_date), TariffFraction.code == fraction_code)
+            .limit(1)
+        ).first()

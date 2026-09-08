@@ -15,5 +15,6 @@ señal de que el diseño se rompió.
 from __future__ import annotations
 
 from database.repositories.classification import save_classification
+from database.repositories.review import save_review
 
-__all__ = ["save_classification"]
+__all__ = ["save_classification", "save_review"]

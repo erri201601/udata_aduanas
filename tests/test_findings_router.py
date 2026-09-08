@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from apps.api.db import get_session
 from apps.api.main import create_app
-from database.models import Pedimento, RiskFinding
+from database.models import Pedimento, RiskFinding, ShadowReview
 from fastapi.testclient import TestClient
 
 if TYPE_CHECKING:
@@ -72,10 +72,28 @@ def _hallazgos() -> list[RiskFinding]:
     return filas
 
 
+def _revision(*, is_complete: bool, unverifiable: list[str] | None = None) -> ShadowReview:
+    r = ShadowReview(
+        pedimento_id=PEDIMENTO_ID,
+        is_complete=is_complete,
+        unverifiable=unverifiable or [],
+        engine_version="0.1.0",
+        data_origin="SYNTHETIC",
+    )
+    return _aud(r)
+
+
 class SesionFalsa:
-    def __init__(self, *, pedimento: Pedimento | None, hallazgos: list[RiskFinding]) -> None:
+    def __init__(
+        self,
+        *,
+        pedimento: Pedimento | None,
+        hallazgos: list[RiskFinding],
+        revision: ShadowReview | None = None,
+    ) -> None:
         self._pedimento = pedimento
         self._hallazgos = hallazgos
+        self._revision = revision
 
     def get(self, _modelo: type, _id: uuid.UUID) -> Any:
         return self._pedimento
@@ -85,15 +103,22 @@ class SesionFalsa:
         resultado = type("R", (), {})()
         if entidad is Pedimento:
             resultado.all = lambda: [self._pedimento] if self._pedimento else []
+        elif entidad is ShadowReview:
+            resultado.first = lambda: self._revision
         else:
             resultado.all = lambda: self._hallazgos
         return resultado
 
 
-def _cliente(*, pedimento: Pedimento | None, hallazgos: list[RiskFinding]) -> TestClient:
+def _cliente(
+    *,
+    pedimento: Pedimento | None,
+    hallazgos: list[RiskFinding],
+    revision: ShadowReview | None = None,
+) -> TestClient:
     app = create_app()
     app.dependency_overrides[get_session] = lambda: SesionFalsa(
-        pedimento=pedimento, hallazgos=hallazgos
+        pedimento=pedimento, hallazgos=hallazgos, revision=revision
     )
     return TestClient(app)
 
@@ -113,25 +138,60 @@ def cliente_sin_hallazgos() -> Iterator[TestClient]:
 # ── La distinción que no se puede perder ────────────────────────────────────
 
 
-def test_nunca_afirma_que_un_pedimento_este_limpio(
+def test_sin_auditar_no_se_afirma_que_este_limpio(
     cliente_sin_hallazgos: TestClient,
 ) -> None:
     """EL TEST QUE IMPORTA.
 
-    Cero hallazgos NO autoriza a decir «limpio» mientras no conste qué se
-    verificó. `unverifiable` de ShadowComparison no se persiste, así que la
-    cobertura es desconocida y la API lo declara.
+    Cero hallazgos y ninguna revisión NO autoriza a decir «limpio»: nadie lo
+    miró. `coverage_known` en `false` significa «nunca se auditó», no
+    «se auditó y quedó incompleto».
     """
     cuerpo = cliente_sin_hallazgos.get(f"/findings/pedimentos/{PEDIMENTO_ID}").json()
 
     assert cuerpo["findings"] == []
     assert cuerpo["coverage_known"] is False
+    assert cuerpo["is_complete"] is None
     assert cuerpo["worst_severity"] is None
 
 
-def test_la_cobertura_es_desconocida_tambien_con_hallazgos(cliente: TestClient) -> None:
-    """Encontrar algo no significa haberlo revisado todo."""
-    assert cliente.get(f"/findings/pedimentos/{PEDIMENTO_ID}").json()["coverage_known"] is False
+def test_auditado_completo_sin_hallazgos_si_se_puede_afirmar() -> None:
+    """Éste es el único caso en que un pedimento está realmente limpio."""
+    with _cliente(pedimento=_pedimento(), hallazgos=[], revision=_revision(is_complete=True)) as c:
+        cuerpo = c.get(f"/findings/pedimentos/{PEDIMENTO_ID}").json()
+
+    assert cuerpo["coverage_known"] is True
+    assert cuerpo["is_complete"] is True
+    assert cuerpo["unverifiable"] == []
+    assert cuerpo["findings"] == []
+
+
+def test_auditado_incompleto_no_es_lo_mismo_que_sin_auditar() -> None:
+    """Tres estados, no dos. Colapsarlos haría que un pedimento sin tocar
+    pareciera revisado a medias, o al revés."""
+    with _cliente(
+        pedimento=_pedimento(),
+        hallazgos=[],
+        revision=_revision(is_complete=False, unverifiable=["partida 3: sin ficha técnica"]),
+    ) as c:
+        cuerpo = c.get(f"/findings/pedimentos/{PEDIMENTO_ID}").json()
+
+    assert cuerpo["coverage_known"] is True
+    assert cuerpo["is_complete"] is False
+    assert cuerpo["unverifiable"] == ["partida 3: sin ficha técnica"]
+
+
+def test_lo_no_verificable_llega_con_su_razon() -> None:
+    """«No pude revisarlo» sin decir por qué no sirve para actuar."""
+    with _cliente(
+        pedimento=_pedimento(),
+        hallazgos=_hallazgos(),
+        revision=_revision(is_complete=False, unverifiable=["partida 2: falta factura"]),
+    ) as c:
+        cuerpo = c.get(f"/findings/pedimentos/{PEDIMENTO_ID}").json()
+
+    assert cuerpo["unverifiable"] == ["partida 2: falta factura"]
+    assert cuerpo["reviewed_at"] is not None
 
 
 # ── Severidad ───────────────────────────────────────────────────────────────

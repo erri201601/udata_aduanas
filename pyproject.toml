@@ -58,7 +58,10 @@ src = ["apps", "core", "database", "ingestion", "rag", "graph", "synthetic", "te
 # "100000 * 0.15" se lee como código. Ruff lo marca como confundible con la
 # letra x —precaución razonable contra homoglifos— y aquí lo permitimos
 # explícitamente en vez de silenciar la regla entera.
-allowed-confusables = ["×"]
+# El guion largo se permite porque el DOF lo usa al separar el número de
+# artículo de su texto ("Artículo 36-A.–"), y el parser de rag/chunking.py
+# tiene que reconocer los dos guiones para no partir mal un artículo real.
+allowed-confusables = ["×", "–"]
 select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "TCH", "ARG", "PTH", "RUF"]
 ignore = ["E501"]
 

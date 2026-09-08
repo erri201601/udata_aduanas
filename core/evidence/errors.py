@@ -81,6 +81,32 @@ class NotLegalBasisError(EvidenceError):
         )
 
 
+class SyntheticLegalBasisError(EvidenceError):
+    """Se intentó fundamentar una afirmación jurídica con una norma SINTÉTICA.
+
+    Distinto de `NotLegalBasisError` a propósito, aunque los dos digan "esto no
+    fundamenta". Ese señala haber usado el tipo equivocado —un precedente
+    extranjero, la salida de un modelo—, algo que un revisor entiende y
+    corrige. Este señala que el contenido citado no existe: es ley inventada
+    con apariencia de recuperada, y es el peor fallo que puede tener el
+    sistema, porque el resultado sale marcado como defendible.
+
+    El caso realista no es malicioso: un fixture de pruebas del RAG, un
+    documento sembrado para poblar una demo, una fracción del seed conviviendo
+    con la tarifa real.
+    """
+
+    def __init__(self, document: str) -> None:
+        self.document = document
+        super().__init__(
+            f"'{document}' tiene data_origin=SYNTHETIC y no puede fundamentar "
+            f"una afirmación jurídica. Una norma generada cumple los mismos "
+            f"campos que una recuperada —incluido el content_hash— y aun así "
+            f"no es ley (regla 4 de CLAUDE.md, §10). Devuelve "
+            f"INSUFFICIENT_INFORMATION o HUMAN_REVIEW_REQUIRED."
+        )
+
+
 class UnsupportedClaimError(EvidenceError):
     """Una decisión jurídica llegó sin ninguna evidencia que la sostenga.
 

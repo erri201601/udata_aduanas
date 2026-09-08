@@ -8,22 +8,24 @@ alguien presentará ante la autoridad un pedimento sin revisar creyendo que
 pasó el filtro.
 
 `ShadowComparison` los separa a propósito —`divergences` frente a
-`unverifiable`— y expone `is_complete`. Pero **eso vive en memoria y no se
-persiste**: `intelligence.risk_findings` guarda los hallazgos y nada dice qué
-partidas no se pudieron comprobar.
+`unverifiable`— y expone `is_complete`. Desde que existe
+`intelligence.shadow_reviews` eso se persiste, así que la API ya puede decir
+si consta o no qué se revisó.
 
-Por eso esta API NUNCA afirma que un pedimento esté limpio. Devuelve
-`coverage_known: false` y la pantalla dice «sin hallazgos en lo revisado», que
-es lo único cierto con los datos que hay. Ver ARCHITECTURE_DECISION_REQUIRED.
+Una auditoría es un evento, no un estado: el mismo pedimento se audita varias
+veces y aquí se lee **la revisión más reciente**. Si nunca se auditó, no hay
+fila, y `coverage_known` sigue en `false` — que es la verdad, no un valor por
+omisión.
 """
 
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Annotated
 
 import sqlalchemy as sa
-from database.models import Pedimento, RiskFinding
+from database.models import Pedimento, RiskFinding, ShadowReview
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import Field
 from schemas.intelligence import RiskFindingRead
@@ -48,10 +50,24 @@ class PedimentoFindings(PedimentoRead):
     coverage_known: bool = False
     """¿Consta qué se pudo verificar y qué no?
 
-    Hoy siempre `false`: `ShadowComparison.unverifiable` no se persiste. Sin
-    esto, «cero hallazgos» no autoriza a decir «limpio» — sólo «no encontré
-    nada en lo que se haya revisado», que puede ser nada.
+    `false` significa que este pedimento nunca se auditó, no que la auditoría
+    fuera incompleta. Sin esto, «cero hallazgos» no autoriza a decir «limpio»
+    — sólo «no encontré nada en lo que se haya revisado», que puede ser nada.
     """
+
+    is_complete: bool | None = None
+    """¿Se auditó TODO? `None` si nunca se auditó.
+
+    Tres estados, no dos: auditado completo, auditado con partidas sin
+    comprobar, y nunca auditado. Colapsar el tercero en el segundo haría que
+    un pedimento sin tocar pareciera revisado a medias.
+    """
+
+    unverifiable: list[str] = Field(default_factory=list)
+    """Partidas que no se pudieron comprobar, con su razón."""
+
+    reviewed_at: datetime | None = None
+    """Cuándo se auditó por última vez. `None` si nunca."""
 
     worst_severity: str | None = None
     """La peor severidad presente, o `None` si no hay hallazgos."""
@@ -120,14 +136,25 @@ def obtener_pedimento(pedimento_id: uuid.UUID, session: SessionDep) -> Pedimento
         )
     )
 
+    # La revisión más reciente. Una auditoría es un evento: el mismo pedimento
+    # se audita antes y después de una rectificación, y la última es la que
+    # describe el estado actual.
+    revision = session.scalars(
+        sa.select(ShadowReview)
+        .where(ShadowReview.pedimento_id == pedimento_id)
+        .order_by(ShadowReview.created_at.desc())
+    ).first()
+
     detalle = PedimentoFindings.model_validate(pedimento, from_attributes=True)
     return detalle.model_copy(
         update={
             "findings": hallazgos,
             "worst_severity": _peor_severidad(hallazgos),
-            # Mientras `unverifiable` no se persista, la cobertura es
-            # desconocida. Decir lo contrario haría que un pedimento sin
-            # revisar pareciera limpio.
-            "coverage_known": False,
+            # Sin fila, nunca se auditó. No es lo mismo que auditar y no
+            # encontrar nada, y por eso no se colapsan en el mismo valor.
+            "coverage_known": revision is not None,
+            "is_complete": revision.is_complete if revision else None,
+            "unverifiable": list(revision.unverifiable) if revision else [],
+            "reviewed_at": revision.created_at if revision else None,
         }
     )

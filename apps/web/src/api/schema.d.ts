@@ -246,6 +246,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Cifras del sistema
+         * @description Todo en una respuesta: un tablero que se pinta a trozos parpadea.
+         */
+        get: operations["tablero_dashboard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Decisiones esperando revisión humana
+         * @description La bandeja, de la más antigua a la más reciente.
+         *
+         *     Lo más viejo primero a propósito: en una bandeja de trabajo, lo que lleva
+         *     más tiempo esperando es lo que más urge, no lo que acaba de llegar.
+         */
+        get: operations["pendientes_review_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/review/{decision_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirma o corrige una decisión
+         * @description Registra el veredicto humano SIN borrar el de la máquina.
+         *
+         *     Crea una decisión nueva marcada `HUMAN_VALIDATED` y saca la original de la
+         *     bandeja. Las dos comparten `product_dna_id`, que es lo que permite
+         *     emparejarlas para medir precisión (§39).
+         */
+        post: operations["revisar_review__decision_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -256,6 +323,63 @@ export interface components {
          * @enum {string}
          */
         AttributeStatus: "OBSERVED" | "EXTRACTED" | "INFERRED" | "MISSING";
+        /**
+         * Auditoria
+         * @description Qué se ha revisado de verdad.
+         */
+        Auditoria: {
+            /**
+             * Pedimentos
+             * @default 0
+             */
+            pedimentos: number;
+            /**
+             * Auditados
+             * @default 0
+             */
+            auditados: number;
+            /**
+             * Sin Auditar
+             * @default 0
+             */
+            sin_auditar: number;
+            /**
+             * Auditados Completos
+             * @default 0
+             */
+            auditados_completos: number;
+        };
+        /**
+         * Clasificaciones
+         * @description Qué ha podido resolver el motor, y qué no.
+         */
+        Clasificaciones: {
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+            /**
+             * Resueltas
+             * @default 0
+             */
+            resueltas: number;
+            /**
+             * Requieren Revision
+             * @default 0
+             */
+            requieren_revision: number;
+            /**
+             * Sin Informacion
+             * @default 0
+             */
+            sin_informacion: number;
+            /**
+             * Con Traza
+             * @default 0
+             */
+            con_traza: number;
+        };
         /** ClassificationCandidateRead */
         ClassificationCandidateRead: {
             /**
@@ -565,6 +689,31 @@ export interface components {
             blocked_by?: string | null;
         };
         /**
+         * Dashboard
+         * @description El estado del sistema en cifras que se pueden defender.
+         */
+        Dashboard: {
+            clasificaciones?: components["schemas"]["Clasificaciones"];
+            auditoria?: components["schemas"]["Auditoria"];
+            hallazgos?: components["schemas"]["Hallazgos"];
+            oportunidades?: components["schemas"]["Oportunidades"];
+            /**
+             * Productos
+             * @default 0
+             */
+            productos: number;
+            /**
+             * Filas Simuladas
+             * @default 0
+             */
+            filas_simuladas: number;
+            /**
+             * Todo Simulado
+             * @default true
+             */
+            todo_simulado: boolean;
+        };
+        /**
          * DataOrigin
          * @description §9 maestro — los cinco orígenes de dato. Cerrado.
          * @enum {string}
@@ -684,6 +833,33 @@ export interface components {
             detail?: components["schemas"]["ValidationError"][];
         };
         /**
+         * Hallazgos
+         * @description Riesgo detectado, separando lo presentable de lo investigable.
+         */
+        Hallazgos: {
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+            /** Peor Severidad */
+            peor_severidad?: string | null;
+            /**
+             * Accionables
+             * @default 0
+             */
+            accionables: number;
+            /**
+             * Solo Investigables
+             * @default 0
+             */
+            solo_investigables: number;
+            /** Impacto Cuantificado */
+            impacto_cuantificado?: string | null;
+            /** Impacto Moneda */
+            impacto_moneda?: string | null;
+        };
+        /**
          * LivenessResponse
          * @description Respuesta de liveness.
          */
@@ -702,6 +878,21 @@ export interface components {
             version: string;
             /** Timestamp */
             timestamp: string;
+        };
+        /**
+         * Oportunidades
+         * @description Dinero recuperable, que es otra conversación con el cliente.
+         */
+        Oportunidades: {
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+            /** Ahorro Cuantificado */
+            ahorro_cuantificado?: string | null;
+            /** Ahorro Moneda */
+            ahorro_moneda?: string | null;
         };
         /**
          * PedimentoFindings
@@ -778,6 +969,12 @@ export interface components {
              * @default false
              */
             coverage_known: boolean;
+            /** Is Complete */
+            is_complete?: boolean | null;
+            /** Unverifiable */
+            unverifiable?: string[];
+            /** Reviewed At */
+            reviewed_at?: string | null;
             /** Worst Severity */
             worst_severity?: string | null;
         };
@@ -846,6 +1043,117 @@ export interface components {
              * @default false
              */
             is_simulation: boolean;
+        };
+        /**
+         * PendienteRead
+         * @description Una decisión esperando a una persona, con contexto para decidir.
+         */
+        PendienteRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Synthetic Scenario Id */
+            synthetic_scenario_id?: string | null;
+            /** Seed */
+            seed?: number | null;
+            /** Model Provider */
+            model_provider?: string | null;
+            /** Model Name */
+            model_name?: string | null;
+            /** Prompt Id */
+            prompt_id?: string | null;
+            /** Prompt Version */
+            prompt_version?: string | null;
+            /** Input Tokens */
+            input_tokens?: number | null;
+            /** Output Tokens */
+            output_tokens?: number | null;
+            /** Latency Ms */
+            latency_ms?: number | null;
+            /** Attempts */
+            attempts?: number | null;
+            /** Finish Reason */
+            finish_reason?: string | null;
+            /** Confidence */
+            confidence?: string | null;
+            /**
+             * Requires Human Review
+             * @default true
+             */
+            requires_human_review: boolean;
+            data_origin: components["schemas"]["DataOrigin"];
+            /** Source Id */
+            source_id?: string | null;
+            /** Product Id */
+            product_id?: string | null;
+            /** Product Dna Id */
+            product_dna_id?: string | null;
+            trade_flow: components["schemas"]["TradeFlow"];
+            /**
+             * Operation Date
+             * Format: date
+             */
+            operation_date: string;
+            status: components["schemas"]["ClassificationStatus"];
+            /** Chapter */
+            chapter?: string | null;
+            /** Heading */
+            heading?: string | null;
+            /** Subheading */
+            subheading?: string | null;
+            /** Fraction Code */
+            fraction_code?: string | null;
+            /** Nico Code */
+            nico_code?: string | null;
+            /** Tariff Fraction Id */
+            tariff_fraction_id?: string | null;
+            /** Nico Id */
+            nico_id?: string | null;
+            /** Reasoning */
+            reasoning?: string | null;
+            /** Rgi Path */
+            rgi_path?: string[];
+            /** Rgi Trace */
+            rgi_trace?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** Legal Rule Ids */
+            legal_rule_ids?: string[];
+            /** Engine Version */
+            engine_version?: string | null;
+            /** Evidence Id */
+            evidence_id?: string | null;
+            /** Input Snapshot */
+            input_snapshot?: {
+                [key: string]: unknown;
+            };
+            /** Missing Information */
+            missing_information?: string[];
+            /** Estimated Impact Amount */
+            estimated_impact_amount?: string | null;
+            /** Estimated Impact Amount Currency */
+            estimated_impact_amount_currency?: string | null;
+            /** Producto */
+            producto?: string | null;
+            /** Sku */
+            sku?: string | null;
+            /**
+             * Pasos Traza
+             * @default 0
+             */
+            pasos_traza: number;
         };
         /** ProductAttributeRead */
         ProductAttributeRead: {
@@ -1028,6 +1336,43 @@ export interface components {
                 [key: string]: components["schemas"]["ServiceCheck"];
             };
         };
+        /**
+         * RevisionRequest
+         * @description El veredicto de una persona.
+         */
+        RevisionRequest: {
+            /**
+             * Veredicto
+             * @enum {string}
+             */
+            veredicto: "CONFIRMA" | "CORRIGE";
+            /** Reviewer */
+            reviewer: string;
+            /** Fraction Code */
+            fraction_code?: string | null;
+            /** Nota */
+            nota?: string | null;
+        };
+        /** RevisionResponse */
+        RevisionResponse: {
+            /**
+             * Original Id
+             * Format: uuid
+             */
+            original_id: string;
+            /**
+             * Revision Id
+             * Format: uuid
+             */
+            revision_id: string;
+            /**
+             * Veredicto
+             * @enum {string}
+             */
+            veredicto: "CONFIRMA" | "CORRIGE";
+            /** Fraction Code */
+            fraction_code?: string | null;
+        };
         /** RiskFindingRead */
         RiskFindingRead: {
             /**
@@ -1083,6 +1428,8 @@ export interface components {
             pedimento_item_id?: string | null;
             /** Classification Decision Id */
             classification_decision_id?: string | null;
+            /** Shadow Review Id */
+            shadow_review_id?: string | null;
             /** Finding Type */
             finding_type: string;
             /** Field */
@@ -1495,6 +1842,92 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DossierRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tablero_dashboard_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Dashboard"];
+                };
+            };
+        };
+    };
+    pendientes_review_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendienteRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revisar_review__decision_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                decision_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevisionResponse"];
                 };
             };
             /** @description Validation Error */

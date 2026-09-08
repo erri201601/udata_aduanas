@@ -51,8 +51,29 @@ class ExpectedItem(BaseModel):
     country_of_origin: str | None = None
     customs_value: Decimal | None = None
     customs_value_currency: str | None = None
-    required_nom_codes: tuple[str, ...] = ()
-    required_identifiers: tuple[str, ...] = ()
+    required_nom_codes: tuple[str, ...] | None = None
+    """Las NOM que la fracción exige. `None` significa QUE NO SE SABE.
+
+    La distinción no es cosmética. Una tupla vacía afirma «esta fracción no
+    exige ninguna NOM» y permite decir que el pedimento está limpio en ese
+    campo; `None` dice «no tengo la fuente para saberlo» y manda la partida a
+    `unverifiable`.
+
+    El valor por omisión es `None` a propósito: hoy no existe la correlación
+    fracción → NOM. No está en el Anexo 22 (verificado por Persona 2 el
+    2026-09-08: el Apéndice 9 explica qué significa cada código, pero remite al
+    Anexo 2.2.1 de un Acuerdo distinto de la Secretaría de Economía para saber
+    qué fracciones lo exigen). Mientras esa fuente no esté cargada, quien
+    construya un `ExpectedItem` sin tocar este campo obtiene «no sé», que es la
+    verdad, en vez de «no exige ninguna», que sería inventar.
+    """
+
+    required_identifiers: tuple[str, ...] | None = None
+    """Identificadores del Anexo 22 que la operación exige. `None` = no se sabe.
+
+    Misma semántica que `required_nom_codes`. El Apéndice 8 del Anexo 22 —el
+    catálogo de identificadores— está pendiente de cargar.
+    """
     sku: str | None = None
 
     confidence: Decimal | None = None

@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from core.evidence.errors import IncompleteEvidenceError
-from core.evidence.kinds import REQUIRED_FIELDS, EvidenceKind
+from core.evidence.kinds import DATA_ORIGINS, REQUIRED_FIELDS, EvidenceKind
 from core.evidence.types import DocumentRef, Evidence
 
 if TYPE_CHECKING:
@@ -46,6 +46,7 @@ def legal_source(
     document_ref: DocumentRef,
     valid_from: date,
     content_hash: str,
+    data_origin: str,
     valid_to: date | None = None,
     legal_rule_ids: tuple[uuid.UUID, ...] = (),
     excerpt: str | None = None,
@@ -57,6 +58,16 @@ def legal_source(
 
     `content_hash` es obligatorio porque es lo que hace la cita verificable.
     Una URL de gobierno puede cambiar de contenido sin cambiar de dirección.
+
+    `data_origin` es obligatorio y no tiene valor por omisión a propósito. Un
+    defecto razonable —`"OFFICIAL"`, digamos— convertiría en oficial todo lo
+    que alguien olvidara marcar, que es exactamente al revés de como debe
+    fallar esto. Quien construye la evidencia sabe de dónde sacó el texto;
+    tiene que decirlo.
+
+    Se construye igual con `SYNTHETIC`: poder representar una norma sintética
+    es necesario para las pruebas y las demos. Lo que no puede es fundamentar,
+    y de eso se encarga `assert_legal_basis`.
     """
     _exigir(
         EvidenceKind.LEGAL_SOURCE,
@@ -65,8 +76,14 @@ def legal_source(
             "document_ref": document_ref,
             "valid_from": valid_from,
             "content_hash": content_hash,
+            "data_origin": data_origin,
         },
     )
+    if data_origin not in DATA_ORIGINS:
+        raise ValueError(
+            f"data_origin '{data_origin}' no es uno de los cinco valores "
+            f"cerrados: {', '.join(sorted(DATA_ORIGINS))} (regla 3 de CLAUDE.md)."
+        )
     return Evidence(
         kind=EvidenceKind.LEGAL_SOURCE,
         summary=summary,
@@ -75,6 +92,7 @@ def legal_source(
         valid_from=valid_from,
         valid_to=valid_to,
         content_hash=content_hash,
+        data_origin=data_origin,
         legal_rule_ids=legal_rule_ids,
         excerpt=excerpt,
     )

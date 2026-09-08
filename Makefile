@@ -3,7 +3,7 @@
 SHELL := /bin/bash
 VENV  := .venv/bin
 
-.PHONY: help venv install up down logs ps api test lint fmt migrate revision reset-db health smoke service-status service-restart service-logs backup backup-list backup-timer
+.PHONY: help venv install up down logs ps api test lint fmt migrate revision reset-db health smoke service-status service-restart service-logs backup backup-list backup-timer merge
 
 help: ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -44,6 +44,10 @@ service-logs: ## Logs en vivo de la API
 
 test: ## Ejecuta los tests
 	$(VENV)/pytest
+
+merge: ## Mergea un PR sólo si los seis jobs del CI pasaron (make merge PR=47)
+	@test -n "$(PR)" || { echo "uso: make merge PR=<número>"; exit 2; }
+	@./infrastructure/scripts/merge_pr.sh $(PR)
 
 lint: ## ruff + mypy
 	$(VENV)/ruff check .
