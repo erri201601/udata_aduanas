@@ -39,8 +39,8 @@ def _business_tables() -> list[sa.Table]:
 # ── Estructura ──────────────────────────────────────────────────────────────
 
 
-def test_hay_24_entidades() -> None:
-    assert len(_tables()) == 24
+def test_hay_28_entidades() -> None:
+    assert len(_tables()) == 28
 
 
 def test_todas_las_tablas_en_los_tres_esquemas() -> None:
@@ -173,6 +173,10 @@ _ENTIDADES = [
     ("regulatory", "LegalRule"),
     ("regulatory", "TariffFraction"),
     ("regulatory", "Nico"),
+    ("regulatory", "CustomsOffice"),
+    ("regulatory", "UnitOfMeasure"),
+    ("regulatory", "PedimentoClave"),
+    ("regulatory", "NonTariffRegulation"),
     ("regulatory", "RegulatoryEvent"),
     ("operational", "SyntheticScenario"),
     ("operational", "Client"),
@@ -569,3 +573,126 @@ def test_ningun_nico_tiene_vigencias_solapadas(pg_session: Session) -> None:
     produce falsos positivos (el error que cometió Persona 1 al reportar "19
     duplicados" que no existían)."""
     assert _sin_solapes(pg_session, tabla="regulatory.nicos", columna_codigo="full_code") == []
+
+
+# ── Catálogos de referencia del Anexo 22 ────────────────────────────────────
+
+_ANEXO22_ROW_META = {
+    "data_origin": "OFFICIAL",
+    "valid_from": date(2026, 1, 15),
+    "source_url": "https://dof.gob.mx/abrirPDF.php?anio=2026&archivo=15012026-MAT.pdf",
+    "content_hash": "deadbeef",
+    "retrieved_at": datetime(2026, 1, 15, tzinfo=UTC),
+}
+
+
+@pytest.mark.integration
+def test_customs_office_permite_dos_secciones_null_bajo_la_misma_aduana(
+    pg_session: Session,
+) -> None:
+    """Regresión de dato real: la aduana 17/Matamoros tiene 2 instalaciones sin
+    número de sección propio en el DOF. `UNIQUE(aduana, seccion)` no debe
+    tratarlas como duplicado — Postgres nunca iguala NULL con NULL."""
+    from database.models import CustomsOffice
+
+    pg_session.add_all(
+        [
+            CustomsOffice(aduana="17", seccion=None, name="Puerto el Mezquital.", **_ANEXO22_ROW_META),
+            CustomsOffice(
+                aduana="17",
+                seccion=None,
+                name="Aeropuerto Internacional General Servando Canales.",
+                **_ANEXO22_ROW_META,
+            ),
+        ]
+    )
+    pg_session.flush()  # no debe lanzar IntegrityError
+
+
+@pytest.mark.integration
+def test_customs_office_rechaza_aduana_seccion_duplicada(pg_session: Session) -> None:
+    from database.models import CustomsOffice
+
+    # "99"/"9" no es una aduana real: evita chocar con datos reales ya cargados.
+    pg_session.add(CustomsOffice(aduana="99", seccion="9", name="Prueba.", **_ANEXO22_ROW_META))
+    pg_session.flush()
+
+    pg_session.add(
+        CustomsOffice(aduana="99", seccion="9", name="Prueba (duplicado).", **_ANEXO22_ROW_META)
+    )
+    with pytest.raises(sa.exc.IntegrityError, match="uq_customs_offices_aduana_seccion"):
+        pg_session.flush()
+
+
+@pytest.mark.integration
+def test_non_tariff_regulation_permite_mismo_code_en_dos_dependencias(
+    pg_session: Session,
+) -> None:
+    """Dato real confirmado en el Anexo 22: "C1" existe bajo Secretaría de
+    Economía y bajo Secretaría de Energía, con significados distintos. La
+    llave natural es `(code, issuing_agency)`, no `code` solo. Se prueba con
+    un código ficticio ("ZZ") para no depender de si el catálogo real ya
+    está cargado en esta base."""
+    from database.models import NonTariffRegulation
+
+    pg_session.add_all(
+        [
+            NonTariffRegulation(
+                code="ZZ",
+                issuing_agency="Secretaría de Economía",
+                description="Permiso previo o automático de importación definitiva/temporal.",
+                **_ANEXO22_ROW_META,
+            ),
+            NonTariffRegulation(
+                code="ZZ",
+                issuing_agency="Secretaría de Energía",
+                description="Permiso previo de importación y exportación de hidrocarburos.",
+                **_ANEXO22_ROW_META,
+            ),
+        ]
+    )
+    pg_session.flush()  # no debe lanzar IntegrityError
+
+
+@pytest.mark.integration
+def test_non_tariff_regulation_rechaza_code_y_dependencia_duplicados(
+    pg_session: Session,
+) -> None:
+    from database.models import NonTariffRegulation
+
+    pg_session.add(
+        NonTariffRegulation(
+            code="ZZ",
+            issuing_agency="Secretaría de Economía",
+            description="Certificado de cupo adicional.",
+            **_ANEXO22_ROW_META,
+        )
+    )
+    pg_session.flush()
+
+    pg_session.add(
+        NonTariffRegulation(
+            code="ZZ",
+            issuing_agency="Secretaría de Economía",
+            description="Duplicado.",
+            **_ANEXO22_ROW_META,
+        )
+    )
+    with pytest.raises(sa.exc.IntegrityError, match="uq_non_tariff_regulations_code_agency"):
+        pg_session.flush()
+
+
+@pytest.mark.integration
+def test_pedimento_clave_label_y_supuestos_null_por_omision(pg_session: Session) -> None:
+    """`label`/`supuestos_de_aplicacion` en NULL es la deuda documentada, no un
+    bug: el layout de 2 columnas del PDF no se puede separar de forma
+    confiable (ver docstring de `PedimentoClave`)."""
+    from database.models import PedimentoClave
+
+    pg_session.add(PedimentoClave(code="ZZ", **_ANEXO22_ROW_META))
+    pg_session.flush()
+    pg_session.expire_all()
+
+    fila = pg_session.query(PedimentoClave).filter_by(code="ZZ").one()
+    assert fila.label is None
+    assert fila.supuestos_de_aplicacion is None
