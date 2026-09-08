@@ -12,6 +12,8 @@ from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
 from database.models.regulatory import LegalDocument, LegalRule, LegalSource
+from database.repositories.chunks import PostgresChunkStore
+from rag.types import LegalChunk, hash_contenido
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -131,3 +133,47 @@ def load_ley_aduanera(
 
     session.flush()
     return len(articulos)
+
+
+def load_ley_aduanera_chunks(
+    session: Session,
+    *,
+    articulos: list[ParsedArticle],
+    content_hash: str,
+    retrieved_at: datetime | None = None,
+) -> int:
+    """Un chunk por artículo en `regulatory.legal_chunks`, para el RAG (§27).
+
+    Reutiliza el mismo `ParsedArticle` que llena `legal_rules` — no vuelve a
+    parsear el PDF con `rag.chunking.trocear()`, que colapsa "9o.-A" a "9o.-E"
+    en un único identificador "9O" y no reconoce los artículos "bis" (frente
+    a esto, `ingestion.diputados.ley_aduanera` sí distingue los 274 reales;
+    verificado esta sesión, no volver a intentar `trocear()` en el documento
+    real sin arreglar antes esos dos huecos).
+
+    Sin `embedding`: no hay proveedor de embeddings configurado todavía. Los
+    chunks quedan recuperables por término desde hoy; `applicable()`/`search()`
+    los reindexa con vector en cuanto Persona 3 lo calcule.
+    """
+    retrieved_at = retrieved_at or datetime.now(UTC)
+    source = get_or_create_diputados_source(session)
+    document = get_or_create_ley_aduanera_document(
+        session, source, content_hash=content_hash, retrieved_at=retrieved_at
+    )
+
+    chunks = [
+        LegalChunk(
+            source_id=source.id,
+            document_id=document.id,
+            document=document.title,
+            article=parsed.rule_number,
+            text=parsed.text,
+            content_hash=hash_contenido(parsed.text),
+            data_origin="OFFICIAL",
+            valid_from=parsed.valid_from_override or LEY_ADUANERA_VALID_FROM,
+            valid_to=parsed.valid_to,
+            url=LEY_ADUANERA_SOURCE_URL,
+        )
+        for parsed in articulos
+    ]
+    return PostgresChunkStore(session).add(chunks)

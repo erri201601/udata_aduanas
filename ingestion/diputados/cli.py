@@ -64,6 +64,15 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         action="store_true",
         help="Solo sube y verifica el RAW en --target; no toca la base.",
     )
+    parser.add_argument(
+        "--chunks",
+        action="store_true",
+        help=(
+            "Además de regulatory.legal_rules, carga un chunk por artículo en "
+            "regulatory.legal_chunks (§27, RAG) — sin embedding todavía: "
+            "recuperable por término, no por similitud, hasta que se vectorice."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -108,10 +117,25 @@ def main(argv: list[str] | None = None) -> int:
             content_hash=capture.content_hash,
             retrieved_at=capture.retrieved_at,
         )
+        n_chunks = None
+        if args.chunks:
+            n_chunks = load.load_ley_aduanera_chunks(
+                session,
+                articulos=articulos,
+                content_hash=capture.content_hash,
+                retrieved_at=capture.retrieved_at,
+            )
         session.commit()
 
     print(f"OK ({args.target}): {n_articulos} artículos insertados en regulatory.legal_rules.")
-    log.info("diputados.ley_aduanera.cli.done", target=args.target, articulos=n_articulos)
+    if n_chunks is not None:
+        print(f"OK ({args.target}): {n_chunks} chunks insertados en regulatory.legal_chunks.")
+    log.info(
+        "diputados.ley_aduanera.cli.done",
+        target=args.target,
+        articulos=n_articulos,
+        chunks=n_chunks,
+    )
     return 0
 
 

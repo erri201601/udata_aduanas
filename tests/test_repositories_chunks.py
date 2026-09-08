@@ -155,7 +155,10 @@ def test_add_y_search_ida_y_vuelta(pg_session: sa.orm.Session) -> None:  # noqa:
     )
     assert n == 2
 
-    encontrados = store.search(on_date=FECHA, solo_fundamentables=True)
+    # `limit` alto a propósito: la base ya trae el corpus real cargado esta
+    # sesión (274 artículos de la Ley Aduanera), y el default de 10 los
+    # ordenaría por delante de estas dos filas de prueba de 2020.
+    encontrados = store.search(on_date=FECHA, solo_fundamentables=True, limit=10_000)
     articulos = {c.article for c in encontrados if c.document_id == doc.id}
     assert "1" in articulos
     assert "2" not in articulos  # SYNTHETIC no fundamenta
