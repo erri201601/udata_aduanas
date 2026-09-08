@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from datetime import date
 
-    from core.evidence import DocumentRef, Evidence
+    from core.evidence import Evidence, LegalRef
     from core.product_dna import ProductDnaDraft
     from core.rgi_engine import ClassificationTrace, Interpreter, LegalNotes, TariffCatalog
     from core.taxation import Money, TaxRates
@@ -49,7 +49,7 @@ def classify_product(
     notes: LegalNotes,
     interpreter: Interpreter | None = None,
     search_terms: Sequence[str] = (),
-    legal_refs: Sequence[tuple[DocumentRef, date, str]] = (),
+    legal_refs: Sequence[LegalRef] = (),
     trade_flow: str = "IMPORT",
 ) -> ClassificationOutcome:
     """Clasifica un producto y devuelve la decisión con lo que la sostiene.
@@ -161,7 +161,7 @@ def _evidencias_de(
     traza: ClassificationTrace,
     *,
     dna: ProductDnaDraft,
-    legal_refs: Sequence[tuple[DocumentRef, date, str]],
+    legal_refs: Sequence[LegalRef],
 ) -> list[Evidence]:
     """Convierte la traza y el DNA en evidencia, cada pieza con su tipo.
 
@@ -174,7 +174,8 @@ def _evidencias_de(
     evidencias: list[Evidence] = []
 
     # Las normas recuperadas: lo único que fundamenta.
-    for doc, valid_from, content_hash in legal_refs:
+    for norma in legal_refs:
+        doc = norma.document_ref
         evidencias.append(
             builder.legal_source(
                 summary=f"{doc.document}"
@@ -182,8 +183,10 @@ def _evidencias_de(
                 + " sustenta la clasificación.",
                 source_id=uuid.uuid5(uuid.NAMESPACE_URL, doc.url or doc.document),
                 document_ref=doc,
-                valid_from=valid_from,
-                content_hash=content_hash,
+                valid_from=norma.valid_from,
+                valid_to=norma.valid_to,
+                content_hash=norma.content_hash,
+                data_origin=norma.data_origin,
             )
         )
 

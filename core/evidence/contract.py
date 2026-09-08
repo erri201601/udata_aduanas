@@ -15,9 +15,10 @@ from typing import TYPE_CHECKING
 from core.evidence.errors import (
     EvidenceOutOfValidityError,
     NotLegalBasisError,
+    SyntheticLegalBasisError,
     UnsupportedClaimError,
 )
-from core.evidence.kinds import EvidenceKind
+from core.evidence.kinds import LEGAL_BASIS_KINDS, EvidenceKind
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -36,8 +37,12 @@ def assert_legal_basis(evidences: Sequence[Evidence], *, claim: str) -> None:
     resolución extranjera puede orientar la interpretación, pero no obliga en
     México (§11).
 
+    Una norma SINTÉTICA tampoco, y ese error se reporta aparte: significa que
+    el contenido citado no existe, no que se usó el tipo equivocado.
+
     Raises:
         UnsupportedClaimError: si no hay ninguna evidencia.
+        SyntheticLegalBasisError: si la única fuente jurídica es sintética.
         NotLegalBasisError: si hay evidencias pero ninguna es fundamento.
     """
     if not evidences:
@@ -45,6 +50,18 @@ def assert_legal_basis(evidences: Sequence[Evidence], *, claim: str) -> None:
 
     if any(e.is_legal_basis for e in evidences):
         return
+
+    # Antes que nada, el caso sintético: si llegó una LEGAL_SOURCE y lo único
+    # que la descalifica es su origen, decirlo con precisión. Un
+    # `NotLegalBasisError` aquí diría "LEGAL_SOURCE no es fundamento", que es
+    # falso y desconcertante para quien lo lea en un log.
+    sintetica = next(
+        (e for e in evidences if e.kind in LEGAL_BASIS_KINDS and e.is_synthetic),
+        None,
+    )
+    if sintetica is not None:
+        documento = sintetica.document_ref.document if sintetica.document_ref else sintetica.summary
+        raise SyntheticLegalBasisError(documento)
 
     # Señalar el tipo más engañoso de los presentes: un COMPARABLE parece
     # fundamento y no lo es, y ese es el error que de verdad queremos delatar.

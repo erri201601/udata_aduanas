@@ -66,14 +66,23 @@ from core.evidence.errors import (
     EvidenceOutOfValidityError,
     IncompleteEvidenceError,
     NotLegalBasisError,
+    SyntheticLegalBasisError,
     UnsupportedClaimError,
 )
-from core.evidence.kinds import LEGAL_BASIS_KINDS, REQUIRED_FIELDS, EvidenceKind
+from core.evidence.kinds import (
+    DATA_ORIGINS,
+    LEGAL_BASIS_KINDS,
+    LEGAL_BASIS_ORIGINS,
+    REQUIRED_FIELDS,
+    EvidenceKind,
+)
 from core.evidence.questions import UNKNOWN, Dossier
-from core.evidence.types import DocumentRef, Evidence
+from core.evidence.types import DocumentRef, Evidence, LegalRef
 
 __all__ = [
+    "DATA_ORIGINS",
     "LEGAL_BASIS_KINDS",
+    "LEGAL_BASIS_ORIGINS",
     "REQUIRED_FIELDS",
     "UNKNOWN",
     "DocumentRef",
@@ -83,7 +92,9 @@ __all__ = [
     "EvidenceKind",
     "EvidenceOutOfValidityError",
     "IncompleteEvidenceError",
+    "LegalRef",
     "NotLegalBasisError",
+    "SyntheticLegalBasisError",
     "UnsupportedClaimError",
     "builder",
     "contract",
