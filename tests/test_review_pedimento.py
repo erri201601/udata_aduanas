@@ -71,10 +71,12 @@ def test_el_dinero_de_partidas_distintas_se_suma() -> None:
     Dentro de una partida los montos NO se suman —varias divergencias explican
     un mismo delta— pero entre partidas sí: es dinero separado.
     """
-    r = review_pedimento([
-        linea(1, igi_declarada="0.00", igi_esperada="0.15"),
-        linea(2, igi_declarada="0.00", igi_esperada="0.15"),
-    ])
+    r = review_pedimento(
+        [
+            linea(1, igi_declarada="0.00", igi_esperada="0.15"),
+            linea(2, igi_declarada="0.00", igi_esperada="0.15"),
+        ]
+    )
 
     assert len(r.findings) == 2
     una_sola = review_pedimento([linea(1, igi_declarada="0.00", igi_esperada="0.15")])
@@ -98,10 +100,12 @@ def test_un_sobrepago_produce_una_oportunidad() -> None:
 def test_no_suma_divisas_distintas() -> None:
     """Convertir exigiría elegir un tipo de cambio, y elegirlo mal cambia la
     cifra que se le lleva al cliente."""
-    r = review_pedimento([
-        linea(1, divisa="MXN", igi_declarada="0.00", igi_esperada="0.15"),
-        linea(2, divisa="USD", igi_declarada="0.00", igi_esperada="0.15"),
-    ])
+    r = review_pedimento(
+        [
+            linea(1, divisa="MXN", igi_declarada="0.00", igi_esperada="0.15"),
+            linea(2, divisa="USD", igi_declarada="0.00", igi_esperada="0.15"),
+        ]
+    )
 
     assert r.mixed_currencies
     assert r.total_exposure is None
