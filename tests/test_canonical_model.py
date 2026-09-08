@@ -39,8 +39,8 @@ def _business_tables() -> list[sa.Table]:
 # ── Estructura ──────────────────────────────────────────────────────────────
 
 
-def test_hay_28_entidades() -> None:
-    assert len(_tables()) == 28
+def test_hay_29_entidades() -> None:
+    assert len(_tables()) == 29
 
 
 def test_todas_las_tablas_en_los_tres_esquemas() -> None:
@@ -171,6 +171,7 @@ _ENTIDADES = [
     ("regulatory", "LegalSource"),
     ("regulatory", "LegalDocument"),
     ("regulatory", "LegalRule"),
+    ("regulatory", "LegalChunkRecord"),
     ("regulatory", "TariffFraction"),
     ("regulatory", "Nico"),
     ("regulatory", "CustomsOffice"),

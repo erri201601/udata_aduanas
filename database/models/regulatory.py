@@ -12,6 +12,7 @@ from datetime import date
 from decimal import Decimal
 
 import sqlalchemy as sa
+from pgvector.sqlalchemy import Vector
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -285,3 +286,61 @@ class RegulatoryEvent(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Regu
     affected_rule_ids: Mapped[list[uuid.UUID]] = mapped_column(
         ARRAY(sa.Uuid(as_uuid=True)), nullable=False, server_default="{}"
     )
+
+
+#: Dimensión del vector de embeddings. 1536 = OpenAI `text-embedding-3-small`,
+#: el único proveedor de embeddings ya implementado (core/llm/providers/openai.py).
+#: Persona 3 elige el modelo final del RAG; si es otro con otra dimensión, esto
+#: cambia con una migración nueva que recree la columna — no hay forma de que
+#: una tabla `vector` acepte dos anchos a la vez. ARCHITECTURE_DECISION_REQUIRED
+#: si el modelo final no es de 1536.
+EMBEDDING_DIM = 1536
+
+
+class LegalChunkRecord(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base):
+    """El `ChunkStore` real sobre pgvector que pide `rag/__init__.py` (§27, PR #45).
+
+    `rag.types.LegalChunk` es el contrato en memoria; esta es su fila. La
+    vigencia y el `data_origin` van por CHUNK, no por documento — igual que en
+    `LegalRule` y por la misma razón (regla 5 CLAUDE.md): el artículo 36-A se
+    reformó en 2018 y el 1 viene de 1995, y preguntar qué regía en una fecha
+    histórica no puede devolver el texto de hoy.
+
+    No hay FK a `LegalRule`: un chunk puede existir sin que haya una fila de
+    `legal_rules` detrás (p. ej. si algún día se trocea directo de RAW), así
+    que `article`/`path`/`text` se guardan aquí también, aunque hoy coincidan
+    con los de la regla de la que salió.
+    """
+
+    __tablename__ = "legal_chunks"
+    __table_args__ = (
+        # El filtro temporal va en el WHERE, antes de puntuar por similitud
+        # (Persona 3, PR #45): sin este índice, cada búsqueda escanearía la
+        # tabla entera para descartar lo no vigente antes de poder rankear.
+        sa.Index("ix_legal_chunks_vigencia", "valid_from", "valid_to"),
+        sa.UniqueConstraint(
+            "legal_document_id",
+            "article",
+            "valid_from",
+            name="uq_legal_chunks_document_article_valid_from",
+        ),
+        sa.Index(
+            "ix_legal_chunks_embedding_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_with={"m": 16, "ef_construction": 64},
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+        {"schema": _SCHEMA},
+    )
+
+    legal_document_id: Mapped[uuid.UUID] = mapped_column(
+        sa.ForeignKey(f"{_SCHEMA}.legal_documents.id", ondelete="RESTRICT"), nullable=False
+    )
+    # Identificador citable: "36-A", "36-A fracción I", "Transitorio Segundo".
+    article: Mapped[str] = mapped_column(sa.String(64), nullable=False)
+    path: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    heading: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    text: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    # NULL hasta que se calcule: un chunk se puede insertar antes de vectorizar.
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)

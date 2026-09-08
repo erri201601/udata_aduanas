@@ -277,3 +277,30 @@ class RegulatoryEventUpdate(CanonicalModel):
     affected_fraction_codes: list[str] | None = None
     affected_rule_ids: list[uuid.UUID] | None = None
     valid_to: date | None = None
+
+
+# ── legal_chunks ────────────────────────────────────────────────────────────
+
+
+class LegalChunkRecordBase(DataOriginFields, RegulatoryFields):
+    legal_document_id: uuid.UUID
+    article: str = Field(max_length=64)
+    path: str | None = None
+    heading: str | None = None
+    text: str
+    # Fuera del repr: son cientos de números, no algo que se quiera en un log.
+    embedding: list[float] | None = Field(default=None, repr=False)
+
+
+class LegalChunkRecordCreate(LegalChunkRecordBase):
+    pass
+
+
+class LegalChunkRecordRead(LegalChunkRecordBase, IdentifiedRead):
+    pass
+
+
+class LegalChunkRecordUpdate(CanonicalModel):
+    text: str | None = None
+    embedding: list[float] | None = Field(default=None, repr=False)
+    valid_to: date | None = None
