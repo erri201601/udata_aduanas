@@ -56,12 +56,17 @@ class ClassificationDetail(ClassificationDecisionRead):
     evidences: list[EvidenceRecordRead] = Field(default_factory=list)
 
     trace_available: bool = False
-    """¿Está la traza paso a paso?
+    """¿Se conservó la traza paso a paso de esta decisión?
 
-    Hoy la base guarda `rgi_path` —sólo los identificadores de regla— y un
-    `reasoning` global, pero no el razonamiento de CADA paso. La bandera
-    existe para que la pantalla lo diga en vez de pintar una explicación
-    parcial como si fuera completa.
+    `rgi_trace` es nullable a propósito: `NULL` significa «de esta decisión no
+    conservamos la traza», que es distinto de «no hubo pasos». Las decisiones
+    anteriores a la columna llegan así, y la pantalla lo dice en vez de
+    aparentar una explicación que no tiene.
+
+    La traza se CONGELA al persistir; no se reconstruye. Reejecutar el motor
+    para explicarla daría un razonamiento distinto al que se firmó si la
+    tarifa cambió, y una auditoría que muestra otra cosa que lo firmado es
+    peor que no tener auditoría.
     """
 
 
@@ -119,9 +124,8 @@ def obtener_decision(decision_id: uuid.UUID, session: SessionDep) -> Classificat
             "evidences": [
                 EvidenceRecordRead.model_validate(e, from_attributes=True) for e in evidencias
             ],
-            # Sin razonamiento por paso, la traza no está completa. Decirlo es
-            # parte del contrato: una explicación parcial presentada como
-            # completa es peor que no dar ninguna.
-            "trace_available": False,
+            # `None` es «no se conservó», no «no hubo pasos». La distinción
+            # es la que permite que la pantalla diga la verdad.
+            "trace_available": decision.rgi_trace is not None,
         }
     )

@@ -18,6 +18,16 @@ import { EvidenceKindBadge } from '../components/EvidenceKindBadge'
 import { fundamenta } from '../components/evidenceKinds'
 import { useClassification, useClassifications } from '../hooks/useClassifications'
 
+/** Un paso de la traza, tal como lo congela `database/repositories`. */
+interface PasoRGI {
+  rule_id?: string
+  status?: string
+  reasoning_summary?: string
+  candidate_codes?: string[]
+  confidence?: string | null
+  missing_information?: string[]
+}
+
 /** Estados que no resolvieron: se muestran como tales, no como un hueco. */
 const SIN_RESOLVER: Record<string, string> = {
   INSUFFICIENT_INFORMATION: 'No hubo información suficiente para clasificar.',
@@ -114,32 +124,81 @@ export function Classification() {
 
           <h2 className="seccion">Cómo se llegó</h2>
 
-          {detalle.rgi_path.length > 0 && (
-            <ol className="ruta">
-              {detalle.rgi_path.map((regla, i) => (
-                <li key={regla} className={i === detalle.rgi_path.length - 1 ? 'ruta--final' : ''}>
-                  <span className="ruta__regla">{regla}</span>
-                  {i === detalle.rgi_path.length - 1 && (
-                    <span className="ruta__marca">resolvió</span>
-                  )}
-                </li>
-              ))}
+          {detalle.trace_available && detalle.rgi_trace ? (
+            <ol className="traza">
+              {(detalle.rgi_trace as PasoRGI[]).map((paso, i) => {
+                const ultimo = i === (detalle.rgi_trace?.length ?? 0) - 1
+
+                return (
+                  <li
+                    key={`${paso.rule_id}-${i}`}
+                    className={`paso ${ultimo ? 'paso--final' : ''}`}
+                  >
+                    <div className="paso__cabecera">
+                      <span className="paso__regla">{paso.rule_id}</span>
+                      <span className={`paso__estado paso__estado--${(paso.status ?? '').toLowerCase()}`}>
+                        {paso.status}
+                      </span>
+                      {ultimo && <span className="ruta__marca">resolvió</span>}
+                    </div>
+
+                    {paso.reasoning_summary && (
+                      <p className="paso__razon">{paso.reasoning_summary}</p>
+                    )}
+
+                    {paso.candidate_codes && paso.candidate_codes.length > 0 && (
+                      <p className="paso__candidatos">
+                        Consideró:{' '}
+                        {paso.candidate_codes.map((c) => (
+                          <code key={c}>{c}</code>
+                        ))}
+                      </p>
+                    )}
+
+                    {paso.missing_information && paso.missing_information.length > 0 && (
+                      <p className="paso__falto">
+                        Le faltó:{' '}
+                        {paso.missing_information.map((m) => (
+                          <code key={m}>{m}</code>
+                        ))}
+                      </p>
+                    )}
+                  </li>
+                )
+              })}
             </ol>
+          ) : (
+            <>
+              {detalle.rgi_path.length > 0 && (
+                <ol className="ruta">
+                  {detalle.rgi_path.map((regla, i) => (
+                    <li
+                      key={regla}
+                      className={i === detalle.rgi_path.length - 1 ? 'ruta--final' : ''}
+                    >
+                      <span className="ruta__regla">{regla}</span>
+                      {i === detalle.rgi_path.length - 1 && (
+                        <span className="ruta__marca">resolvió</span>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              )}
+
+              <div className="traza-parcial" role="note">
+                <strong>De esta decisión no se conservó la traza.</strong>
+                <p>
+                  Es anterior a que el sistema empezara a guardarla, así que
+                  sólo consta qué reglas se aplicaron, no el razonamiento de
+                  cada paso. No significa que el motor no evaluara reglas:
+                  significa que no lo escribimos. Las decisiones nuevas sí la
+                  traen.
+                </p>
+              </div>
+            </>
           )}
 
           {detalle.reasoning && <p className="razonamiento">{detalle.reasoning}</p>}
-
-          {!detalle.trace_available && (
-            <div className="traza-parcial" role="note">
-              <strong>Traza parcial.</strong>
-              <p>
-                Se muestran las reglas aplicadas y el razonamiento global, pero
-                no el razonamiento de cada paso: el motor lo produce y la base
-                todavía no lo guarda. Se dice aquí en vez de presentar una
-                explicación incompleta como si fuera completa.
-              </p>
-            </div>
-          )}
 
           {/* ── Alternativas descartadas ────────────────────────────────── */}
 

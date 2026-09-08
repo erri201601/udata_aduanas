@@ -57,7 +57,29 @@ def _aud(fila: Any) -> Any:
     return fila
 
 
-def _decision() -> ClassificationDecision:
+TRAZA = [
+    {
+        "rule_id": "RGI-1",
+        "status": "RESOLVED",
+        "reasoning_summary": "La partida 8471 comprende máquinas de tratamiento de datos.",
+        "candidate_codes": ["8471"],
+        "confidence": "0.9100",
+        "source_ids": [],
+        "missing_information": [],
+    },
+    {
+        "rule_id": "RGI-6",
+        "status": "RESOLVED",
+        "reasoning_summary": "Entre subpartidas, la 8471.30 es la de portátiles.",
+        "candidate_codes": ["84713001"],
+        "confidence": "0.9100",
+        "source_ids": [],
+        "missing_information": [],
+    },
+]
+
+
+def _decision(*, con_traza: bool = True) -> ClassificationDecision:
     d = ClassificationDecision(
         trade_flow="IMPORT",
         operation_date=date(2026, 3, 15),
@@ -76,6 +98,8 @@ def _decision() -> ClassificationDecision:
         data_origin="SYNTHETIC",
     )
     d.id = DECISION_ID
+    # NULL = no se conservó la traza. Distinto de [] = no hubo pasos.
+    d.rgi_trace = TRAZA if con_traza else None
     return _aud(d)
 
 
@@ -232,11 +256,25 @@ def test_declara_lo_que_falto(cliente: TestClient) -> None:
     ]
 
 
-def test_avisa_que_la_traza_paso_a_paso_no_esta(cliente: TestClient) -> None:
-    """Una explicación parcial presentada como completa es peor que ninguna.
+def test_la_traza_llega_paso_a_paso(cliente: TestClient) -> None:
+    """Cada paso con su razonamiento: es lo que hace defendible la decisión."""
+    cuerpo = cliente.get(f"/classifications/{DECISION_ID}").json()
 
-    La base guarda `rgi_path` y un `reasoning` global, pero no el razonamiento
-    de cada paso. Mientras eso siga así, la API lo declara y la pantalla lo
-    dice, en vez de aparentar una traza que no tiene.
+    assert cuerpo["trace_available"] is True
+    assert [p["rule_id"] for p in cuerpo["rgi_trace"]] == ["RGI-1", "RGI-6"]
+    assert all(p["reasoning_summary"] for p in cuerpo["rgi_trace"])
+
+
+def test_sin_traza_conservada_se_declara() -> None:
+    """`NULL` significa «no la conservamos», no «no hubo pasos».
+
+    Las decisiones anteriores a la columna llegan así. Taparlo con un `[]`
+    haría creer que el motor no evaluó ninguna regla.
     """
-    assert cliente.get(f"/classifications/{DECISION_ID}").json()["trace_available"] is False
+    app = create_app()
+    app.dependency_overrides[get_session] = lambda: SesionFalsa(decision=_decision(con_traza=False))
+    with TestClient(app) as c:
+        cuerpo = c.get(f"/classifications/{DECISION_ID}").json()
+
+    assert cuerpo["trace_available"] is False
+    assert cuerpo["rgi_trace"] is None
