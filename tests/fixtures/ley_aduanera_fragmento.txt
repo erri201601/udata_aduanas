@@ -1,0 +1,51 @@
+# ADVERTENCIA — ESTE FRAGMENTO NO ES TEXTO OFICIAL
+#
+# Reproduce la ESTRUCTURA real de la Ley Aduanera —numeración con sufijo
+# (36-A), fracciones en romanos, marcas de reforma con fecha del DOF, títulos
+# y capítulos, transitorios con ordinal escrito— porque un parser probado
+# contra prosa inventada falla el día que llega el documento real.
+#
+# El texto NO está verificado contra el DOF y por eso todo chunk que salga de
+# aquí se marca SYNTHETIC. Con ese origen no puede fundamentar nada: es
+# exactamente la salvaguarda que hace seguro usarlo.
+#
+# ANTES DE CARGAR ALGO PARECIDO COMO OFFICIAL hay que sustituirlo por el texto
+# real descargado del DOF, con su content_hash y su URL.
+
+TÍTULO TERCERO
+DEL DESPACHO DE MERCANCÍAS
+
+CAPÍTULO ÚNICO
+
+Artículo 35.- Se entiende por despacho el conjunto de actos y formalidades
+relativos a la entrada de mercancías al territorio nacional y a su salida del
+mismo, que de acuerdo con los diferentes tráficos y regímenes aduaneros
+establecidos deben realizar en la aduana las autoridades aduaneras y quienes
+introducen o extraen mercancías.
+
+Artículo 36.- Quienes introduzcan o extraigan mercancías del territorio
+nacional destinándolas a un régimen aduanero, están obligados a transmitir un
+pedimento en documento electrónico a las autoridades aduaneras.
+
+Artículo 36-A.- Para los efectos del artículo 36 de esta Ley, quienes
+introduzcan o extraigan mercancías deberán transmitir en documento electrónico
+la información que a continuación se describe:
+I. En importación, la relativa al valor y demás datos comerciales de las
+mercancías, contenida en la factura o documento equivalente.
+II. En exportación, la relativa al valor comercial de las mercancías,
+contenida en la factura o documento equivalente.
+III. La que compruebe el cumplimiento de las regulaciones y restricciones no
+arancelarias que correspondan.
+(Reformado mediante Decreto publicado en el DOF el 25-06-2018)
+
+Artículo 59.- Quienes importen mercancías estarán obligados a llevar los
+sistemas de control de inventarios en forma automatizada.
+
+TRANSITORIOS
+
+ARTÍCULO PRIMERO. El presente Decreto entrará en vigor el día siguiente al de
+su publicación en el Diario Oficial de la Federación.
+
+ARTÍCULO SEGUNDO. Las disposiciones relativas a la transmisión del documento
+electrónico serán aplicables a las operaciones que se inicien a partir de la
+entrada en vigor del presente Decreto.
