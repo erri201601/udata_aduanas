@@ -26,8 +26,10 @@ def test_parse_articles_extrae_numero_y_texto() -> None:
 
     assert articulos == [
         ley_aduanera.ParsedArticle(
-            rule_number="2", text="Para los efectos de esta Ley se considera algo.",
-            valid_to=None, valid_from_override=None,
+            rule_number="2",
+            text="Para los efectos de esta Ley se considera algo.",
+            valid_to=None,
+            valid_from_override=None,
         )
     ]
 
@@ -71,7 +73,7 @@ def test_parse_articles_reconoce_las_variantes_reales_de_numeracion(
 def test_parse_articles_no_confunde_137_bis_1_con_137_bis_9() -> None:
     """Regresión: el artículo 137 tiene 9 sub-artículos "bis" reales
     (137 bis 1 a 137 bis 9) — deben quedar como filas distintas, no una."""
-    lines = _lines("ARTICULO 137 bis 1.- Primero.\n" "ARTICULO 137 bis 9.- Noveno.")
+    lines = _lines("ARTICULO 137 bis 1.- Primero.\nARTICULO 137 bis 9.- Noveno.")
 
     articulos = ley_aduanera.parse_articles(lines)
 
@@ -172,10 +174,7 @@ def test_parse_articles_derogado_con_nota_compuesta_en_la_misma_linea() -> None:
 
 def test_parse_articles_no_duplica_ningun_numero() -> None:
     lines = _lines(
-        "ARTICULO 1o. Uno.\n"
-        "ARTICULO 2o. Dos.\n"
-        "ARTICULO 9o. Nueve.\n"
-        "ARTICULO 9o.-A. Nueve A."
+        "ARTICULO 1o. Uno.\nARTICULO 2o. Dos.\nARTICULO 9o. Nueve.\nARTICULO 9o.-A. Nueve A."
     )
 
     articulos = ley_aduanera.parse_articles(lines)
