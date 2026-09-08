@@ -41,6 +41,10 @@ def esperado(**kw: object) -> ExpectedItem:
         "customs_value": Decimal("100000.00"),
         "customs_value_currency": "MXN",
         "required_nom_codes": ("NOM-019-SCFI",),
+        # Explícito: se SABE que la operación no exige identificadores.
+        # Sin esto la partida sería «no verificable» y ningún test podría
+        # afirmar que un pedimento está limpio — que es justamente la regla.
+        "required_identifiers": (),
         "confidence": Decimal("0.92"),
         "is_resolved": True,
         "sku": "LAP-14-8GB",
@@ -228,3 +232,56 @@ def test_la_confianza_de_la_expectativa_viaja_al_hallazgo() -> None:
     r = compare([declarado(fraction_code="84713099")], [esperado(confidence=Decimal("0.4200"))])
 
     assert r.divergences[0].confidence == Decimal("0.4200")
+
+
+# ── No saber ≠ que no aplique ────────────────────────────────────────────────
+
+
+def test_no_saber_que_nom_exige_la_fraccion_no_es_lo_mismo_que_no_exigir_ninguna() -> None:
+    """`None` manda la partida a `unverifiable`; no la da por limpia.
+
+    Es el bug que el hallazgo de Persona 2 volvió urgente: la correlación
+    fracción → NOM no está en el Anexo 22 y no hay fuente cargada. Con el
+    valor por omisión anterior —tupla vacía— el motor recorría cero NOM
+    esperadas, no encontraba ninguna faltante, y el pedimento salía limpio sin
+    que nadie hubiera comprobado nada.
+    """
+    r = compare(
+        [declarado(applied_nom_codes=())],
+        [esperado(required_nom_codes=None, required_identifiers=())],
+    )
+
+    assert not [x for x in r.divergences if x.kind is DivergenceType.MISSING_NOM]
+    assert not r.is_complete
+    assert any("NOM" in u for u in r.unverifiable)
+    assert "no se pudieron comprobar" in r.summary()
+
+
+def test_saber_que_no_exige_ninguna_nom_si_permite_afirmar_limpio() -> None:
+    """La tupla vacía es una afirmación: «comprobé, no exige ninguna»."""
+    r = compare(
+        [declarado(applied_nom_codes=())],
+        [esperado(required_nom_codes=(), required_identifiers=())],
+    )
+
+    assert r.is_complete
+    assert "Sin divergencias" in r.summary()
+
+
+def test_los_identificadores_desconocidos_se_reportan_aparte() -> None:
+    """El Apéndice 8 está pendiente; la laguna se nombra, no se disimula."""
+    r = compare([declarado()], [esperado(required_identifiers=None)])
+
+    assert not r.is_complete
+    assert any("Apéndice 8" in u for u in r.unverifiable)
+
+
+def test_una_laguna_no_impide_detectar_lo_que_si_es_comprobable() -> None:
+    """No saber de NOM no ciega el resto: la fracción se sigue comparando."""
+    r = compare(
+        [declarado(fraction_code="85285900")],
+        [esperado(required_nom_codes=None, required_identifiers=None)],
+    )
+
+    assert [x for x in r.divergences if x.kind is DivergenceType.FRACTION_MISMATCH]
+    assert not r.is_complete

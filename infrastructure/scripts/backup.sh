@@ -108,6 +108,8 @@ ok "PostgreSQL: $(du -h "$ARCHIVO" | cut -f1) · $TABLAS tablas · $(basename "$
 
 [ "$TABLAS" = "0" ] && log "  (aviso: la base no tiene tablas todavía)"
 
+FALLO_MINIO=0
+
 # ── 2. MinIO ─────────────────────────────────────────────────────────────────
 if d inspect -f '{{.State.Status}}' "$CONTENEDOR_MINIO" >/dev/null 2>&1; then
   log "Espejando MinIO…"
@@ -116,13 +118,31 @@ if d inspect -f '{{.State.Status}}' "$CONTENEDOR_MINIO" >/dev/null 2>&1; then
     mkdir -p "$ESPEJO/$bucket"
     # mirror es incremental: sólo copia lo que cambió. Sin --remove, para que un
     # borrado accidental en MinIO no se propague al respaldo.
-    d exec "$CONTENEDOR_MINIO" sh -c \
-      "mc alias set _bk http://localhost:9000 '$MINIO_ROOT_USER' '$MINIO_ROOT_PASSWORD' >/dev/null 2>&1 && \
-       mc mirror --overwrite --quiet _bk/$bucket /tmp/_bk_$bucket >/dev/null 2>&1 || true"
-    d cp "$CONTENEDOR_MINIO:/tmp/_bk_$bucket/." "$ESPEJO/$bucket/" 2>/dev/null || true
-    d exec "$CONTENEDOR_MINIO" rm -rf "/tmp/_bk_$bucket" 2>/dev/null || true
+    # El alias NO puede empezar con '_': mc lo rechaza. Costó un mes de
+    # respaldos vacíos que nadie notó, porque el error iba a /dev/null y el
+    # '|| true' lo daba por bueno (2026-09-08).
+    if ! salida=$(d exec "$CONTENEDOR_MINIO" sh -c \
+      "mc alias set bk http://localhost:9000 '$MINIO_ROOT_USER' '$MINIO_ROOT_PASSWORD' >/dev/null && \
+       mc mirror --overwrite --quiet bk/$bucket /tmp/bk_$bucket" 2>&1); then
+      fail "MinIO $bucket no se pudo espejar: $salida"
+      FALLO_MINIO=1
+      continue
+    fi
+    d cp "$CONTENEDOR_MINIO:/tmp/bk_$bucket/." "$ESPEJO/$bucket/" 2>/dev/null || true
+    d exec "$CONTENEDOR_MINIO" rm -rf "/tmp/bk_$bucket" 2>/dev/null || true
+
+    # Contrastar contra el origen: un espejo con menos archivos que el bucket
+    # es un respaldo incompleto, y un respaldo incompleto que dice ✓ es peor
+    # que no tener respaldo.
     n=$(find "$ESPEJO/$bucket" -type f 2>/dev/null | wc -l)
-    ok "MinIO $bucket: $n archivos"
+    origen=$(d exec "$CONTENEDOR_MINIO" sh -c \
+      "mc ls --recursive bk/$bucket 2>/dev/null | wc -l" | tr -d '[:space:]')
+    if [ "$n" != "$origen" ]; then
+      fail "MinIO $bucket: espejados $n de $origen archivos"
+      FALLO_MINIO=1
+    else
+      ok "MinIO $bucket: $n archivos ($(du -sh "$ESPEJO/$bucket" | cut -f1))"
+    fi
   done
 else
   log "  MinIO no está corriendo; se omite"
@@ -179,3 +199,12 @@ echo
 echo "  ⚠️  Estos respaldos viven en el MISMO disco que la base. Si el disco"
 echo "      muere, se pierden los dos. Copia $DESTINO a otra máquina o disco:"
 echo "        rsync -az $DESTINO/ otro-equipo:~/backups/aduanero/"
+
+# Salir distinto de 0 si MinIO quedó incompleto: el respaldo de PostgreSQL sí
+# sirve, pero el RAW es lo único irreversible (regla 7) y el cron tiene que
+# enterarse. Un script que siempre devuelve 0 no avisa nunca.
+if [ "$FALLO_MINIO" = "1" ]; then
+  echo
+  fail "El respaldo de PostgreSQL está completo, pero MinIO NO. Revisa arriba."
+  exit 2
+fi

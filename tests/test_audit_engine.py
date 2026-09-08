@@ -40,6 +40,10 @@ def comparacion(**kw: object):  # type: ignore[no-untyped-def]
         "customs_value": Decimal("100000.00"),
         "customs_value_currency": "MXN",
         "required_nom_codes": ("NOM-019-SCFI",),
+        # Explícito: se SABE que la operación no exige identificadores.
+        # Sin esto la partida sería «no verificable» y ningún test podría
+        # afirmar que un pedimento está limpio — que es justamente la regla.
+        "required_identifiers": (),
         "is_resolved": True,
         "confidence": Decimal("0.92"),
     }
