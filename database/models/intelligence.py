@@ -238,6 +238,34 @@ class ClassificationCandidate(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMix
     rejected_reason: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
 
 
+class ShadowReview(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Base):
+    """Una corrida del Pedimento Espejo contra un pedimento (§9.3, §36 maestro).
+
+    Existe porque una auditoría es un evento, no un estado: sin esta fila, la
+    API no puede distinguir "no encontré nada" de "no pude revisarlo", y
+    `coverage_known` queda forzado a `false` siempre.
+    """
+
+    __tablename__ = "shadow_reviews"
+    __table_args__ = (
+        # La consulta de findings.py: "la revisión más reciente de este pedimento".
+        sa.Index("ix_shadow_reviews_pedimento", "pedimento_id", sa.desc("created_at")),
+        {"schema": _SCHEMA},
+    )
+
+    pedimento_id: Mapped[uuid.UUID] = mapped_column(
+        sa.ForeignKey("operational.pedimentos.id", ondelete="CASCADE"), nullable=False
+    )
+    # Explícito, no derivado de `unverifiable == '{}'`: ShadowComparison.is_complete.
+    is_complete: Mapped[bool] = mapped_column(sa.Boolean, nullable=False)
+    # ShadowComparison.unverifiable tal cual: lista de partidas no comprobadas
+    # con su razón. TEXT[], no JSONB — es una lista de cadenas, nada más.
+    unverifiable: Mapped[list[str]] = mapped_column(
+        ARRAY(sa.Text), nullable=False, server_default="{}"
+    )
+    engine_version: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+
+
 class RiskFinding(
     UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, AIDecisionMixin, SyntheticMixin, Base
 ):
@@ -259,6 +287,15 @@ class RiskFinding(
     classification_decision_id: Mapped[uuid.UUID | None] = mapped_column(
         sa.ForeignKey(f"{_SCHEMA}.classification_decisions.id", ondelete="SET NULL"),
         nullable=True,
+    )
+    # A qué corrida del Pedimento Espejo pertenece este hallazgo. Sin esto,
+    # dos auditorías del mismo pedimento (antes/después de una rectificación,
+    # o tras cargar el Anexo 22) mezclan sus hallazgos y nadie puede decir
+    # "en la revisión del 8 de septiembre había estos tres" (Persona 1,
+    # 2026-09-08). SET NULL, no CASCADE: si se borra la revisión, el hallazgo
+    # sigue siendo un hecho — queda huérfano, no desaparece.
+    shadow_review_id: Mapped[uuid.UUID | None] = mapped_column(
+        sa.ForeignKey(f"{_SCHEMA}.shadow_reviews.id", ondelete="SET NULL"), nullable=True
     )
     finding_type: Mapped[str] = mapped_column(sa.String(48), nullable=False)
     field: Mapped[str | None] = mapped_column(sa.String(64), nullable=True)
