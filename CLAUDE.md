@@ -90,3 +90,31 @@ SIGUIENTE TAREA RECOMENDADA
 Ramas: `main` ← `develop` ← `feature/*` | `fix/*` | `chore/*`.
 Nadie trabaja en `main`. Un PR resuelve una tarea concreta. Persona 1 aprueba
 cambios al Canonical Model y a los contratos.
+
+### Nunca mergees con el CI en rojo
+
+```bash
+make merge PR=47
+```
+
+Comprueba los seis jobs y se niega si alguno no está en `SUCCESS`. **Úsalo
+siempre en vez del botón de GitHub.**
+
+`develop` **no está protegida** y no puede estarlo: la protección de ramas en
+repositorios privados exige plan de pago, y el repo vive en una cuenta personal
+gratuita. GitHub deja mergear en rojo y no avisa a nadie.
+
+Eso significa que esta regla es lo único que hay. El 8 de septiembre se saltó
+dos veces el mismo día —un PR con `Lint y formato` en FAILURE y otro con las
+seis comprobaciones sin arrancar— y `develop` quedó rota. El coste no lo pagó
+quien la rompió: lo pagó la siguiente persona que abrió un PR y perdió una
+tarde persiguiendo un fallo que no era suyo.
+
+Dos cosas que no son lo mismo y se confunden fácil:
+
+- **Cinco jobs en verde y uno en rojo** no es «casi verde». Es rojo.
+- **Una comprobación que no ha arrancado** no es una comprobación que pasó. Si
+  `gh pr checks` no lista los seis, todavía no sabes nada.
+
+Si de verdad hace falta mergear con algo en rojo —pasa— que lo decida Persona 1
+y que quede dicho en el PR por qué.

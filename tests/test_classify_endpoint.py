@@ -166,107 +166,44 @@ def test_el_codigo_viaja_como_texto() -> None:
     assert isinstance(TariffFraction.__table__.c.code.type, sa.String)
 
 
-# ── Notas legales: no contaminadas por otros documentos (integración) ──────
+# ── Una nota no excluye por compartir una palabra ────────────────────────────
 
 
-@pytest.fixture
-def pg_session(monkeypatch: pytest.MonkeyPatch) -> Iterator[Session]:
-    """Sesión contra el Postgres local. Salta el test si no hay conexión.
+def test_las_notas_no_excluyen_por_coincidencia_de_termino() -> None:
+    """EL TEST QUE IMPORTA.
 
-    Ver `tests/test_canonical_model.py::pg_session` — mismo patrón: deshace
-    el aislamiento de `_isolated_env` sólo para esta sesión, y cada test corre
-    en una transacción que se revierte al final.
+    `excludes()` buscaba una nota del capítulo cuyo texto contuviera alguno de
+    los términos de búsqueda. Con `legal_rules` vacía nunca encontraba nada y
+    el defecto no se veía. El 8 de septiembre Persona 2 cargó las 92 notas
+    reales y entonces excluyó TODAS las partidas candidatas de una computadora
+    portátil: la nota del Capítulo 84 menciona «portátiles» hablando de
+    herramientas de mano.
+
+    Una exclusión falsa descarta la partida correcta, y el sistema clasifica
+    mal con apariencia de rigor. Es el error más caro de los dos posibles.
     """
-    from apps.api.config import get_settings
-
-    monkeypatch.setenv("ADUANERO_ENV_FILE", ".env")
-    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
-    monkeypatch.delenv("DATABASE_URL", raising=False)
-    get_settings.cache_clear()
-    engine = sa.create_engine(get_settings().sqlalchemy_url)
-    try:
-        conn = engine.connect()
-    except OperationalError as exc:
-        engine.dispose()
-        pytest.skip(f"sin PostgreSQL local: {exc}")
-    trans = conn.begin()
-    session = Session(bind=conn, join_transaction_mode="create_savepoint")
-    try:
-        yield session
-    finally:
-        session.close()
-        trans.rollback()
-        conn.close()
-        engine.dispose()
-        get_settings.cache_clear()
-
-
-def _legal_document(*, kind: str, short_name: str) -> LegalDocument:
-    return LegalDocument(
-        title=short_name,
-        short_name=short_name,
-        kind=kind,
-        data_origin="OFFICIAL",
-        valid_from=date(2020, 1, 1),
-        source_url="https://x",
-        content_hash="h",
-        retrieved_at=datetime(2026, 1, 1, tzinfo=UTC),
+    sesion = MagicMock()
+    resultado = LegalNotesRepository(sesion).excludes(
+        on_date=FECHA, heading="8471", terms=["portátil", "Laptop"]
     )
 
-
-def _legal_rule(
-    *, document: LegalDocument, rule_number: str, path: str | None, text: str
-) -> LegalRule:
-    return LegalRule(
-        legal_document_id=document.id,
-        rule_number=rule_number,
-        path=path,
-        text=text,
-        data_origin="OFFICIAL",
-        valid_from=date(2020, 1, 1),
-        source_url="https://x",
-        content_hash="h",
-        retrieved_at=datetime(2026, 1, 1, tzinfo=UTC),
-    )
+    assert resultado is None
+    # Y no lo decide consultando: no hay consulta que hacer.
+    sesion.scalar.assert_not_called()
 
 
-@pytest.mark.integration
-def test_notes_for_no_mezcla_articulos_de_otro_documento(pg_session: Session) -> None:
-    """Regresión real (Task 4, 2026-09-08): con la Ley Aduanera cargada,
-    `notes_for(chapter="84")` devolvía también sus artículos 84 y 84-A —que
-    no son notas de capítulo arancelario— porque `rule_number.startswith`
-    no distinguía de qué documento venía cada fila. Se acota a
-    `LegalDocument.kind == "TARIFF"`, que es como se registra la LIGIE."""
-    tarifa = _legal_document(kind="TARIFF", short_name="LIGIE_PRUEBA_NOTES")
-    ley = _legal_document(kind="LAW", short_name="LEY_PRUEBA_NOTES")
-    pg_session.add_all([tarifa, ley])
-    pg_session.flush()
+def test_las_notas_aplicables_se_buscan_por_la_partida_no_por_el_termino() -> None:
+    """`applicable()` entrega lo que hay que leer, sin afirmar que excluya."""
+    sql = _capturar_applicable(on_date=FECHA, heading="84713001")
 
-    pg_session.add_all(
-        [
-            _legal_rule(
-                document=tarifa,
-                rule_number="NOTAS-CAP-84",
-                path="Capítulo 84",
-                text="Nota real del capítulo arancelario 84.",
-            ),
-            _legal_rule(
-                document=ley,
-                rule_number="84",
-                path=None,
-                text="Artículo 84 de la Ley Aduanera, sin relación con el capítulo 84.",
-            ),
-            _legal_rule(
-                document=ley,
-                rule_number="84A",
-                path=None,
-                text="Artículo 84-A de la Ley Aduanera.",
-            ),
-        ]
-    )
-    pg_session.flush()
+    # La LIGIE escribe la partida con punto; el texto real usa las dos formas.
+    assert "84.71" in sql
+    assert "partida 8471" in sql
+    # Y se acota al capítulo, no a toda la ley.
+    assert "capítulo 84" in sql
 
-    resultados = LegalNotesRepository(pg_session).notes_for(on_date=FECHA, chapter="84")
 
-    assert any("Nota real del capítulo arancelario 84" in r for r in resultados)
-    assert not any("Ley Aduanera" in r for r in resultados)
+def _capturar_applicable(**kwargs: object) -> str:
+    sesion = MagicMock()
+    LegalNotesRepository(sesion).applicable(**kwargs)  # type: ignore[arg-type]
+    return _sql(sesion.scalars.call_args.args[0])
