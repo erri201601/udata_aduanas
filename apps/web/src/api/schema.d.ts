@@ -352,6 +352,10 @@ export interface components {
             reasoning?: string | null;
             /** Rgi Path */
             rgi_path?: string[];
+            /** Rgi Trace */
+            rgi_trace?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Legal Rule Ids */
             legal_rule_ids?: string[];
             /** Engine Version */
@@ -454,6 +458,10 @@ export interface components {
             reasoning?: string | null;
             /** Rgi Path */
             rgi_path?: string[];
+            /** Rgi Trace */
+            rgi_trace?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Legal Rule Ids */
             legal_rule_ids?: string[];
             /** Engine Version */

@@ -704,3 +704,46 @@ code {
 .respuesta-datos dd { margin: 0; }
 
 .sin-responder ul { margin: 0; padding-left: 1.2rem; display: grid; gap: 0.35rem; font-size: 0.88rem; color: var(--aviso); }
+
+/* ── Traza de las RGI, paso a paso ──────────────────────────────────────── */
+
+/* Es lo que hace defendible una clasificación: no el código, el camino. */
+.traza { list-style: none; margin: 0 0 1.25rem; padding: 0; display: grid; gap: 0.7rem; }
+
+.paso {
+  position: relative;
+  padding: 0.95rem 1.2rem 0.95rem 1.4rem;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-left: 3px solid var(--borde);
+  border-radius: 8px;
+}
+
+/* La regla que resolvió se distingue de las que sólo se evaluaron. */
+.paso--final { border-left-color: var(--ok); }
+
+.paso__cabecera { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+.paso__regla { font-family: ui-monospace, Menlo, monospace; font-size: 0.88rem; font-weight: 600; }
+
+.paso__estado {
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  background: var(--fondo);
+  color: var(--tenue);
+  border: 1px solid var(--borde);
+}
+
+.paso__estado--resolved { background: rgba(46,168,107,0.16); color: var(--ok); border-color: transparent; }
+.paso__estado--continue { background: rgba(79,140,255,0.14); color: var(--acento); border-color: transparent; }
+.paso__estado--insufficient_information,
+.paso__estado--human_review_required { background: rgba(245,165,36,0.16); color: var(--aviso); border-color: transparent; }
+
+.paso__razon { margin: 0 0 0.45rem; font-size: 0.89rem; line-height: 1.55; max-width: 70ch; }
+
+.paso__candidatos,
+.paso__falto { margin: 0.25rem 0 0; font-size: 0.8rem; color: var(--tenue); }
+.paso__candidatos code { margin-right: 0.35rem; }
+.paso__falto code { margin-right: 0.35rem; color: var(--aviso); }
