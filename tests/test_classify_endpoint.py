@@ -161,3 +161,46 @@ def test_las_columnas_usadas_existen() -> None:
 def test_el_codigo_viaja_como_texto() -> None:
     """Los ceros a la izquierda son significativos: 08471301 ≠ 8471301."""
     assert isinstance(TariffFraction.__table__.c.code.type, sa.String)
+
+
+# ── Una nota no excluye por compartir una palabra ────────────────────────────
+
+
+def test_las_notas_no_excluyen_por_coincidencia_de_termino() -> None:
+    """EL TEST QUE IMPORTA.
+
+    `excludes()` buscaba una nota del capítulo cuyo texto contuviera alguno de
+    los términos de búsqueda. Con `legal_rules` vacía nunca encontraba nada y
+    el defecto no se veía. El 8 de septiembre Persona 2 cargó las 92 notas
+    reales y entonces excluyó TODAS las partidas candidatas de una computadora
+    portátil: la nota del Capítulo 84 menciona «portátiles» hablando de
+    herramientas de mano.
+
+    Una exclusión falsa descarta la partida correcta, y el sistema clasifica
+    mal con apariencia de rigor. Es el error más caro de los dos posibles.
+    """
+    sesion = MagicMock()
+    resultado = LegalNotesRepository(sesion).excludes(
+        on_date=FECHA, heading="8471", terms=["portátil", "Laptop"]
+    )
+
+    assert resultado is None
+    # Y no lo decide consultando: no hay consulta que hacer.
+    sesion.scalar.assert_not_called()
+
+
+def test_las_notas_aplicables_se_buscan_por_la_partida_no_por_el_termino() -> None:
+    """`applicable()` entrega lo que hay que leer, sin afirmar que excluya."""
+    sql = _capturar_applicable(on_date=FECHA, heading="84713001")
+
+    # La LIGIE escribe la partida con punto; el texto real usa las dos formas.
+    assert "84.71" in sql
+    assert "partida 8471" in sql
+    # Y se acota al capítulo, no a toda la ley.
+    assert "capítulo 84" in sql
+
+
+def _capturar_applicable(**kwargs: object) -> str:
+    sesion = MagicMock()
+    LegalNotesRepository(sesion).applicable(**kwargs)  # type: ignore[arg-type]
+    return _sql(sesion.scalars.call_args.args[0])
