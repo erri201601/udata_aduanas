@@ -26,6 +26,9 @@ export type DossierRead = components['schemas']['DossierRead']
 export type ClassifyRequest = components['schemas']['ClassifyRequest']
 export type ClassifyResponse = components['schemas']['ClassifyResponse']
 export type Dashboard = components['schemas']['Dashboard']
+export type PendienteRead = components['schemas']['PendienteRead']
+export type RevisionRequest = components['schemas']['RevisionRequest']
+export type RevisionResponse = components['schemas']['RevisionResponse']
 export type ServiceCheck = components['schemas']['ServiceCheck']
 export type ServiceStatus = ServiceCheck['status']
 
@@ -170,4 +173,39 @@ export async function classifyProduct(
 /** Cifras del sistema para el tablero ejecutivo. */
 export async function fetchDashboard(signal?: AbortSignal): Promise<Dashboard> {
   return pedir<Dashboard>('/dashboard', signal)
+}
+
+
+/** Decisiones esperando a una persona, de la más antigua a la más reciente. */
+export async function fetchPendientes(signal?: AbortSignal): Promise<PendienteRead[]> {
+  return pedir<PendienteRead[]>('/review', signal)
+}
+
+/**
+ * Registra un veredicto humano.
+ *
+ * NO edita la decisión de la máquina: crea una fila nueva. Medir la precisión
+ * del sistema exige conservar las dos respuestas (§39).
+ */
+export async function revisarDecision(
+  decisionId: string,
+  peticion: RevisionRequest,
+  signal?: AbortSignal,
+): Promise<RevisionResponse> {
+  const respuesta = await fetch(`${API_BASE_URL}/review/${decisionId}`, {
+    method: 'POST',
+    signal,
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(peticion),
+  })
+
+  if (!respuesta.ok) {
+    const detalle = await respuesta.json().catch(() => null)
+    throw new ApiError(
+      detalle?.detail ?? `La API respondió ${respuesta.status}`,
+      respuesta.status,
+    )
+  }
+
+  return (await respuesta.json()) as RevisionResponse
 }

@@ -25,6 +25,7 @@ from apps.api.routers import (
     findings,
     health,
     products,
+    review,
 )
 
 if TYPE_CHECKING:
@@ -88,6 +89,7 @@ def create_app() -> FastAPI:
     app.include_router(findings.router)
     app.include_router(evidence.router)
     app.include_router(dashboard.router)
+    app.include_router(review.router)
     return app
 
 
