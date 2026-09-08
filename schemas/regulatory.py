@@ -114,6 +114,8 @@ class TariffFractionBase(DataOriginFields, RegulatoryFields):
     igi_rate: Decimal | None = None
     ige_rate: Decimal | None = None
     legal_document_id: uuid.UUID | None = None
+    # Qué tan específico es `description` frente a sus hermanas (RGI 3 a)).
+    specificity: int = 0
 
 
 class TariffFractionCreate(TariffFractionBase):

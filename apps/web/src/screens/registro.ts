@@ -25,13 +25,13 @@ export const PANTALLAS: DefinicionPantalla[] = [
     id: 'product-dna',
     titulo: 'Product DNA',
     descripcion: 'Atributos técnicos que determinan la clasificación',
-    implementada: false,
+    implementada: true,
   },
   {
     id: 'classification',
     titulo: 'Classification',
     descripcion: 'Motor de RGI y fracción arancelaria propuesta',
-    implementada: false,
+    implementada: true,
   },
   {
     id: 'pedimento-shadow',
@@ -43,7 +43,13 @@ export const PANTALLAS: DefinicionPantalla[] = [
     id: 'finding-detail',
     titulo: 'Finding Detail',
     descripcion: 'Hallazgo con su evidencia y trazabilidad',
-    implementada: false,
+    implementada: true,
+  },
+  {
+    id: 'evidence',
+    titulo: 'Evidencia',
+    descripcion: 'Las diez preguntas del §49 sobre una decisión',
+    implementada: true,
   },
   {
     id: 'regulatory-sentinel',

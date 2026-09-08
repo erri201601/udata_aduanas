@@ -10,7 +10,7 @@ Siempre una corrida en seco contra Postgres local antes.
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from database.models.regulatory import LegalDocument, LegalSource, Nico, TariffFraction
@@ -84,6 +84,51 @@ def get_or_create_ligie_document(
     return document
 
 
+def _close_previous_fraction_versions(session: Session, *, code: str, new_valid_from: date) -> None:
+    """Cierra cualquier versión de `code` en `tariff_fractions` que siga abierta.
+
+    Sin esto, dos fuentes que carguen el mismo código dejan dos filas ambas
+    "vigentes hoy": el sistema no puede afirmar cuál aplicaba el día de una
+    operación (§14 maestro; Persona 1, 2026-09-08, tras encontrar `84713001`
+    duplicado entre el seed sintético y esta ingesta). No toca una versión
+    que ya empieza en o después de `new_valid_from` — eso lo revienta la
+    propia `UniqueConstraint(code, valid_from)`, que es el comportamiento
+    correcto ante una recarga accidental con la misma fecha.
+    """
+    anteriores = (
+        session.query(TariffFraction)
+        .filter(
+            TariffFraction.code == code,
+            TariffFraction.valid_to.is_(None),
+            TariffFraction.valid_from < new_valid_from,
+        )
+        .all()
+    )
+    for anterior in anteriores:
+        anterior.valid_to = new_valid_from - timedelta(days=1)
+    if anteriores:
+        session.flush()
+
+
+def _close_previous_nico_versions(
+    session: Session, *, full_code: str, new_valid_from: date
+) -> None:
+    """Igual que `_close_previous_fraction_versions`, para `nicos` por `full_code`."""
+    anteriores = (
+        session.query(Nico)
+        .filter(
+            Nico.full_code == full_code,
+            Nico.valid_to.is_(None),
+            Nico.valid_from < new_valid_from,
+        )
+        .all()
+    )
+    for anterior in anteriores:
+        anterior.valid_to = new_valid_from - timedelta(days=1)
+    if anteriores:
+        session.flush()
+
+
 def to_tariff_fraction_row(
     parsed: ParsedFraction,
     *,
@@ -99,6 +144,7 @@ def to_tariff_fraction_row(
         unit=parsed.unit,
         igi_rate=parsed.igi_rate,
         ige_rate=parsed.ige_rate,
+        specificity=parsed.specificity,
         legal_document_id=document.id,
         data_origin="OFFICIAL",
         source_id=source.id,
@@ -148,6 +194,9 @@ def load_chapters(
 
     fraction_id_by_code: dict[str, object] = {}
     for parsed_fraction in fracciones:
+        _close_previous_fraction_versions(
+            session, code=parsed_fraction.code, new_valid_from=LIGIE_VALID_FROM
+        )
         row = to_tariff_fraction_row(parsed_fraction, source=source, document=document)
         session.add(row)
         session.flush()
@@ -160,6 +209,9 @@ def load_chapters(
             # La fracción no se insertó (p. ej. fue rechazada, como "Prohibida").
             # Un NICO sin fracción viola la FK — se omite, no se inventa un id.
             continue
+        _close_previous_nico_versions(
+            session, full_code=parsed_nico.full_code, new_valid_from=LIGIE_VALID_FROM
+        )
         session.add(to_nico_row(parsed_nico, source=source, tariff_fraction_id=fraction_id))
         nico_rows += 1
 

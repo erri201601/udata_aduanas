@@ -239,3 +239,511 @@ code {
 
 .pendiente p { margin: 0; color: var(--tenue); }
 .pendiente__nota { margin-top: 0.5rem !important; font-size: 0.85rem; }
+
+/* ── Product DNA ────────────────────────────────────────────────────────── */
+
+.selector {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-bottom: 1.5rem;
+  font-size: 0.85rem;
+  color: var(--tenue);
+}
+
+.selector select {
+  padding: 0.45rem 0.7rem;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  color: var(--texto);
+  font: inherit;
+  font-size: 0.87rem;
+}
+
+.ficha {
+  padding: 1.25rem 1.4rem;
+  margin-bottom: 1.25rem;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+}
+
+.ficha h2 { margin: 0 0 0.4rem; font-size: 1.1rem; }
+.ficha__resumen { margin: 0 0 1rem; color: var(--tenue); font-size: 0.9rem; }
+
+.ficha__meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.9rem;
+  margin: 0;
+}
+
+.ficha__meta div { display: flex; flex-direction: column; gap: 0.15rem; }
+.ficha__meta dt { font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--tenue); }
+.ficha__meta dd { margin: 0; font-size: 0.88rem; }
+
+/* Lo que falta es tan importante como lo que hay: sin estos datos no se
+   puede clasificar, y el sistema no los inventa. */
+.faltantes {
+  padding: 1.1rem 1.35rem;
+  margin-bottom: 1.5rem;
+  background: rgba(245, 165, 36, 0.09);
+  border-left: 3px solid var(--aviso);
+  border-radius: 0 8px 8px 0;
+}
+
+.faltantes p { margin: 0.4rem 0 0.6rem; font-size: 0.87rem; color: var(--tenue); }
+.faltantes ul { margin: 0; padding-left: 1.1rem; display: flex; flex-wrap: wrap; gap: 0.2rem 1.2rem; }
+.faltantes code { color: var(--aviso); }
+
+.tabla-scroll { overflow-x: auto; }
+
+.atributos { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+
+.atributos th {
+  padding: 0 1rem 0.6rem 0;
+  border-bottom: 1px solid var(--borde);
+  color: var(--tenue);
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.atributos td {
+  padding: 0.7rem 1rem 0.7rem 0;
+  border-bottom: 1px solid var(--borde);
+  vertical-align: middle;
+}
+
+.atributo__nombre { font-family: ui-monospace, Menlo, monospace; font-size: 0.83rem; }
+.unidad { color: var(--tenue); }
+.sin-dato { color: var(--tenue); opacity: 0.6; }
+.evidencia { font-size: 0.78rem; color: var(--acento); }
+
+/* Una franja lateral por estado: el ojo distingue la fila antes de leerla. */
+.fila { border-left: 3px solid transparent; }
+.fila td:first-child { padding-left: 0.75rem; }
+.fila--observed  { border-left-color: var(--ok); }
+.fila--extracted { border-left-color: var(--acento); }
+.fila--inferred  { border-left-color: var(--aviso); }
+.fila--missing   { border-left-color: var(--mal); opacity: 0.72; }
+
+.estado {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: help;
+}
+
+.estado--observed  { background: rgba(46, 168, 107, 0.16); color: var(--ok); }
+.estado--extracted { background: rgba(79, 140, 255, 0.16); color: var(--acento); }
+.estado--inferred  { background: rgba(245, 165, 36, 0.18); color: var(--aviso); }
+.estado--missing   { background: rgba(229, 72, 77, 0.15);  color: var(--mal); }
+
+.confianza { display: inline-flex; align-items: center; gap: 0.5rem; }
+
+.confianza__pista {
+  width: 56px;
+  height: 5px;
+  background: var(--borde);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.confianza__valor { display: block; height: 100%; border-radius: 3px; }
+.confianza__valor--alta  { background: var(--ok); }
+.confianza__valor--media { background: var(--acento); }
+.confianza__valor--baja  { background: var(--aviso); }
+
+.confianza__cifra {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 0.76rem;
+  color: var(--tenue);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Classification ─────────────────────────────────────────────────────── */
+
+.veredicto {
+  padding: 1.4rem 1.6rem;
+  margin-bottom: 1.25rem;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-left: 4px solid var(--ok);
+  border-radius: 10px;
+}
+
+.veredicto--insufficient_information,
+.veredicto--human_review_required { border-left-color: var(--aviso); }
+.veredicto--blocked { border-left-color: var(--mal); }
+
+.veredicto__codigo {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 1.9rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.veredicto__codigo em { font-style: normal; color: var(--tenue); font-size: 1.1rem; margin-left: 0.4rem; }
+.veredicto__codigo--sin { font-size: 1.25rem; color: var(--aviso); }
+.veredicto__nota { margin: 0.35rem 0 0; color: var(--tenue); font-size: 0.87rem; }
+
+.revision {
+  padding: 0.95rem 1.25rem;
+  margin-bottom: 1.5rem;
+  background: rgba(245, 165, 36, 0.09);
+  border-left: 3px solid var(--aviso);
+  border-radius: 0 8px 8px 0;
+}
+
+.revision p { margin: 0.4rem 0 0; font-size: 0.87rem; color: var(--tenue); }
+.revision code { margin-right: 0.5rem; color: var(--aviso); }
+
+.seccion {
+  margin: 2.25rem 0 1rem;
+  font-size: 0.73rem;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--tenue);
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--borde);
+}
+
+/* La ruta de reglas se lee como una secuencia, porque lo es. */
+.ruta {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+  padding: 0;
+}
+
+.ruta li {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.75rem;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+}
+
+.ruta li + li::before { content: '→'; color: var(--tenue); margin-right: 0.45rem; }
+.ruta--final { border-color: var(--ok) !important; }
+.ruta__regla { font-family: ui-monospace, Menlo, monospace; font-size: 0.85rem; }
+.ruta__marca { font-size: 0.7rem; color: var(--ok); }
+
+.razonamiento {
+  max-width: 68ch;
+  margin: 0 0 1rem;
+  font-size: 0.92rem;
+  line-height: 1.65;
+}
+
+.traza-parcial {
+  padding: 0.95rem 1.25rem;
+  background: rgba(79, 140, 255, 0.07);
+  border-left: 3px solid var(--acento);
+  border-radius: 0 8px 8px 0;
+}
+
+.traza-parcial p { margin: 0.4rem 0 0; font-size: 0.86rem; color: var(--tenue); max-width: 66ch; }
+
+.descartes { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.7rem; }
+
+.descartes li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.9rem;
+  align-items: start;
+  padding: 0.85rem 1.1rem;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  opacity: 0.85;
+}
+
+.descartes__codigo {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 0.85rem;
+  color: var(--tenue);
+  text-decoration: line-through;
+}
+
+.descartes p { margin: 0; font-size: 0.88rem; }
+
+/* Lo jurídico y lo interpretativo NO pueden verse igual. */
+.evidencias {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr));
+  gap: 1rem;
+}
+
+.evidencias__grupo {
+  padding: 1.1rem 1.25rem;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+}
+
+.evidencias__grupo--juridica { border-color: rgba(46, 168, 107, 0.45); }
+
+.evidencias__grupo h3 {
+  margin: 0 0 0.85rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--tenue);
+}
+
+.evidencias__grupo--juridica h3 { color: var(--ok); }
+
+.evidencia-ficha { margin-bottom: 0.9rem; }
+.evidencia-ficha:last-child { margin-bottom: 0; }
+.evidencia-ficha p { margin: 0.45rem 0 0; font-size: 0.87rem; line-height: 1.55; }
+.evidencia-ficha__meta { color: var(--tenue); font-size: 0.78rem !important; }
+
+.sin-fundamento { margin: 0; font-size: 0.87rem; color: var(--mal); }
+
+.evidencia-tipo {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: var(--fondo);
+  border: 1px solid var(--borde);
+  color: var(--tenue);
+  cursor: help;
+}
+
+.evidencia-tipo--fundamenta {
+  background: rgba(46, 168, 107, 0.16);
+  border-color: rgba(46, 168, 107, 0.5);
+  color: var(--ok);
+}
+
+.evidencia-tipo--indefinida {
+  border-style: dashed;
+  color: var(--tenue);
+  opacity: 0.85;
+}
+
+/* ── Hallazgos ──────────────────────────────────────────────────────────── */
+
+/* Lo primero que se lee: qué se sabe y qué NO. */
+.cobertura {
+  padding: 1rem 1.3rem;
+  margin-bottom: 1.25rem;
+  background: rgba(46, 168, 107, 0.09);
+  border-left: 3px solid var(--ok);
+  border-radius: 0 8px 8px 0;
+}
+
+.cobertura--incierta {
+  background: rgba(229, 72, 77, 0.08);
+  border-left-color: var(--mal);
+}
+
+.cobertura p { margin: 0.45rem 0 0; font-size: 0.87rem; color: var(--tenue); max-width: 68ch; }
+.cobertura em { color: var(--texto); font-style: normal; font-weight: 500; }
+
+.resumen-hallazgos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 1px;
+  background: var(--borde);
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 1.75rem;
+}
+
+.cifra { background: var(--panel); padding: 1rem 1.2rem; display: flex; flex-direction: column; gap: 0.2rem; }
+.cifra__valor { font-size: 1.5rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cifra__k { font-size: 0.75rem; color: var(--tenue); }
+
+.cifra__k em {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px; height: 13px;
+  margin-left: 0.3rem;
+  border: 1px solid var(--tenue);
+  border-radius: 50%;
+  font-size: 0.6rem;
+  font-style: normal;
+  cursor: help;
+}
+
+.hallazgos { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.85rem; }
+
+.hallazgo {
+  padding: 1.1rem 1.3rem;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-left: 4px solid var(--tenue);
+  border-radius: 8px;
+}
+
+.hallazgo--critical { border-left-color: var(--mal); }
+.hallazgo--high     { border-left-color: var(--aviso); }
+.hallazgo--medium   { border-left-color: var(--acento); }
+.hallazgo--low,
+.hallazgo--info     { border-left-color: var(--tenue); }
+
+.hallazgo__cabecera { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
+.hallazgo__tipo { font-size: 0.78rem; color: var(--tenue); }
+
+.sim {
+  padding: 0.14rem 0.4rem;
+  border-radius: 3px;
+  background: var(--aviso);
+  color: #1a1200;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.hallazgo__contraste { margin: 0 0 0.55rem; font-family: ui-monospace, Menlo, monospace; font-size: 0.88rem; }
+.declarado { color: var(--mal); text-decoration: line-through; }
+.esperado { color: var(--ok); }
+
+.hallazgo__razon { margin: 0 0 0.7rem; font-size: 0.89rem; line-height: 1.55; max-width: 70ch; }
+.hallazgo__impacto { margin: 0; font-size: 0.88rem; }
+.hallazgo__impacto strong { font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+
+.sin-monto { color: var(--tenue); font-size: 0.84rem; }
+
+.sev {
+  padding: 0.2rem 0.55rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: help;
+}
+
+.sev--critical { background: rgba(229, 72, 77, 0.18);  color: var(--mal); }
+.sev--high     { background: rgba(245, 165, 36, 0.18); color: var(--aviso); }
+.sev--medium   { background: rgba(79, 140, 255, 0.16); color: var(--acento); }
+.sev--low,
+.sev--info     { background: var(--fondo); color: var(--tenue); border: 1px solid var(--borde); }
+
+/* ── Evidencia · §49 ────────────────────────────────────────────────────── */
+
+.dossier-estado {
+  padding: 1rem 1.3rem;
+  margin-bottom: 1.5rem;
+  border-left: 3px solid var(--ok);
+  border-radius: 0 8px 8px 0;
+  background: rgba(46, 168, 107, 0.09);
+}
+
+.dossier-estado--incompleto {
+  background: rgba(245, 165, 36, 0.09);
+  border-left-color: var(--aviso);
+}
+
+.dossier-estado p { margin: 0.45rem 0 0; font-size: 0.87rem; color: var(--tenue); max-width: 68ch; }
+
+.preguntas { list-style: none; margin: 0; padding: 0; counter-reset: p; display: grid; gap: 0.7rem; }
+
+.pregunta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+}
+
+/* Un hueco NO se disimula: se ve distinto y se ve peor. Es el punto. */
+.pregunta--sin-responder {
+  background: rgba(245, 165, 36, 0.06);
+  border-color: rgba(245, 165, 36, 0.4);
+  border-style: dashed;
+}
+
+.pregunta__num {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem; height: 1.6rem;
+  border-radius: 50%;
+  background: var(--fondo);
+  color: var(--tenue);
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.pregunta--sin-responder .pregunta__num { background: var(--aviso); color: #1a1200; }
+
+.pregunta__cuerpo h3 { margin: 0 0 0.4rem; font-size: 0.92rem; }
+.pregunta__cuerpo p { margin: 0; font-size: 0.89rem; line-height: 1.55; max-width: 70ch; }
+.pregunta__hueco { color: var(--aviso); font-style: italic; }
+
+.respuesta-lista { margin: 0; padding-left: 1.1rem; font-size: 0.89rem; display: grid; gap: 0.2rem; }
+
+.respuesta-datos { margin: 0; display: grid; gap: 0.3rem; font-size: 0.86rem; }
+.respuesta-datos div { display: flex; gap: 0.6rem; }
+.respuesta-datos dt { color: var(--tenue); font-family: ui-monospace, Menlo, monospace; font-size: 0.8rem; }
+.respuesta-datos dd { margin: 0; }
+
+.sin-responder ul { margin: 0; padding-left: 1.2rem; display: grid; gap: 0.35rem; font-size: 0.88rem; color: var(--aviso); }
+
+/* ── Traza de las RGI, paso a paso ──────────────────────────────────────── */
+
+/* Es lo que hace defendible una clasificación: no el código, el camino. */
+.traza { list-style: none; margin: 0 0 1.25rem; padding: 0; display: grid; gap: 0.7rem; }
+
+.paso {
+  position: relative;
+  padding: 0.95rem 1.2rem 0.95rem 1.4rem;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-left: 3px solid var(--borde);
+  border-radius: 8px;
+}
+
+/* La regla que resolvió se distingue de las que sólo se evaluaron. */
+.paso--final { border-left-color: var(--ok); }
+
+.paso__cabecera { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+.paso__regla { font-family: ui-monospace, Menlo, monospace; font-size: 0.88rem; font-weight: 600; }
+
+.paso__estado {
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  background: var(--fondo);
+  color: var(--tenue);
+  border: 1px solid var(--borde);
+}
+
+.paso__estado--resolved { background: rgba(46,168,107,0.16); color: var(--ok); border-color: transparent; }
+.paso__estado--continue { background: rgba(79,140,255,0.14); color: var(--acento); border-color: transparent; }
+.paso__estado--insufficient_information,
+.paso__estado--human_review_required { background: rgba(245,165,36,0.16); color: var(--aviso); border-color: transparent; }
+
+.paso__razon { margin: 0 0 0.45rem; font-size: 0.89rem; line-height: 1.55; max-width: 70ch; }
+
+.paso__candidatos,
+.paso__falto { margin: 0.25rem 0 0; font-size: 0.8rem; color: var(--tenue); }
+.paso__candidatos code { margin-right: 0.35rem; }
+.paso__falto code { margin-right: 0.35rem; color: var(--aviso); }

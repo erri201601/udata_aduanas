@@ -47,10 +47,572 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Lista los productos del catálogo
+         * @description Productos ordenados por SKU, que es lo que el usuario reconoce.
+         */
+        get: operations["listar_productos_products_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/products/{product_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Un producto del catálogo */
+        get: operations["obtener_producto_products__product_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/products/{product_id}/dna": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Product DNA vigente del producto, con sus atributos
+         * @description El DNA marcado como vigente.
+         *
+         *     Se filtra por `is_current` y no por la versión más alta: un DNA se puede
+         *     reemplazar por una revisión humana que no sea la última generada, y la
+         *     columna es la que decide cuál rige.
+         */
+        get: operations["obtener_dna_products__product_id__dna_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/classifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Lista las decisiones de clasificación
+         * @description Decisiones, de la más reciente a la más antigua.
+         */
+        get: operations["listar_decisiones_classifications_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/classifications/{decision_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Una decisión con su traza y evidencias */
+        get: operations["obtener_decision_classifications__decision_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/findings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Hallazgos, del más grave al menos
+         * @description Ordenados por severidad en la base, no en el cliente.
+         *
+         *     Paginar por fecha y reordenar después daría una primera página sin los
+         *     hallazgos graves si quedaron fuera del corte.
+         */
+        get: operations["listar_hallazgos_findings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/findings/pedimentos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Pedimentos revisables */
+        get: operations["listar_pedimentos_findings_pedimentos_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/findings/pedimentos/{pedimento_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Un pedimento con sus hallazgos */
+        get: operations["obtener_pedimento_findings_pedimentos__pedimento_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/evidence/{decision_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Dossier §49 de una decisión */
+        get: operations["obtener_dossier_evidence__decision_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AttributeStatus
+         * @description §16 maestro — estado de un atributo de Product DNA.
+         * @enum {string}
+         */
+        AttributeStatus: "OBSERVED" | "EXTRACTED" | "INFERRED" | "MISSING";
+        /** ClassificationCandidateRead */
+        ClassificationCandidateRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            data_origin: components["schemas"]["DataOrigin"];
+            /** Source Id */
+            source_id?: string | null;
+            /**
+             * Classification Decision Id
+             * Format: uuid
+             */
+            classification_decision_id: string;
+            /** Rank */
+            rank: number;
+            /** Fraction Code */
+            fraction_code?: string | null;
+            /** Nico Code */
+            nico_code?: string | null;
+            /** Tariff Fraction Id */
+            tariff_fraction_id?: string | null;
+            /** Confidence */
+            confidence?: string | null;
+            /** Reasoning */
+            reasoning?: string | null;
+            /**
+             * Is Selected
+             * @default false
+             */
+            is_selected: boolean;
+            /** Rejected Reason */
+            rejected_reason?: string | null;
+        };
+        /** ClassificationDecisionRead */
+        ClassificationDecisionRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Synthetic Scenario Id */
+            synthetic_scenario_id?: string | null;
+            /** Seed */
+            seed?: number | null;
+            /** Model Provider */
+            model_provider?: string | null;
+            /** Model Name */
+            model_name?: string | null;
+            /** Prompt Id */
+            prompt_id?: string | null;
+            /** Prompt Version */
+            prompt_version?: string | null;
+            /** Input Tokens */
+            input_tokens?: number | null;
+            /** Output Tokens */
+            output_tokens?: number | null;
+            /** Latency Ms */
+            latency_ms?: number | null;
+            /** Attempts */
+            attempts?: number | null;
+            /** Finish Reason */
+            finish_reason?: string | null;
+            /** Confidence */
+            confidence?: string | null;
+            /**
+             * Requires Human Review
+             * @default true
+             */
+            requires_human_review: boolean;
+            data_origin: components["schemas"]["DataOrigin"];
+            /** Source Id */
+            source_id?: string | null;
+            /** Product Id */
+            product_id?: string | null;
+            /** Product Dna Id */
+            product_dna_id?: string | null;
+            trade_flow: components["schemas"]["TradeFlow"];
+            /**
+             * Operation Date
+             * Format: date
+             */
+            operation_date: string;
+            status: components["schemas"]["ClassificationStatus"];
+            /** Chapter */
+            chapter?: string | null;
+            /** Heading */
+            heading?: string | null;
+            /** Subheading */
+            subheading?: string | null;
+            /** Fraction Code */
+            fraction_code?: string | null;
+            /** Nico Code */
+            nico_code?: string | null;
+            /** Tariff Fraction Id */
+            tariff_fraction_id?: string | null;
+            /** Nico Id */
+            nico_id?: string | null;
+            /** Reasoning */
+            reasoning?: string | null;
+            /** Rgi Path */
+            rgi_path?: string[];
+            /** Rgi Trace */
+            rgi_trace?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** Legal Rule Ids */
+            legal_rule_ids?: string[];
+            /** Engine Version */
+            engine_version?: string | null;
+            /** Evidence Id */
+            evidence_id?: string | null;
+            /** Input Snapshot */
+            input_snapshot?: {
+                [key: string]: unknown;
+            };
+            /** Missing Information */
+            missing_information?: string[];
+            /** Estimated Impact Amount */
+            estimated_impact_amount?: string | null;
+            /** Estimated Impact Amount Currency */
+            estimated_impact_amount_currency?: string | null;
+        };
+        /**
+         * ClassificationDetail
+         * @description Una decisión con todo lo necesario para defenderla.
+         *
+         *     Va todo junto porque quien audita necesita verlo junto: separar los
+         *     candidatos o la evidencia en otra petición convertiría "explicar una
+         *     decisión" en tres viajes y una reconstrucción manual.
+         */
+        ClassificationDetail: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Synthetic Scenario Id */
+            synthetic_scenario_id?: string | null;
+            /** Seed */
+            seed?: number | null;
+            /** Model Provider */
+            model_provider?: string | null;
+            /** Model Name */
+            model_name?: string | null;
+            /** Prompt Id */
+            prompt_id?: string | null;
+            /** Prompt Version */
+            prompt_version?: string | null;
+            /** Input Tokens */
+            input_tokens?: number | null;
+            /** Output Tokens */
+            output_tokens?: number | null;
+            /** Latency Ms */
+            latency_ms?: number | null;
+            /** Attempts */
+            attempts?: number | null;
+            /** Finish Reason */
+            finish_reason?: string | null;
+            /** Confidence */
+            confidence?: string | null;
+            /**
+             * Requires Human Review
+             * @default true
+             */
+            requires_human_review: boolean;
+            data_origin: components["schemas"]["DataOrigin"];
+            /** Source Id */
+            source_id?: string | null;
+            /** Product Id */
+            product_id?: string | null;
+            /** Product Dna Id */
+            product_dna_id?: string | null;
+            trade_flow: components["schemas"]["TradeFlow"];
+            /**
+             * Operation Date
+             * Format: date
+             */
+            operation_date: string;
+            status: components["schemas"]["ClassificationStatus"];
+            /** Chapter */
+            chapter?: string | null;
+            /** Heading */
+            heading?: string | null;
+            /** Subheading */
+            subheading?: string | null;
+            /** Fraction Code */
+            fraction_code?: string | null;
+            /** Nico Code */
+            nico_code?: string | null;
+            /** Tariff Fraction Id */
+            tariff_fraction_id?: string | null;
+            /** Nico Id */
+            nico_id?: string | null;
+            /** Reasoning */
+            reasoning?: string | null;
+            /** Rgi Path */
+            rgi_path?: string[];
+            /** Rgi Trace */
+            rgi_trace?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** Legal Rule Ids */
+            legal_rule_ids?: string[];
+            /** Engine Version */
+            engine_version?: string | null;
+            /** Evidence Id */
+            evidence_id?: string | null;
+            /** Input Snapshot */
+            input_snapshot?: {
+                [key: string]: unknown;
+            };
+            /** Missing Information */
+            missing_information?: string[];
+            /** Estimated Impact Amount */
+            estimated_impact_amount?: string | null;
+            /** Estimated Impact Amount Currency */
+            estimated_impact_amount_currency?: string | null;
+            /** Candidates */
+            candidates?: components["schemas"]["ClassificationCandidateRead"][];
+            /** Evidences */
+            evidences?: components["schemas"]["EvidenceRecordRead"][];
+            /**
+             * Trace Available
+             * @default false
+             */
+            trace_available: boolean;
+        };
+        /**
+         * ClassificationStatus
+         * @description §18 maestro — cómo termina una evaluación de clasificación.
+         * @enum {string}
+         */
+        ClassificationStatus: "RESOLVED" | "INSUFFICIENT_INFORMATION" | "HUMAN_REVIEW_REQUIRED";
+        /**
+         * DataOrigin
+         * @description §9 maestro — los cinco orígenes de dato. Cerrado.
+         * @enum {string}
+         */
+        DataOrigin: "OFFICIAL" | "PUBLIC" | "LICENSED" | "SYNTHETIC" | "HUMAN_VALIDATED";
+        /**
+         * DossierRead
+         * @description Las diez respuestas, más lo que no se pudo responder.
+         */
+        DossierRead: {
+            /**
+             * Decision Id
+             * Format: uuid
+             */
+            decision_id: string;
+            /** What */
+            what: string;
+            /** Why */
+            why: string;
+            /** Which Rule */
+            which_rule: string;
+            /** Which Source */
+            which_source?: string[];
+            /** Source Version */
+            source_version?: string[];
+            /** Validity */
+            validity?: string[];
+            /** Data Used */
+            data_used?: {
+                [key: string]: unknown;
+            };
+            /** Confidence */
+            confidence?: string | null;
+            /** Money Impact */
+            money_impact: string;
+            /** Requires Human Review */
+            requires_human_review: boolean;
+            /** Unanswered */
+            unanswered?: string[];
+            /**
+             * Is Complete
+             * @default false
+             */
+            is_complete: boolean;
+            /**
+             * Uninterpretable Evidences
+             * @default 0
+             */
+            uninterpretable_evidences: number;
+        };
+        /**
+         * EvidenceKind
+         * @description Tipo de evidencia en evidence_records. Espejo de core.evidence.kinds.EvidenceKind.
+         * @enum {string}
+         */
+        EvidenceKind: "LEGAL_SOURCE" | "MODEL_OUTPUT" | "DETERMINISTIC" | "HUMAN" | "COMPARABLE";
+        /** EvidenceRecordRead */
+        EvidenceRecordRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            data_origin: components["schemas"]["DataOrigin"];
+            /** Source Id */
+            source_id?: string | null;
+            /** Subject Kind */
+            subject_kind?: string | null;
+            /** Subject Id */
+            subject_id?: string | null;
+            /** Summary */
+            summary?: string | null;
+            /** Source Ids */
+            source_ids?: string[];
+            /** Legal Rule Ids */
+            legal_rule_ids?: string[];
+            /** Document Refs */
+            document_refs?: {
+                [key: string]: unknown;
+            }[];
+            /** Content Hashes */
+            content_hashes?: string[];
+            /** Engine Version */
+            engine_version?: string | null;
+            /** Model Provider */
+            model_provider?: string | null;
+            /** Model Name */
+            model_name?: string | null;
+            /** Prompt Version */
+            prompt_version?: string | null;
+            /**
+             * Created By
+             * @default engine
+             */
+            created_by: string;
+            evidence_kind?: components["schemas"]["EvidenceKind"] | null;
+        };
+        /**
+         * FindingSeverity
+         * @description §21 maestro — severidad de un hallazgo.
+         * @enum {string}
+         */
+        FindingSeverity: "INFO" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+        /** HTTPValidationError */
+        HTTPValidationError: {
+            /** Detail */
+            detail?: components["schemas"]["ValidationError"][];
+        };
         /**
          * LivenessResponse
          * @description Respuesta de liveness.
@@ -72,6 +634,314 @@ export interface components {
             timestamp: string;
         };
         /**
+         * PedimentoFindings
+         * @description Un pedimento con sus hallazgos y, sobre todo, con qué NO se sabe.
+         */
+        PedimentoFindings: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Synthetic Scenario Id */
+            synthetic_scenario_id?: string | null;
+            /** Seed */
+            seed?: number | null;
+            data_origin: components["schemas"]["DataOrigin"];
+            /** Source Id */
+            source_id?: string | null;
+            /**
+             * Client Id
+             * Format: uuid
+             */
+            client_id: string;
+            /** Pedimento Number */
+            pedimento_number: string;
+            /** Customs Office */
+            customs_office?: string | null;
+            /** Pedimento Key */
+            pedimento_key?: string | null;
+            /** Regime */
+            regime?: string | null;
+            trade_flow: components["schemas"]["TradeFlow"];
+            /**
+             * Operation Date
+             * Format: date
+             */
+            operation_date: string;
+            /** Entry Date */
+            entry_date?: string | null;
+            /**
+             * Currency
+             * @default MXN
+             */
+            currency: string;
+            /** Exchange Rate */
+            exchange_rate?: string | null;
+            /** Customs Value */
+            customs_value?: string | null;
+            /** Customs Value Currency */
+            customs_value_currency?: string | null;
+            /** Total Taxes */
+            total_taxes?: string | null;
+            /** Total Taxes Currency */
+            total_taxes_currency?: string | null;
+            /**
+             * Is Simulation
+             * @default false
+             */
+            is_simulation: boolean;
+            /** Findings */
+            findings?: components["schemas"]["RiskFindingRead"][];
+            /**
+             * Coverage Known
+             * @default false
+             */
+            coverage_known: boolean;
+            /** Worst Severity */
+            worst_severity?: string | null;
+        };
+        /** PedimentoRead */
+        PedimentoRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Synthetic Scenario Id */
+            synthetic_scenario_id?: string | null;
+            /** Seed */
+            seed?: number | null;
+            data_origin: components["schemas"]["DataOrigin"];
+            /** Source Id */
+            source_id?: string | null;
+            /**
+             * Client Id
+             * Format: uuid
+             */
+            client_id: string;
+            /** Pedimento Number */
+            pedimento_number: string;
+            /** Customs Office */
+            customs_office?: string | null;
+            /** Pedimento Key */
+            pedimento_key?: string | null;
+            /** Regime */
+            regime?: string | null;
+            trade_flow: components["schemas"]["TradeFlow"];
+            /**
+             * Operation Date
+             * Format: date
+             */
+            operation_date: string;
+            /** Entry Date */
+            entry_date?: string | null;
+            /**
+             * Currency
+             * @default MXN
+             */
+            currency: string;
+            /** Exchange Rate */
+            exchange_rate?: string | null;
+            /** Customs Value */
+            customs_value?: string | null;
+            /** Customs Value Currency */
+            customs_value_currency?: string | null;
+            /** Total Taxes */
+            total_taxes?: string | null;
+            /** Total Taxes Currency */
+            total_taxes_currency?: string | null;
+            /**
+             * Is Simulation
+             * @default false
+             */
+            is_simulation: boolean;
+        };
+        /** ProductAttributeRead */
+        ProductAttributeRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            data_origin: components["schemas"]["DataOrigin"];
+            /** Source Id */
+            source_id?: string | null;
+            /**
+             * Product Dna Id
+             * Format: uuid
+             */
+            product_dna_id: string;
+            /** Name */
+            name: string;
+            /** Value */
+            value?: string | null;
+            /** Unit */
+            unit?: string | null;
+            status: components["schemas"]["AttributeStatus"];
+            /** Confidence */
+            confidence?: string | null;
+            /** Evidence Reference */
+            evidence_reference?: string | null;
+        };
+        /**
+         * ProductDnaDetail
+         * @description Un Product DNA con sus atributos.
+         *
+         *     Van juntos porque nunca se necesitan por separado: un DNA sin sus
+         *     atributos no dice nada, y la pantalla tendría que encadenar dos peticiones
+         *     para pintar una sola vista.
+         */
+        ProductDnaDetail: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Synthetic Scenario Id */
+            synthetic_scenario_id?: string | null;
+            /** Seed */
+            seed?: number | null;
+            /** Model Provider */
+            model_provider?: string | null;
+            /** Model Name */
+            model_name?: string | null;
+            /** Prompt Id */
+            prompt_id?: string | null;
+            /** Prompt Version */
+            prompt_version?: string | null;
+            /** Input Tokens */
+            input_tokens?: number | null;
+            /** Output Tokens */
+            output_tokens?: number | null;
+            /** Latency Ms */
+            latency_ms?: number | null;
+            /** Attempts */
+            attempts?: number | null;
+            /** Finish Reason */
+            finish_reason?: string | null;
+            /** Confidence */
+            confidence?: string | null;
+            /**
+             * Requires Human Review
+             * @default true
+             */
+            requires_human_review: boolean;
+            data_origin: components["schemas"]["DataOrigin"];
+            /** Source Id */
+            source_id?: string | null;
+            /**
+             * Product Id
+             * Format: uuid
+             */
+            product_id: string;
+            /**
+             * Version
+             * @default 1
+             */
+            version: number;
+            /**
+             * Is Current
+             * @default true
+             */
+            is_current: boolean;
+            /** Input Kinds */
+            input_kinds?: string[];
+            /** Summary */
+            summary?: string | null;
+            /** Missing Information */
+            missing_information?: string[];
+            /** Evidence Id */
+            evidence_id?: string | null;
+            /** Attributes */
+            attributes?: components["schemas"]["ProductAttributeRead"][];
+        };
+        /** ProductRead */
+        ProductRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Synthetic Scenario Id */
+            synthetic_scenario_id?: string | null;
+            /** Seed */
+            seed?: number | null;
+            data_origin: components["schemas"]["DataOrigin"];
+            /** Source Id */
+            source_id?: string | null;
+            /** Client Id */
+            client_id?: string | null;
+            /** Supplier Id */
+            supplier_id?: string | null;
+            /** Sku */
+            sku: string;
+            /** Commercial Name */
+            commercial_name: string;
+            /** Description */
+            description?: string | null;
+            /** Brand */
+            brand?: string | null;
+            /** Model */
+            model?: string | null;
+            /** Manufacturer Name */
+            manufacturer_name?: string | null;
+            /** Country Of Manufacture */
+            country_of_manufacture?: string | null;
+            /** Unit Of Measure */
+            unit_of_measure?: string | null;
+        };
+        /**
          * ReadinessResponse
          * @description Respuesta de readiness, con el detalle por dependencia.
          */
@@ -88,6 +958,84 @@ export interface components {
                 [key: string]: components["schemas"]["ServiceCheck"];
             };
         };
+        /** RiskFindingRead */
+        RiskFindingRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Synthetic Scenario Id */
+            synthetic_scenario_id?: string | null;
+            /** Seed */
+            seed?: number | null;
+            /** Model Provider */
+            model_provider?: string | null;
+            /** Model Name */
+            model_name?: string | null;
+            /** Prompt Id */
+            prompt_id?: string | null;
+            /** Prompt Version */
+            prompt_version?: string | null;
+            /** Input Tokens */
+            input_tokens?: number | null;
+            /** Output Tokens */
+            output_tokens?: number | null;
+            /** Latency Ms */
+            latency_ms?: number | null;
+            /** Attempts */
+            attempts?: number | null;
+            /** Finish Reason */
+            finish_reason?: string | null;
+            /** Confidence */
+            confidence?: string | null;
+            /**
+             * Requires Human Review
+             * @default true
+             */
+            requires_human_review: boolean;
+            data_origin: components["schemas"]["DataOrigin"];
+            /** Source Id */
+            source_id?: string | null;
+            /** Pedimento Id */
+            pedimento_id?: string | null;
+            /** Pedimento Item Id */
+            pedimento_item_id?: string | null;
+            /** Classification Decision Id */
+            classification_decision_id?: string | null;
+            /** Finding Type */
+            finding_type: string;
+            /** Field */
+            field?: string | null;
+            /** Declared Value */
+            declared_value?: string | null;
+            /** Expected Value */
+            expected_value?: string | null;
+            severity: components["schemas"]["FindingSeverity"];
+            /** Rationale */
+            rationale?: string | null;
+            /** Impact Amount */
+            impact_amount?: string | null;
+            /** Impact Amount Currency */
+            impact_amount_currency?: string | null;
+            /**
+             * Is Simulation
+             * @default false
+             */
+            is_simulation: boolean;
+            /** Evidence Id */
+            evidence_id?: string | null;
+        };
         /**
          * ServiceCheck
          * @description Resultado de sondear una dependencia.
@@ -102,6 +1050,25 @@ export interface components {
             latency_ms?: number | null;
             /** Detail */
             detail?: string | null;
+        };
+        /**
+         * TradeFlow
+         * @description Sentido de la operación.
+         * @enum {string}
+         */
+        TradeFlow: "IMPORT" | "EXPORT";
+        /** ValidationError */
+        ValidationError: {
+            /** Location */
+            loc: (string | number)[];
+            /** Message */
+            msg: string;
+            /** Error Type */
+            type: string;
+            /** Input */
+            input?: unknown;
+            /** Context */
+            ctx?: Record<string, never>;
         };
     };
     responses: never;
@@ -148,6 +1115,290 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReadinessResponse"];
+                };
+            };
+        };
+    };
+    listar_productos_products_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    obtener_producto_products__product_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                product_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    obtener_dna_products__product_id__dna_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                product_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductDnaDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listar_decisiones_classifications_get: {
+        parameters: {
+            query?: {
+                product_id?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClassificationDecisionRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    obtener_decision_classifications__decision_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                decision_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClassificationDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listar_hallazgos_findings_get: {
+        parameters: {
+            query?: {
+                pedimento_id?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RiskFindingRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listar_pedimentos_findings_pedimentos_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PedimentoRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    obtener_pedimento_findings_pedimentos__pedimento_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pedimento_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PedimentoFindings"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    obtener_dossier_evidence__decision_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                decision_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DossierRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

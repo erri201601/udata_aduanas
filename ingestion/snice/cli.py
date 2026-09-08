@@ -5,14 +5,25 @@ silencioso: escribir en la base compartida del equipo debe ser una decisión
 visible en la línea de comandos, no algo que pasa porque una variable de
 entorno estaba puesta (Persona 1, 2026-09-07).
 
+`--target` redirige AMBOS destinos, base y MinIO, juntos — nunca uno sí y el
+otro no. Antes de escribir en la base de `--target`, se verifica que el RAW
+ya exista en el MinIO de ESE MISMO destino: sin esa verificación, nada
+impedía que el RAW subiera a un MinIO y las filas a la base de otro, que es
+justo lo que pasó una vez (Persona 1, 2026-09-08).
+
 Uso:
     python -m ingestion.snice.cli --target local  --chapters 84 85
     python -m ingestion.snice.cli --target shared --chapters 84 85
 
-`--target local` usa `DATABASE_URL`/`POSTGRES_*` de tu `.env` (siempre tu
-Postgres local). `--target shared` exige `ADUANERO_SHARED_URL` en el entorno
-— nunca la escribas aquí ni la pegues en un chat; ponla en tu `.env` cuando
-Persona 1 te dé la contraseña por canal seguro.
+`--raw-only` sube el RAW y verifica, sin tocar la base — para recapturar el
+crudo en un destino cuyos datos ya están cargados (Persona 1, 2026-09-08:
+el RAW nunca llegó al MinIO compartido aunque las filas sí a la base).
+
+`--target local` usa `DATABASE_URL`/`POSTGRES_*` y el MinIO de tu `.env`
+(siempre local). `--target shared` exige `ADUANERO_SHARED_URL` y
+`ADUANERO_SHARED_MINIO_URL` en el entorno — nunca los escribas ni los pegues
+en un chat; ponlos en tu `.env` cuando Persona 1 te dé las credenciales por
+canal seguro.
 """
 
 from __future__ import annotations
@@ -21,6 +32,7 @@ import argparse
 import os
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import structlog
 from apps.api.config import get_settings
@@ -28,6 +40,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from ingestion.snice import load, nico, raw, tariff
+
+if TYPE_CHECKING:
+    from ingestion.snice.raw import MinioTarget
 
 log = structlog.stdlib.get_logger("ingestion.snice.cli")
 
@@ -54,54 +69,83 @@ def _database_url(target: str) -> str:
     return get_settings().sqlalchemy_url
 
 
+def _minio_target(target: str) -> MinioTarget:
+    """El mismo `--target` decide dónde va el RAW — nunca queda fijo en local."""
+    if target == "shared":
+        return raw.shared_target()
+    return raw.local_target()
+
+
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--target",
         required=True,
         choices=["local", "shared"],
-        help="'shared' escribe en la base del equipo — decisión explícita, sin default.",
+        help="'shared' escribe en la base y el MinIO del equipo — decisión explícita.",
     )
     parser.add_argument(
         "--chapters",
-        required=True,
+        required=False,
         nargs="+",
         metavar="NN",
-        help="Capítulos de 2 dígitos a cargar, p. ej. --chapters 84 85",
+        help="Capítulos de 2 dígitos a cargar, p. ej. --chapters 84 85 (ignorado con --raw-only)",
+    )
+    parser.add_argument(
+        "--raw-only",
+        action="store_true",
+        help="Solo sube y verifica el RAW en --target; no toca la base.",
     )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    chapters = frozenset(args.chapters)
-    database_url = _database_url(args.target)
+    if not args.raw_only and not args.chapters:
+        raise SystemExit("--chapters es obligatorio salvo con --raw-only")
+    chapters = frozenset(args.chapters or ())
+    # `--raw-only` no toca la base: no le exigimos su URL, que puede no
+    # estar configurada si solo se va a recapturar el crudo.
+    database_url = None if args.raw_only else _database_url(args.target)
+    minio_target = _minio_target(args.target)
 
     log.info("snice.cli.start", target=args.target, chapters=sorted(chapters))
 
     with tempfile.TemporaryDirectory(prefix="snice_") as tmp:
         tmp_path = Path(tmp)
 
+        tarifa_key = "snice/fracciones_20260420.xlsx"
         tarifa_bytes = raw.fetch(TARIFA_URL)
         tarifa_capture = raw.store_raw_bytes(
-            tarifa_bytes, source_url=TARIFA_URL, minio_key="snice/fracciones_20260420.xlsx"
+            tarifa_bytes, source_url=TARIFA_URL, minio_key=tarifa_key, target=minio_target
         )
         tarifa_path = tmp_path / "fracciones.xlsx"
         tarifa_path.write_bytes(tarifa_bytes)
 
+        nico_key = "snice/nico_20240415.xlsx"
         nico_bytes = raw.fetch(NICO_URL)
         nico_capture = raw.store_raw_bytes(
-            nico_bytes, source_url=NICO_URL, minio_key="snice/nico_20240415.xlsx"
+            nico_bytes, source_url=NICO_URL, minio_key=nico_key, target=minio_target
         )
         nico_path = tmp_path / "nico.xlsx"
         nico_path.write_bytes(nico_bytes)
 
+        ligie_key = "snice/ligie_unificada_20250728.pdf"
         ligie_bytes = raw.fetch(LIGIE_PDF_URL)
         ligie_capture = raw.store_raw_bytes(
-            ligie_bytes,
-            source_url=LIGIE_PDF_URL,
-            minio_key="snice/ligie_unificada_20250728.pdf",
+            ligie_bytes, source_url=LIGIE_PDF_URL, minio_key=ligie_key, target=minio_target
         )
+
+        # Guardia explícita: el RAW tiene que existir en ESTE MISMO destino
+        # antes de escribir una sola fila en su base (regla 7 CLAUDE.md).
+        for key in (tarifa_key, nico_key, ligie_key):
+            raw.verify_stored(target=minio_target, minio_key=key)
+
+        if args.raw_only:
+            for capture in (tarifa_capture, nico_capture, ligie_capture):
+                print(f"RAW OK ({args.target}): {capture.minio_key}  sha256={capture.content_hash}")
+            log.info("snice.cli.done", target=args.target, raw_only=True)
+            return 0
 
         fa_result = tariff.parse_fracciones(
             tariff.iter_fraccion_rows(tarifa_path),
@@ -118,15 +162,14 @@ def main(argv: list[str] | None = None) -> int:
             retrieved_at=nico_capture.retrieved_at,
         )
 
-    print(
-        f"Reconciliación tarifa: {fa_result.reconciliation(declared_by_source=len(fa_result.accepted) + len(fa_result.rejected))}"
-    )
-    print(
-        f"Reconciliación NICO:   {nico_result.reconciliation(declared_by_source=len(nico_result.accepted) + len(nico_result.rejected))}"
-    )
+    fa_declared = len(fa_result.accepted) + len(fa_result.rejected)
+    nico_declared = len(nico_result.accepted) + len(nico_result.rejected)
+    print(f"Reconciliación tarifa: {fa_result.reconciliation(declared_by_source=fa_declared)}")
+    print(f"Reconciliación NICO:   {nico_result.reconciliation(declared_by_source=nico_declared)}")
     if fa_result.rate_warnings:
         print(f"Advertencias de tasa: {len(fa_result.rate_warnings)}")
 
+    assert database_url is not None  # solo llegamos aquí sin --raw-only
     engine = create_engine(database_url)
     with Session(engine) as session:
         n_fracciones, n_nicos = load.load_chapters(

@@ -88,6 +88,9 @@ runtime-evaluated-base-classes = [
 # tipos usados ahí no pueden moverse a un bloque TYPE_CHECKING.
 "database/models/*" = ["TC001", "TC002", "TC003"]
 "schemas/*" = ["TC001", "TC002", "TC003"]
+# Lo mismo en los routers: FastAPI lee las anotaciones de la firma EN EJECUCIÓN
+# para construir la inyección de dependencias y la validación de la petición.
+"apps/api/routers/*" = ["TC001", "TC002", "TC003"]
 
 # ── Mypy: typing obligatorio (§13 DoD Persona 1) ─────────────────────────────
 [tool.mypy]

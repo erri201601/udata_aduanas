@@ -89,8 +89,10 @@ def test_los_estados_con_valor_declaran_confianza() -> None:
 def test_la_inferencia_deja_evidencia_de_modelo() -> None:
     """El atributo INFERRED se sostiene en una evidencia MODEL_OUTPUT.
 
-    `created_by == "model"` es hoy la única proyección del tipo: la columna
-    `evidence_kind` todavía no existe (nota en `core/evidence/__init__.py`).
+    Desde el PR #17 la columna `evidence_kind` existe, así que el tipo se
+    guarda tal cual en vez de proyectarse sólo sobre `created_by`. Esa
+    distinción es la que impide que un precedente de CBP CROSS se lea como
+    fundamento mexicano.
     """
     from database.models import EvidenceRecord
 
@@ -100,7 +102,34 @@ def test_la_inferencia_deja_evidencia_de_modelo() -> None:
     ]
 
     assert len(de_modelo) == 1
+    assert de_modelo[0].evidence_kind == "MODEL_OUTPUT"
     assert de_modelo[0].model_provider
     assert de_modelo[0].model_name
     # Sin prompt_version la salida es irreproducible; el builder lo exige.
     assert de_modelo[0].prompt_version
+
+
+def test_toda_evidencia_declara_su_tipo() -> None:
+    """Sin `evidence_kind`, una evidencia no sirve para nada aguas abajo.
+
+    La Evidence UI no puede meterla en el dossier —suponerle un tipo sería
+    inventar la procedencia de un dato— y la pantalla de Classification la
+    marca "Tipo no declarado". Las filas reales se arreglaron a mano, pero el
+    seed volvía a producirlas en NULL al reejecutarse.
+    """
+    from database.models import EvidenceRecord
+
+    evidencias = [f for f in _filas_del_seed() if isinstance(f, EvidenceRecord)]
+
+    assert evidencias
+    for e in evidencias:
+        assert e.evidence_kind, f"evidencia sin tipo: {e.summary!r}"
+
+
+def test_la_evidencia_juridica_y_la_de_modelo_se_distinguen() -> None:
+    """Es la distinción que impide que una deducción pase por fundamento."""
+    from database.models import EvidenceRecord
+
+    tipos = {e.evidence_kind for e in _filas_del_seed() if isinstance(e, EvidenceRecord)}
+
+    assert tipos == {"LEGAL_SOURCE", "MODEL_OUTPUT"}

@@ -55,20 +55,30 @@ from core.product_dna.engine import extract
 from core.product_dna.llm_extractor import PROMPT_ID, PROMPT_VERSION, LlmExtractor
 from core.product_dna.ports import Extractor
 from core.product_dna.types import ExtractedAttribute, ProductDnaDraft, SourceDocument
+from core.product_dna.vision import (
+    MEDIA_TYPES,
+    TOPE_DESDE_IMAGEN,
+    ImagenNoSoportadaError,
+    VisionExtractor,
+)
 
 __all__ = [
     "ATTRIBUTE_STATUSES",
     "CATALOG",
     "CRITICOS",
+    "MEDIA_TYPES",
     "PROMPT_ID",
     "PROMPT_VERSION",
     "SOLID_STATUSES",
+    "TOPE_DESDE_IMAGEN",
     "AttributeStatus",
     "ExtractedAttribute",
     "Extractor",
+    "ImagenNoSoportadaError",
     "LlmExtractor",
     "ProductDnaDraft",
     "SourceDocument",
+    "VisionExtractor",
     "es_critico",
     "extract",
 ]
