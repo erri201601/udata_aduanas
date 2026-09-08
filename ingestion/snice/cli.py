@@ -185,7 +185,9 @@ def main(argv: list[str] | None = None) -> int:
         fa_declared = len(fa_result.accepted) + len(fa_result.rejected)
         nico_declared = len(nico_result.accepted) + len(nico_result.rejected)
         print(f"Reconciliación tarifa: {fa_result.reconciliation(declared_by_source=fa_declared)}")
-        print(f"Reconciliación NICO:   {nico_result.reconciliation(declared_by_source=nico_declared)}")
+        print(
+            f"Reconciliación NICO:   {nico_result.reconciliation(declared_by_source=nico_declared)}"
+        )
         if fa_result.rate_warnings:
             print(f"Advertencias de tasa: {len(fa_result.rate_warnings)}")
     if parsed_notes is not None:

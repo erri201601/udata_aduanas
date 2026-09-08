@@ -43,6 +43,7 @@ def extract_text(pdf_path: str) -> list[str]:
     )
     return resultado.stdout.splitlines(keepends=True)
 
+
 _CAPITULO_RE = re.compile(r"^\s*Cap[ií]tulo\s+(\d{1,2})\.\s*$")
 _SECCION_RE = re.compile(r"^\s*Secci[oó]n\s+([IVXLC]+)\.\s*$")
 _NOTAS_RE = re.compile(r"^\s*Notas?\.\s*$")

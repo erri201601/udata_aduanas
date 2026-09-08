@@ -214,7 +214,9 @@ def _legal_document(*, kind: str, short_name: str) -> LegalDocument:
     )
 
 
-def _legal_rule(*, document: LegalDocument, rule_number: str, path: str | None, text: str) -> LegalRule:
+def _legal_rule(
+    *, document: LegalDocument, rule_number: str, path: str | None, text: str
+) -> LegalRule:
     return LegalRule(
         legal_document_id=document.id,
         rule_number=rule_number,

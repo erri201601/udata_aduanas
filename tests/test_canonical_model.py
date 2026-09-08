@@ -597,7 +597,9 @@ def test_customs_office_permite_dos_secciones_null_bajo_la_misma_aduana(
 
     pg_session.add_all(
         [
-            CustomsOffice(aduana="17", seccion=None, name="Puerto el Mezquital.", **_ANEXO22_ROW_META),
+            CustomsOffice(
+                aduana="17", seccion=None, name="Puerto el Mezquital.", **_ANEXO22_ROW_META
+            ),
             CustomsOffice(
                 aduana="17",
                 seccion=None,

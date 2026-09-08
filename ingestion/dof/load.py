@@ -74,9 +74,7 @@ def get_or_create_anexo22_document(
     content_hash: str,
     retrieved_at: datetime,
 ) -> LegalDocument:
-    existing = (
-        session.query(LegalDocument).filter_by(short_name=ANEXO22_SHORT_NAME).one_or_none()
-    )
+    existing = session.query(LegalDocument).filter_by(short_name=ANEXO22_SHORT_NAME).one_or_none()
     if existing is not None:
         return existing
 
