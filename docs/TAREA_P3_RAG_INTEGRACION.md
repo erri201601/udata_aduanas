@@ -39,7 +39,7 @@ LegalRef(
     valid_from=date(2018, 6, 25),
     content_hash="sha256:...",
     data_origin="OFFICIAL",
-    valid_to=None,          # NULL = vigente
+    valid_to=None,  # NULL = vigente
 )
 ```
 

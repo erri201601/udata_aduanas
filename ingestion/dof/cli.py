@@ -79,7 +79,10 @@ def main(argv: list[str] | None = None) -> int:
 
         pdf_bytes = raw.fetch(load.ANEXO22_SOURCE_URL)
         capture = raw.store_raw_bytes(
-            pdf_bytes, source_url=load.ANEXO22_SOURCE_URL, minio_key=ANEXO22_KEY, target=minio_target
+            pdf_bytes,
+            source_url=load.ANEXO22_SOURCE_URL,
+            minio_key=ANEXO22_KEY,
+            target=minio_target,
         )
         pdf_path = tmp_path / "anexo22.pdf"
         pdf_path.write_bytes(pdf_bytes)

@@ -213,9 +213,7 @@ _TABLE_HEADER_RE = re.compile(r"^\s*Clave\s+Descripci[oó]n", re.IGNORECASE)
 # Subtítulo del propio Apéndice 9, no el nombre de una dependencia. Sin este
 # filtro se pega al frente del primer nombre real ("Secretaría de Economía")
 # porque no hay "Clave Descripción" entre ambos que corte el encabezado.
-_APPENDIX_SUBTITLE_RE = re.compile(
-    r"^Regulaciones y restricciones no arancelarias$", re.IGNORECASE
-)
+_APPENDIX_SUBTITLE_RE = re.compile(r"^Regulaciones y restricciones no arancelarias$", re.IGNORECASE)
 
 
 def parse_non_tariff_regulations(lines: list[str]) -> list[ParsedNonTariffRegulation]:
