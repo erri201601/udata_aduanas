@@ -39,8 +39,8 @@ def _business_tables() -> list[sa.Table]:
 # ── Estructura ──────────────────────────────────────────────────────────────
 
 
-def test_hay_28_entidades() -> None:
-    assert len(_tables()) == 28
+def test_hay_29_entidades() -> None:
+    assert len(_tables()) == 29
 
 
 def test_todas_las_tablas_en_los_tres_esquemas() -> None:
@@ -171,6 +171,7 @@ _ENTIDADES = [
     ("regulatory", "LegalSource"),
     ("regulatory", "LegalDocument"),
     ("regulatory", "LegalRule"),
+    ("regulatory", "LegalChunkRecord"),
     ("regulatory", "TariffFraction"),
     ("regulatory", "Nico"),
     ("regulatory", "CustomsOffice"),
@@ -377,6 +378,59 @@ def test_valid_to_null_significa_vigente(pg_session: Session) -> None:
         )
     )
     assert encontrado is not None and encontrado.id == doc.id
+
+
+@pytest.mark.integration
+def test_legal_rule_rechaza_mismo_documento_numero_y_vigencia_duplicados(
+    pg_session: Session,
+) -> None:
+    """`(legal_document_id, rule_number, valid_from)` es la llave natural: sin
+    esto, cargar el mismo documento dos veces duplica en silencio en vez de
+    fallar (Task 4, ingesta de la Ley Aduanera — regulatory.legal_rules
+    estaba vacía y sin esta guardia)."""
+    from database.models import LegalDocument, LegalRule
+
+    doc = LegalDocument(
+        title="Ley de prueba",
+        short_name="LEY_PRUEBA_UQ",
+        kind="LAW",
+        data_origin="OFFICIAL",
+        valid_from=date(2020, 1, 1),
+        source_url="https://x",
+        content_hash="h",
+        retrieved_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    pg_session.add(doc)
+    pg_session.flush()
+
+    pg_session.add(
+        LegalRule(
+            legal_document_id=doc.id,
+            rule_number="1",
+            text="Texto.",
+            data_origin="OFFICIAL",
+            valid_from=date(2020, 1, 1),
+            source_url="https://x",
+            content_hash="h",
+            retrieved_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+    )
+    pg_session.flush()
+
+    pg_session.add(
+        LegalRule(
+            legal_document_id=doc.id,
+            rule_number="1",
+            text="Texto duplicado.",
+            data_origin="OFFICIAL",
+            valid_from=date(2020, 1, 1),
+            source_url="https://x",
+            content_hash="h",
+            retrieved_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+    )
+    with pytest.raises(sa.exc.IntegrityError, match="uq_legal_rules_document_rule_valid_from"):
+        pg_session.flush()
 
 
 @pytest.mark.integration
