@@ -1,0 +1,161 @@
+"""Catálogo arancelario sobre `regulatory.tariff_fractions`.
+
+Implementa el puerto `TariffCatalog` que declara el RGI Engine. El motor no
+sabe que hay una base detrás: pide partidas, subpartidas y fracciones vigentes
+en una fecha, y aquí se resuelven.
+
+LA VIGENCIA NO ES UN FILTRO OPCIONAL
+
+`on_date` es obligatorio en las tres consultas porque en la tarifa conviven
+versiones del mismo código. Hoy mismo `84713001` tiene dos filas: una que
+venció el 2022-06-06 y otra que rige desde el día siguiente. Clasificar una
+operación de 2024 con la versión equivocada da un resultado que parece
+correcto y no lo es (§14 del maestro).
+
+Por eso el filtro se aplica en SQL y no después: si se trajeran todas las
+versiones y se descartaran en Python, cualquier consulta que se olvidara del
+paso devolvería la fila incorrecta en silencio.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+import sqlalchemy as sa
+from core.rgi_engine.context import TariffCandidate
+
+from database.models import TariffFraction
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+    from datetime import date
+
+    from sqlalchemy.orm import Session
+
+#: Tope de candidatos por consulta. El RGI evalúa cada uno contra las notas
+#: legales; cien partidas no ayudan a decidir, sólo hacen la traza ilegible.
+MAX_CANDIDATOS = 25
+
+
+def _un_source_id() -> sa.ColumnElement:
+    """Un `source_id` cualquiera del grupo, como UUID.
+
+    PostgreSQL no tiene `min(uuid)`, así que se agrega sobre texto y se
+    devuelve al tipo. Cuál se elija da igual y por eso se toma el mínimo, que
+    al menos es determinista: una partida no es una fila —es el prefijo que
+    comparten varias fracciones— y todas vienen del mismo documento de tarifa.
+    """
+    return sa.cast(
+        sa.func.min(sa.cast(TariffFraction.source_id, sa.Text)), sa.Uuid(as_uuid=True)
+    ).label("source_id")
+
+
+def _vigentes(on_date: date) -> sa.ColumnElement[bool]:
+    """`valid_from <= fecha <= valid_to`, con `valid_to = NULL` = vigente.
+
+    Es la regla 5 del CLAUDE.md escrita una sola vez, para que ninguna consulta
+    pueda olvidarla.
+    """
+    return sa.and_(
+        TariffFraction.valid_from <= on_date,
+        sa.or_(TariffFraction.valid_to.is_(None), TariffFraction.valid_to >= on_date),
+    )
+
+
+def _coincide(terms: Sequence[str]) -> sa.ColumnElement[bool]:
+    """Coincidencia por texto sobre la descripción.
+
+    Búsqueda simple a propósito: la semántica la aporta el RAG cuando exista
+    (§27). Aquí basta con reducir 1 445 fracciones a un puñado de candidatos
+    que el motor pueda evaluar contra las notas legales.
+    """
+    if not terms:
+        return sa.true()
+    return sa.or_(*(TariffFraction.description.ilike(f"%{t}%") for t in terms if t.strip()))
+
+
+class TariffCatalogRepository:
+    """`TariffCatalog` respaldado por PostgreSQL."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def headings(self, *, on_date: date, terms: Sequence[str]) -> Sequence[TariffCandidate]:
+        """Partidas (4 dígitos) cuyo texto coincide con los términos.
+
+        Se agrupa por partida porque la tabla guarda fracciones de 8 dígitos:
+        la partida no es una fila, es el prefijo que comparten varias.
+        """
+        filas = self._session.execute(
+            sa.select(
+                TariffFraction.heading,
+                sa.func.min(TariffFraction.description).label("description"),
+                sa.func.max(TariffFraction.specificity).label("specificity"),
+                _un_source_id(),
+            )
+            .where(_vigentes(on_date), _coincide(terms))
+            .group_by(TariffFraction.heading)
+            .order_by(sa.desc("specificity"), TariffFraction.heading)
+            .limit(MAX_CANDIDATOS)
+        ).all()
+
+        return [
+            TariffCandidate(
+                code=f.heading,
+                text=f.description,
+                level="HEADING",
+                source_id=f.source_id,
+                specificity=f.specificity or 0,
+            )
+            for f in filas
+        ]
+
+    def subheadings(self, *, on_date: date, heading: str) -> Sequence[TariffCandidate]:
+        """Subpartidas (6 dígitos) que dependen de una partida."""
+        filas = self._session.execute(
+            sa.select(
+                TariffFraction.subheading,
+                sa.func.min(TariffFraction.description).label("description"),
+                sa.func.max(TariffFraction.specificity).label("specificity"),
+                _un_source_id(),
+            )
+            .where(_vigentes(on_date), TariffFraction.heading == heading)
+            .group_by(TariffFraction.subheading)
+            .order_by(sa.desc("specificity"), TariffFraction.subheading)
+            .limit(MAX_CANDIDATOS)
+        ).all()
+
+        return [
+            TariffCandidate(
+                code=f.subheading,
+                text=f.description,
+                level="SUBHEADING",
+                source_id=f.source_id,
+                specificity=f.specificity or 0,
+            )
+            for f in filas
+        ]
+
+    def fractions(self, *, on_date: date, subheading: str) -> Sequence[TariffCandidate]:
+        """Fracciones mexicanas (8 dígitos) de una subpartida.
+
+        Aquí es donde más importa la vigencia: es el nivel que se declara en el
+        pedimento, y el que tiene versiones solapadas en la tarifa real.
+        """
+        filas = self._session.scalars(
+            sa.select(TariffFraction)
+            .where(_vigentes(on_date), TariffFraction.subheading == subheading)
+            .order_by(TariffFraction.specificity.desc(), TariffFraction.code)
+            .limit(MAX_CANDIDATOS)
+        ).all()
+
+        return [
+            TariffCandidate(
+                code=f.code,
+                text=f.description,
+                level="FRACTION",
+                source_id=f.source_id,
+                specificity=f.specificity,
+            )
+            for f in filas
+        ]

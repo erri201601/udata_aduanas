@@ -35,10 +35,15 @@ const SIN_RESOLVER: Record<string, string> = {
   BLOCKED: 'La clasificación no resultó defendible y se bloqueó.',
 }
 
-export function Classification() {
+interface Props {
+  /** Decisión recién creada. Abre en ella en vez de en la primera. */
+  decisionInicial?: string | null
+}
+
+export function Classification({ decisionInicial = null }: Props = {}) {
   const { decisiones, error: errorLista, cargando: cargandoLista } = useClassifications()
   const [elegida, setElegida] = useState<string | null>(null)
-  const activa = elegida ?? decisiones[0]?.id ?? null
+  const activa = elegida ?? decisionInicial ?? decisiones[0]?.id ?? null
   const { detalle, error, cargando } = useClassification(activa)
 
   const candidatos = detalle?.candidates ?? []

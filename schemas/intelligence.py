@@ -204,6 +204,30 @@ class ClassificationCandidateUpdate(CanonicalModel):
     rejected_reason: str | None = None
 
 
+# ── shadow_reviews ──────────────────────────────────────────────────────────
+
+
+class ShadowReviewBase(DataOriginFields):
+    pedimento_id: uuid.UUID
+    is_complete: bool
+    # ShadowComparison.unverifiable tal cual: lista de razones, no JSONB.
+    unverifiable: list[str] = Field(default_factory=list)
+    engine_version: str | None = None
+
+
+class ShadowReviewCreate(ShadowReviewBase):
+    pass
+
+
+class ShadowReviewRead(ShadowReviewBase, IdentifiedRead):
+    pass
+
+
+class ShadowReviewUpdate(CanonicalModel):
+    is_complete: bool | None = None
+    unverifiable: list[str] | None = None
+
+
 # ── risk_findings ───────────────────────────────────────────────────────────
 
 
@@ -211,6 +235,8 @@ class RiskFindingBase(DataOriginFields, AIDecisionFields, SyntheticFields):
     pedimento_id: uuid.UUID | None = None
     pedimento_item_id: uuid.UUID | None = None
     classification_decision_id: uuid.UUID | None = None
+    # A qué corrida del Pedimento Espejo pertenece este hallazgo.
+    shadow_review_id: uuid.UUID | None = None
     finding_type: str = Field(max_length=48)
     field: str | None = Field(default=None, max_length=64)
     declared_value: str | None = None

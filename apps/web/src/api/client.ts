@@ -23,6 +23,8 @@ export type PedimentoFindings = components['schemas']['PedimentoFindings']
 export type RiskFindingRead = components['schemas']['RiskFindingRead']
 export type Severity = RiskFindingRead['severity']
 export type DossierRead = components['schemas']['DossierRead']
+export type ClassifyRequest = components['schemas']['ClassifyRequest']
+export type ClassifyResponse = components['schemas']['ClassifyResponse']
 export type ServiceCheck = components['schemas']['ServiceCheck']
 export type ServiceStatus = ServiceCheck['status']
 
@@ -130,4 +132,35 @@ export async function fetchDossier(
   signal?: AbortSignal,
 ): Promise<DossierRead> {
   return pedir<DossierRead>(`/evidence/${decisionId}`, signal)
+}
+
+
+/**
+ * Clasifica un producto y persiste la decisión.
+ *
+ * Es la única llamada que ESCRIBE. `operation_date` es obligatoria: clasificar
+ * con la tarifa de hoy una operación de 2024 da un resultado que parece
+ * correcto y no lo es (§14).
+ */
+export async function classifyProduct(
+  productId: string,
+  peticion: ClassifyRequest,
+  signal?: AbortSignal,
+): Promise<ClassifyResponse> {
+  const respuesta = await fetch(`${API_BASE_URL}/products/${productId}/classify`, {
+    method: 'POST',
+    signal,
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(peticion),
+  })
+
+  if (!respuesta.ok) {
+    const detalle = await respuesta.json().catch(() => null)
+    throw new ApiError(
+      detalle?.detail ?? `La API respondió ${respuesta.status}`,
+      respuesta.status,
+    )
+  }
+
+  return (await respuesta.json()) as ClassifyResponse
 }
