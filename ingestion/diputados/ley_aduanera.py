@@ -42,12 +42,11 @@ class ParsedArticle:
     # Fecha de derogación si el artículo fue derogado (extraída de la nota
     # "Artículo derogado DOF dd-mm-aaaa"), None si sigue vigente.
     valid_to: date | None
-    # Sólo con valor cuando `valid_to` no es None: la fecha más antigua vista
-    # en las notas del propio artículo (adición o reforma), para no dejar
-    # `valid_from` en la fecha de la última reforma del documento completo —
-    # eso invertiría el intervalo (valid_from > valid_to) en cualquier
-    # artículo derogado antes de esa fecha. None = usa la fecha uniforme del
-    # documento que decide el llamador (caso normal, artículo vigente).
+    # Casi nunca None (ver `_vigencia_de_notas`): sólo cuando el artículo no
+    # trae ninguna nota de reforma/adición/derogación, de ningún nivel —no se
+    # ha tocado desde que se promulgó la ley—. El llamador decide el respaldo
+    # (la fecha de publicación original de la Ley, no la de su última reforma:
+    # esa es del documento completo, no de este artículo en particular).
     valid_from_override: date | None
 
 
@@ -89,16 +88,39 @@ def _vigencia_de_notas(footnote_lines: list[str]) -> tuple[date | None, date | N
     `valid_to` sólo si el ARTÍCULO COMPLETO fue derogado: "Fracción derogada"/
     "Párrafo derogado"/etc. no cierran la vigencia del artículo, sólo quitan
     una parte y el resto sigue vigente (caso real: artículo 20, con una
-    fracción derogada en 2013 y texto vigente después).
+    fracción derogada en 2013 y texto vigente después). Sólo se mira esto en
+    notas que empiezan con "Artículo": es el único nivel que cierra la fila
+    entera.
 
-    Cuando sí hay `valid_to`, `valid_from_override` es la fecha más antigua
-    entre TODAS las notas de "Artículo" de esa fila (adición/reforma/
-    derogación) — nunca la fecha uniforme del documento, que podría ser
-    posterior a la propia derogación e invertir el intervalo.
+    `valid_from_override` tiene DOS reglas distintas según el caso:
+
+    - DEROGADO: la fecha más antigua entre las notas de "Artículo" (adición/
+      reforma/derogación) de esa fila — nunca la fecha uniforme del
+      documento, que podría ser posterior a la propia derogación e invertir
+      el intervalo (regresión real: artículo 38).
+
+    - VIGENTE (la inmensa mayoría): la fecha MÁS RECIENTE entre TODAS las
+      notas del artículo, sin importar su nivel. La mayoría de las reformas
+      reales tocan un párrafo o un inciso, no "el artículo" completo — el
+      36-A real nunca trae una nota que empiece con "Artículo", sólo
+      "Párrafo reformado…"/"Inciso reformado…" — y lo que se guarda aquí es
+      UNA sola fila con el artículo entero. Esa fila sólo puede afirmarse
+      vigente desde la reforma más reciente que tocó CUALQUIERA de sus
+      partes, nunca desde la primera vez que se tocó: usar una fecha más
+      antigua citaría como vigente en una fecha histórica un texto que en
+      ese momento tenía otra redacción en alguna de sus partes (regla 5
+      CLAUDE.md, el mismo motivo por el que tampoco sirve la fecha del
+      documento completo).
+
+    `None` sólo cuando el artículo no trae ninguna nota, de ningún nivel: no
+    se ha tocado desde que se promulgó la ley. El llamador decide el
+    respaldo — la fecha de publicación original.
     """
     fechas_articulo: list[date] = []
+    fechas_todas: list[date] = []
     valid_to: date | None = None
     for line in footnote_lines:
+        fechas_todas.extend(_fechas_en(line))
         if not _ARTICULO_NOTA_RE.match(line):
             continue
         fechas_articulo.extend(_fechas_en(line))
@@ -106,9 +128,11 @@ def _vigencia_de_notas(footnote_lines: list[str]) -> tuple[date | None, date | N
         if m:
             dia, mes, anio = int(m.group(1)), int(m.group(2)), int(m.group(3))
             valid_to = date(anio, mes, dia)
-    if valid_to is None:
-        return None, None
-    return min(fechas_articulo), valid_to
+    if valid_to is not None:
+        return min(fechas_articulo), valid_to
+    if fechas_todas:
+        return max(fechas_todas), None
+    return None, None
 
 
 def parse_articles(lines: list[str]) -> list[ParsedArticle]:
@@ -153,7 +177,8 @@ def parse_articles(lines: list[str]) -> list[ParsedArticle]:
             if es_bis:
                 numero = f"{base}-BIS-{bis_n}" if bis_n else f"{base}-BIS"
             else:
-                numero = base + (ordinal_letra or letra or "")
+                letra_sufijo = ordinal_letra or letra
+                numero = f"{base}-{letra_sufijo}" if letra_sufijo else base
             cuerpo_texto = [m.group(6)]
             notas = []
             continue

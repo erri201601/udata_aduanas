@@ -24,8 +24,20 @@ DIPUTADOS_SLUG = "diputados"
 LEY_ADUANERA_SHORT_NAME = "LEY_ADUANERA"
 
 # "Última reforma publicada en el Diario Oficial de la Federación el 19 de
-# noviembre de 2025" — verificado en LeyesBiblio/ref/ladua.htm.
+# noviembre de 2025" — verificado en LeyesBiblio/ref/ladua.htm. Es la vigencia
+# del DOCUMENTO (LegalDocument.valid_from): la fecha en que la ley
+# consolidada tomó su forma actual. NO es la vigencia de un artículo
+# individual — usarla como respaldo por artículo fue el bug real que reportó
+# Persona 3 el 2026-09-08: sin nota propia, un artículo salía "vigente desde
+# 2025-11-19" aunque llevara sin tocarse desde 1995.
 LEY_ADUANERA_VALID_FROM = date(2025, 11, 19)
+
+# "Nueva Ley publicada en el Diario Oficial de la Federación el 15 de
+# diciembre de 1995" — verificado en la cabecera del propio PDF (línea 11 del
+# texto extraído). Respaldo de `valid_from` cuando un artículo no trae
+# NINGUNA nota de reforma/adición de ningún nivel: no se ha vuelto a tocar
+# desde que se promulgó la ley, así que rige desde entonces.
+LEY_ADUANERA_PUBLICACION_ORIGINAL = date(1995, 12, 15)
 LEY_ADUANERA_SOURCE_URL = "https://www.diputados.gob.mx/LeyesBiblio/pdf/LAdua.pdf"
 LEY_ADUANERA_SOURCE_DOCUMENT = "Ley Aduanera (DOF, última reforma 19-nov-2025)"
 
@@ -97,7 +109,7 @@ def to_legal_rule_row(
         text=parsed.text,
         data_origin="OFFICIAL",
         source_id=source.id,
-        valid_from=parsed.valid_from_override or LEY_ADUANERA_VALID_FROM,
+        valid_from=parsed.valid_from_override or LEY_ADUANERA_PUBLICACION_ORIGINAL,
         valid_to=parsed.valid_to,
         source_url=LEY_ADUANERA_SOURCE_URL,
         source_document=LEY_ADUANERA_SOURCE_DOCUMENT,
@@ -170,7 +182,7 @@ def load_ley_aduanera_chunks(
             text=parsed.text,
             content_hash=hash_contenido(parsed.text),
             data_origin="OFFICIAL",
-            valid_from=parsed.valid_from_override or LEY_ADUANERA_VALID_FROM,
+            valid_from=parsed.valid_from_override or LEY_ADUANERA_PUBLICACION_ORIGINAL,
             valid_to=parsed.valid_to,
             url=LEY_ADUANERA_SOURCE_URL,
         )
