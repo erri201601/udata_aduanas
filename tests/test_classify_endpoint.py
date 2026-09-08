@@ -11,17 +11,14 @@ parece correcto y no lo es (§14).
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from datetime import UTC, date, datetime
+from datetime import date
 from unittest.mock import MagicMock
 
 import pytest
 import sqlalchemy as sa
-from database.models import LegalDocument, LegalRule, TariffFraction
+from database.models import LegalRule, TariffFraction
 from database.repositories.notes import LegalNotesRepository
 from database.repositories.tariff import MAX_CANDIDATOS, TariffCatalogRepository
-from sqlalchemy.exc import OperationalError
-from sqlalchemy.orm import Session
 
 pytestmark = pytest.mark.unit
 
