@@ -45,8 +45,9 @@ service-logs: ## Logs en vivo de la API
 test: ## Ejecuta los tests
 	$(VENV)/pytest
 
-lint: ## ruff + mypy
+lint: ## ruff + mypy (mismos checks que CI, incluido el de formato)
 	$(VENV)/ruff check .
+	$(VENV)/ruff format --check .
 	$(VENV)/mypy apps core database schemas
 
 fmt: ## Formatea y autocorrige
