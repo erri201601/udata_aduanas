@@ -103,8 +103,17 @@ class ModelProvider(Protocol):
         media_type: str = ...,
         model: str | None = ...,
         max_tokens: int = ...,
+        prompt_id: str | None = ...,
+        prompt_version: str | None = ...,
     ) -> ModelResponse:
-        """Lectura de una imagen: ficha técnica escaneada, foto de producto."""
+        """Lectura de una imagen: ficha técnica escaneada, foto de producto.
+
+        `prompt_id` y `prompt_version` viajan a `CallMetadata` por la misma
+        razón que en `generate()`: el Evidence Contract exige `prompt_version`
+        para construir una evidencia de modelo (§49), y sin poder pasarlos
+        nadie que respete §29 podría producir evidencia trazable de lo leído
+        en una imagen.
+        """
         ...
 
 
