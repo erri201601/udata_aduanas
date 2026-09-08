@@ -778,6 +778,12 @@ export interface components {
              * @default false
              */
             coverage_known: boolean;
+            /** Is Complete */
+            is_complete?: boolean | null;
+            /** Unverifiable */
+            unverifiable?: string[];
+            /** Reviewed At */
+            reviewed_at?: string | null;
             /** Worst Severity */
             worst_severity?: string | null;
         };
@@ -1083,6 +1089,8 @@ export interface components {
             pedimento_item_id?: string | null;
             /** Classification Decision Id */
             classification_decision_id?: string | null;
+            /** Shadow Review Id */
+            shadow_review_id?: string | null;
             /** Finding Type */
             finding_type: string;
             /** Field */
