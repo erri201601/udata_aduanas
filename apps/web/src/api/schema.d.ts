@@ -246,6 +246,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Cifras del sistema
+         * @description Todo en una respuesta: un tablero que se pinta a trozos parpadea.
+         */
+        get: operations["tablero_dashboard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -256,6 +276,63 @@ export interface components {
          * @enum {string}
          */
         AttributeStatus: "OBSERVED" | "EXTRACTED" | "INFERRED" | "MISSING";
+        /**
+         * Auditoria
+         * @description Qué se ha revisado de verdad.
+         */
+        Auditoria: {
+            /**
+             * Pedimentos
+             * @default 0
+             */
+            pedimentos: number;
+            /**
+             * Auditados
+             * @default 0
+             */
+            auditados: number;
+            /**
+             * Sin Auditar
+             * @default 0
+             */
+            sin_auditar: number;
+            /**
+             * Auditados Completos
+             * @default 0
+             */
+            auditados_completos: number;
+        };
+        /**
+         * Clasificaciones
+         * @description Qué ha podido resolver el motor, y qué no.
+         */
+        Clasificaciones: {
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+            /**
+             * Resueltas
+             * @default 0
+             */
+            resueltas: number;
+            /**
+             * Requieren Revision
+             * @default 0
+             */
+            requieren_revision: number;
+            /**
+             * Sin Informacion
+             * @default 0
+             */
+            sin_informacion: number;
+            /**
+             * Con Traza
+             * @default 0
+             */
+            con_traza: number;
+        };
         /** ClassificationCandidateRead */
         ClassificationCandidateRead: {
             /**
@@ -565,6 +642,31 @@ export interface components {
             blocked_by?: string | null;
         };
         /**
+         * Dashboard
+         * @description El estado del sistema en cifras que se pueden defender.
+         */
+        Dashboard: {
+            clasificaciones?: components["schemas"]["Clasificaciones"];
+            auditoria?: components["schemas"]["Auditoria"];
+            hallazgos?: components["schemas"]["Hallazgos"];
+            oportunidades?: components["schemas"]["Oportunidades"];
+            /**
+             * Productos
+             * @default 0
+             */
+            productos: number;
+            /**
+             * Filas Simuladas
+             * @default 0
+             */
+            filas_simuladas: number;
+            /**
+             * Todo Simulado
+             * @default true
+             */
+            todo_simulado: boolean;
+        };
+        /**
          * DataOrigin
          * @description §9 maestro — los cinco orígenes de dato. Cerrado.
          * @enum {string}
@@ -684,6 +786,33 @@ export interface components {
             detail?: components["schemas"]["ValidationError"][];
         };
         /**
+         * Hallazgos
+         * @description Riesgo detectado, separando lo presentable de lo investigable.
+         */
+        Hallazgos: {
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+            /** Peor Severidad */
+            peor_severidad?: string | null;
+            /**
+             * Accionables
+             * @default 0
+             */
+            accionables: number;
+            /**
+             * Solo Investigables
+             * @default 0
+             */
+            solo_investigables: number;
+            /** Impacto Cuantificado */
+            impacto_cuantificado?: string | null;
+            /** Impacto Moneda */
+            impacto_moneda?: string | null;
+        };
+        /**
          * LivenessResponse
          * @description Respuesta de liveness.
          */
@@ -702,6 +831,21 @@ export interface components {
             version: string;
             /** Timestamp */
             timestamp: string;
+        };
+        /**
+         * Oportunidades
+         * @description Dinero recuperable, que es otra conversación con el cliente.
+         */
+        Oportunidades: {
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+            /** Ahorro Cuantificado */
+            ahorro_cuantificado?: string | null;
+            /** Ahorro Moneda */
+            ahorro_moneda?: string | null;
         };
         /**
          * PedimentoFindings
@@ -1512,6 +1656,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tablero_dashboard_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Dashboard"];
                 };
             };
         };

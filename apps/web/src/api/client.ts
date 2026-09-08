@@ -25,6 +25,7 @@ export type Severity = RiskFindingRead['severity']
 export type DossierRead = components['schemas']['DossierRead']
 export type ClassifyRequest = components['schemas']['ClassifyRequest']
 export type ClassifyResponse = components['schemas']['ClassifyResponse']
+export type Dashboard = components['schemas']['Dashboard']
 export type ServiceCheck = components['schemas']['ServiceCheck']
 export type ServiceStatus = ServiceCheck['status']
 
@@ -163,4 +164,10 @@ export async function classifyProduct(
   }
 
   return (await respuesta.json()) as ClassifyResponse
+}
+
+
+/** Cifras del sistema para el tablero ejecutivo. */
+export async function fetchDashboard(signal?: AbortSignal): Promise<Dashboard> {
+  return pedir<Dashboard>('/dashboard', signal)
 }
