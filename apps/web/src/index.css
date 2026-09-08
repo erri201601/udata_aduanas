@@ -747,3 +747,44 @@ code {
 .paso__falto { margin: 0.25rem 0 0; font-size: 0.8rem; color: var(--tenue); }
 .paso__candidatos code { margin-right: 0.35rem; }
 .paso__falto code { margin-right: 0.35rem; color: var(--aviso); }
+
+/* ── Disparar una clasificación ─────────────────────────────────────────── */
+
+.clasificar {
+  padding: 1.1rem 1.3rem;
+  margin-bottom: 1.5rem;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-left: 3px solid var(--acento);
+  border-radius: 0 8px 8px 0;
+}
+
+.clasificar__control { display: flex; align-items: flex-end; gap: 1rem; flex-wrap: wrap; }
+
+.clasificar__control label { display: flex; flex-direction: column; gap: 0.3rem; }
+.clasificar__control span { font-size: 0.75rem; color: var(--tenue); }
+
+.clasificar__control input {
+  padding: 0.45rem 0.7rem;
+  background: var(--fondo);
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  color: var(--texto);
+  font: inherit;
+  font-size: 0.87rem;
+  color-scheme: dark;
+}
+
+/* La fecha no es un detalle de formulario: decide qué tarifa se aplica. */
+.clasificar__nota { margin: 0.7rem 0 0; font-size: 0.8rem; color: var(--tenue); max-width: 62ch; }
+.clasificar__error { margin: 0.7rem 0 0; font-size: 0.86rem; color: var(--mal); }
+
+.clasificar__aviso {
+  margin: 0.7rem 0 0;
+  padding: 0.6rem 0.85rem;
+  background: rgba(245, 165, 36, 0.09);
+  border-left: 2px solid var(--aviso);
+  border-radius: 0 5px 5px 0;
+  font-size: 0.84rem;
+  max-width: 66ch;
+}
