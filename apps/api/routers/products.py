@@ -20,10 +20,12 @@ import sqlalchemy as sa
 from core.classification import classify_product
 from database.models import Product, ProductAttribute, ProductDna
 from database.repositories import save_classification
+from database.repositories.chunks import PostgresChunkStore
 from database.repositories.notes import LegalNotesRepository
 from database.repositories.tariff import TariffCatalogRepository
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from rag import a_legal_refs, recuperar
 from schemas.intelligence import ProductAttributeRead, ProductDnaRead
 from schemas.operational import ProductRead
 
@@ -135,6 +137,13 @@ class ClassifyResponse(BaseModel):
     trace_steps: int
     """Cuántas reglas se evaluaron. Es lo que la pantalla va a mostrar."""
 
+    legal_refs_used: int = 0
+    """Cuántas normas sostienen esta clasificación.
+
+    Cero significa que el resultado no es defendible: el contrato de evidencia
+    lo bloquea, y con razón — una fracción sin norma detrás no se declara.
+    """
+
     classified_without_legal_notes: bool
     """¿Se clasificó sin notas de sección ni capítulo?
 
@@ -146,6 +155,31 @@ class ClassifyResponse(BaseModel):
     """
 
     blocked_by: str | None = None
+
+
+#: Lo que hay que preguntarle al corpus jurídico para fundamentar una
+#: clasificación. Son conceptos de la Ley Aduanera, no del producto.
+CONCEPTOS_DE_CLASIFICACION = (
+    "clasificación arancelaria de las mercancías",
+    "valor en aduana base gravable de la importación",
+    "fracción arancelaria declarada en el pedimento",
+)
+
+
+def _consulta_juridica(terminos_producto: list[str]) -> str:
+    """Con qué buscar en la Ley Aduanera para sostener una clasificación.
+
+    NO se busca con los atributos del producto. La ley no habla de laptops ni
+    de kilogramos: habla de clasificación, valor en aduana y obligaciones del
+    importador. Buscar «Laptop portátil pulgadas» en la Ley Aduanera devuelve
+    cero, y lo comprobé contra el corpus real antes de escribir esto.
+
+    Los términos del producto se conservan al final porque alguno puede
+    aparecer de verdad en la norma —«vehículo», «combustible», «alcohol»
+    tienen artículos propios— y en ese caso son lo más pertinente que se puede
+    recuperar. Van después de los conceptos para no desplazarlos.
+    """
+    return " ".join([*CONCEPTOS_DE_CLASIFICACION, *terminos_producto[:3]])
 
 
 @router.post(
@@ -180,13 +214,28 @@ def clasificar(
 
     notas = LegalNotesRepository(session)
     hay_notas = notas.hay_corpus(on_date=peticion.operation_date)
+    busqueda = peticion.search_terms or terminos(borrador)
+
+    # Las normas que sostienen la clasificación. Sin al menos una, el contrato
+    # de evidencia marca el resultado como no defendible — que es correcto: una
+    # fracción sin norma detrás no se puede declarar.
+    #
+    # `operation_date` viaja a la recuperación igual que al motor: se cita lo
+    # que regía ese día, no lo que rige hoy (§14).
+    recuperacion = recuperar(
+        _consulta_juridica(busqueda),
+        on_date=peticion.operation_date,
+        store=PostgresChunkStore(session),
+    )
+    legal_refs = a_legal_refs(recuperacion)
 
     outcome = classify_product(
         borrador,
         operation_date=peticion.operation_date,
         catalog=TariffCatalogRepository(session),
         notes=notas,
-        search_terms=peticion.search_terms or terminos(borrador),
+        search_terms=busqueda,
+        legal_refs=legal_refs,
         trade_flow=peticion.trade_flow,
     )
 
@@ -206,6 +255,7 @@ def clasificar(
         confidence=outcome.trace.confidence,
         requires_human_review=decision.requires_human_review,
         trace_steps=len(outcome.trace.steps),
+        legal_refs_used=len(legal_refs),
         classified_without_legal_notes=not hay_notas,
         blocked_by=outcome.blocked_by,
     )
