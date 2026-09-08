@@ -11,6 +11,7 @@
  */
 
 import { AttributeStatusBadge, ConfidenceMeter } from '../components/AttributeStatusBadge'
+import { ClassifyButton } from '../components/ClassifyButton'
 import { SyntheticBanner } from '../components/DataOriginBadge'
 import { useProductDna, useProducts } from '../hooks/useProductDna'
 import type { AttributeStatus, ProductAttributeRead } from '../api/client'
@@ -28,7 +29,12 @@ function porCercania(a: ProductAttributeRead, b: ProductAttributeRead): number {
   return ORDEN[a.status] - ORDEN[b.status] || a.name.localeCompare(b.name)
 }
 
-export function ProductDna() {
+interface Props {
+  /** Se llama con el id de la decisión creada, para saltar a su traza. */
+  onClasificado?: (decisionId: string) => void
+}
+
+export function ProductDna({ onClasificado }: Props = {}) {
   const { productos, error: errorCatalogo, cargando: cargandoCatalogo } = useProducts()
   const [seleccionado, setSeleccionado] = useState<string | null>(null)
   const activo = seleccionado ?? productos[0]?.id ?? null
@@ -52,6 +58,13 @@ export function ProductDna() {
       </header>
 
       <SyntheticBanner />
+
+      {activo && onClasificado && (
+        <ClassifyButton
+          productId={activo}
+          onClasificado={(r) => onClasificado(r.decision_id)}
+        />
+      )}
 
       {(errorCatalogo || error) && (
         <div className="alerta" role="alert">

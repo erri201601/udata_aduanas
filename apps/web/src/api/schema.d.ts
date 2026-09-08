@@ -108,6 +108,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/products/{product_id}/classify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Clasifica el producto y persiste la decisión
+         * @description Corre el motor sobre el Product DNA vigente y guarda el resultado.
+         *
+         *     Es el único endpoint que escribe. Todo lo demás lee, y por eso este lleva
+         *     el commit explícito: la sesión no confirma por su cuenta.
+         *
+         *     Nunca devuelve 500 por no poder clasificar. Un `INSUFFICIENT_INFORMATION`
+         *     con su razón es un resultado legítimo y se persiste igual: saber que el
+         *     sistema no pudo, y por qué, vale tanto como el código cuando sí puede.
+         */
+        post: operations["clasificar_products__product_id__classify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/classifications": {
         parameters: {
             query?: never;
@@ -494,6 +521,49 @@ export interface components {
          * @enum {string}
          */
         ClassificationStatus: "RESOLVED" | "INSUFFICIENT_INFORMATION" | "HUMAN_REVIEW_REQUIRED";
+        /**
+         * ClassifyRequest
+         * @description Qué hace falta para clasificar, más allá del producto.
+         */
+        ClassifyRequest: {
+            /**
+             * Operation Date
+             * Format: date
+             */
+            operation_date: string;
+            /**
+             * Trade Flow
+             * @default IMPORT
+             */
+            trade_flow: string;
+            /** Search Terms */
+            search_terms?: string[];
+        };
+        /**
+         * ClassifyResponse
+         * @description El resultado, con lo que hay que saber para leerlo.
+         */
+        ClassifyResponse: {
+            /**
+             * Decision Id
+             * Format: uuid
+             */
+            decision_id: string;
+            /** Status */
+            status: string;
+            /** Fraction Code */
+            fraction_code?: string | null;
+            /** Confidence */
+            confidence?: string | null;
+            /** Requires Human Review */
+            requires_human_review: boolean;
+            /** Trace Steps */
+            trace_steps: number;
+            /** Classified Without Legal Notes */
+            classified_without_legal_notes: boolean;
+            /** Blocked By */
+            blocked_by?: string | null;
+        };
         /**
          * DataOrigin
          * @description §9 maestro — los cinco orígenes de dato. Cerrado.
@@ -1200,6 +1270,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProductDnaDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clasificar_products__product_id__classify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                product_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClassifyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClassifyResponse"];
                 };
             };
             /** @description Validation Error */
