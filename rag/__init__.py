@@ -57,6 +57,7 @@ sobre pgvector necesita la tabla de chunks que todavía no existe.
 from __future__ import annotations
 
 from rag.chunking import trocear
+from rag.evidencia import a_legal_ref, a_legal_refs, citar
 from rag.memoria import MemoriaChunkStore
 from rag.ports import ChunkStore, Embedder
 from rag.retrieval import LIMITE_POR_DEFECTO, Recuperacion, recuperar
@@ -76,6 +77,9 @@ __all__ = [
     "LegalChunk",
     "MemoriaChunkStore",
     "Recuperacion",
+    "a_legal_ref",
+    "a_legal_refs",
+    "citar",
     "hash_contenido",
     "recuperar",
     "trocear",
