@@ -219,10 +219,15 @@ def _guardar_evidencias(
     filas: list[EvidenceRecord] = []
     for ev in outcome.evidences:
         campos = ev.to_record_fields()
+        # Desde el PR #43 la evidencia declara su propio `data_origin`, y gana
+        # sobre el de la decisión: una norma OFFICIAL recuperada del DOF no se
+        # convierte en SYNTHETIC por acompañar a una clasificación sobre datos
+        # simulados. El parámetro queda como respaldo para las que no lo traen.
+        origen = campos.pop("data_origin", None) or data_origin
         fila = EvidenceRecord(
             subject_kind="classification_decision",
             subject_id=decision_id,
-            data_origin=data_origin,
+            data_origin=origen,
             **campos,
         )
         session.add(fila)
