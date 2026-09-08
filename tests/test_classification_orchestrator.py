@@ -13,7 +13,7 @@ from decimal import Decimal
 
 import pytest
 from core.classification import classify_product, with_money_impact
-from core.evidence import DocumentRef
+from core.evidence import DocumentRef, LegalRef
 from core.product_dna import ExtractedAttribute, ProductDnaDraft
 from core.rgi_engine import RGIStatus, TariffCandidate
 from core.taxation import Money, TaxRates
@@ -29,7 +29,14 @@ LIGIE = DocumentRef(
     published_at=date(2022, 7, 7),
     content_hash="sha256:aaaa1111bbbb2222",
 )
-NORMAS = [(LIGIE, date(2022, 7, 7), "sha256:aaaa1111bbbb2222")]
+NORMAS = [
+    LegalRef(
+        document_ref=LIGIE,
+        valid_from=date(2022, 7, 7),
+        content_hash="sha256:aaaa1111bbbb2222",
+        data_origin="OFFICIAL",
+    )
+]
 
 PARTIDA = TariffCandidate(
     code="8471",
@@ -195,7 +202,16 @@ def test_una_norma_fuera_de_vigencia_bloquea_el_resultado() -> None:
     """§14: no se clasifica una operación de 2024 con una norma de 2026."""
     futura = DocumentRef(document="RGCE 2026", published_at=date(2026, 1, 15))
 
-    r = clasificar(legal_refs=[(futura, date(2026, 1, 15), "sha256:ffff")])
+    r = clasificar(
+        legal_refs=[
+            LegalRef(
+                document_ref=futura,
+                valid_from=date(2026, 1, 15),
+                content_hash="sha256:ffff",
+                data_origin="OFFICIAL",
+            )
+        ]
+    )
 
     assert r.code is None
     assert r.blocked_by is not None
