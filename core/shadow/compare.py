@@ -113,7 +113,13 @@ def compare_item(declared: DeclaredItem, expected: ExpectedItem) -> list[Diverge
         )
 
     # ── NOM ──────────────────────────────────────────────────────────────────
-    faltantes = [n for n in expected.required_nom_codes if n not in declared.applied_nom_codes]
+    # `None` es «no sé qué NOM exige esta fracción», no «no exige ninguna».
+    # Recorrer una tupla vacía en ese caso daría cero faltantes y el pedimento
+    # se leería como limpio sin haberlo comprobado. La laguna se reporta en
+    # `_lagunas()`, del lado de `unverifiable`.
+    faltantes = [
+        n for n in (expected.required_nom_codes or ()) if n not in declared.applied_nom_codes
+    ]
     for nom in faltantes:
         emitir(
             DivergenceType.MISSING_NOM,
@@ -124,7 +130,7 @@ def compare_item(declared: DeclaredItem, expected: ExpectedItem) -> list[Diverge
         )
 
     # ── Identificadores del Anexo 22 ─────────────────────────────────────────
-    for ident in expected.required_identifiers:
+    for ident in expected.required_identifiers or ():
         if ident not in declared.identifiers:
             emitir(
                 DivergenceType.IDENTIFIER_MISMATCH,
@@ -163,6 +169,29 @@ def compare_item(declared: DeclaredItem, expected: ExpectedItem) -> list[Diverge
                 )
 
     return hallazgos
+
+
+def _lagunas(expected: ExpectedItem) -> list[str]:
+    """Lo que no se pudo comprobar de esta partida, y por qué.
+
+    Separado de `compare_item` porque no son hallazgos: son huecos. Una NOM que
+    falta es una acusación contra el agente aduanal; no saber qué NOM aplica es
+    una limitación nuestra, y mezclarlas dejaría al lector sin forma de
+    distinguirlas (§36).
+    """
+    razones: list[str] = []
+    if expected.required_nom_codes is None:
+        razones.append(
+            "no se conoce qué NOM exige la fracción "
+            f"{expected.fraction_code or 'esperada'}: falta cargar la correlación "
+            "fracción → NOM (Anexo 2.2.1 del Acuerdo de la SE)"
+        )
+    if expected.required_identifiers is None:
+        razones.append(
+            "no se conocen los identificadores que exige la operación: "
+            "falta cargar el Apéndice 8 del Anexo 22"
+        )
+    return razones
 
 
 def compare(
@@ -205,9 +234,11 @@ def compare(
                 for x in compare_item(d, e)
                 if x.kind not in (DivergenceType.FRACTION_MISMATCH, DivergenceType.NICO_MISMATCH)
             )
+            no_verificables.extend(f"línea {d.line_number}: {r}" for r in _lagunas(e))
             continue
 
         divergencias.extend(compare_item(d, e))
+        no_verificables.extend(f"línea {d.line_number}: {r}" for r in _lagunas(e))
 
     # ── Consistencia histórica del SKU ───────────────────────────────────────
     if sku_history:
