@@ -51,6 +51,7 @@ merge: ## Mergea un PR sólo si los seis jobs del CI pasaron (make merge PR=47)
 
 lint: ## ruff + mypy
 	$(VENV)/ruff check .
+	$(VENV)/ruff format --check .
 	$(VENV)/mypy apps core database schemas
 
 fmt: ## Formatea y autocorrige

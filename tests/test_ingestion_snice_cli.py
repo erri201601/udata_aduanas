@@ -9,8 +9,22 @@ pytestmark = pytest.mark.unit
 
 
 def test_chapters_es_obligatorio_sin_raw_only() -> None:
-    with pytest.raises(SystemExit, match="--chapters es obligatorio"):
+    with pytest.raises(SystemExit, match="--chapters o --notes es obligatorio"):
         main(["--target", "local"])
+
+
+def test_notes_solo_no_exige_chapters(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`--notes` es una carga independiente de `--chapters`: las notas son del
+    documento completo, no de los capítulos que además se estén cargando.
+
+    `--target shared` sin `ADUANERO_SHARED_URL` fallará más adelante buscando
+    la URL de la base — deterministamente, sin red — lo que confirma que
+    `--notes` solo ya pasó la validación de argumentos obligatorios.
+    """
+    monkeypatch.delenv("ADUANERO_SHARED_URL", raising=False)
+
+    with pytest.raises(SystemExit, match="ADUANERO_SHARED_URL"):
+        main(["--target", "shared", "--notes"])
 
 
 def test_raw_only_no_exige_chapters_ni_la_url_de_la_base(monkeypatch: pytest.MonkeyPatch) -> None:

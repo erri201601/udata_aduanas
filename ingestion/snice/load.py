@@ -13,12 +13,13 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from database.models.regulatory import LegalDocument, LegalSource, Nico, TariffFraction
+from database.models.regulatory import LegalDocument, LegalRule, LegalSource, Nico, TariffFraction
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
     from ingestion.snice.nico import ParsedNico
+    from ingestion.snice.notes import ParsedNote
     from ingestion.snice.tariff import ParsedFraction
 
 SNICE_SLUG = "snice"
@@ -217,3 +218,41 @@ def load_chapters(
 
     session.flush()
     return len(fraction_id_by_code), nico_rows
+
+
+def to_legal_rule_row(
+    parsed: ParsedNote, *, source: LegalSource, document: LegalDocument, content_hash: str
+) -> LegalRule:
+    return LegalRule(
+        legal_document_id=document.id,
+        rule_number=parsed.rule_number,
+        path=parsed.path,
+        text=parsed.text,
+        data_origin="OFFICIAL",
+        source_id=source.id,
+        # Sin fecha de reforma propia en el documento (no es el caso de la
+        # Ley Aduanera): las notas comparten la vigencia de la LIGIE 2022.
+        valid_from=LIGIE_VALID_FROM,
+        source_url=LIGIE_SOURCE_URL,
+        source_document="LIGIE 2022 (DOF)",
+        content_hash=content_hash,
+        retrieved_at=datetime.now(UTC),
+    )
+
+
+def load_ligie_notes(session: Session, *, notes: list[ParsedNote], ligie_content_hash: str) -> int:
+    """Inserta las notas de Sección y de Capítulo. Devuelve cuántas se insertaron."""
+    source = get_or_create_snice_source(session)
+    document = get_or_create_ligie_document(
+        session, source, content_hash=ligie_content_hash, retrieved_at=datetime.now(UTC)
+    )
+
+    for parsed_note in notes:
+        session.add(
+            to_legal_rule_row(
+                parsed_note, source=source, document=document, content_hash=ligie_content_hash
+            )
+        )
+
+    session.flush()
+    return len(notes)

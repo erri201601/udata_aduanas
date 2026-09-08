@@ -39,7 +39,7 @@ from apps.api.config import get_settings
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from ingestion.snice import load, nico, raw, tariff
+from ingestion.snice import load, nico, notes, raw, tariff
 
 if TYPE_CHECKING:
     from ingestion.snice.raw import MinioTarget
@@ -96,13 +96,22 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         action="store_true",
         help="Solo sube y verifica el RAW en --target; no toca la base.",
     )
+    parser.add_argument(
+        "--notes",
+        action="store_true",
+        help=(
+            "Carga las notas de Sección y de Capítulo de la LIGIE completa a "
+            "regulatory.legal_rules (no filtra por --chapters: son el corpus "
+            "completo del documento, no de los capítulos ya cargados)."
+        ),
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    if not args.raw_only and not args.chapters:
-        raise SystemExit("--chapters es obligatorio salvo con --raw-only")
+    if not args.raw_only and not args.chapters and not args.notes:
+        raise SystemExit("--chapters o --notes es obligatorio salvo con --raw-only")
     chapters = frozenset(args.chapters or ())
     # `--raw-only` no toca la base: no le exigimos su URL, que puede no
     # estar configurada si solo se va a recapturar el crudo.
@@ -135,6 +144,8 @@ def main(argv: list[str] | None = None) -> int:
         ligie_capture = raw.store_raw_bytes(
             ligie_bytes, source_url=LIGIE_PDF_URL, minio_key=ligie_key, target=minio_target
         )
+        ligie_path = tmp_path / "ligie.pdf"
+        ligie_path.write_bytes(ligie_bytes)
 
         # Guardia explícita: el RAW tiene que existir en ESTE MISMO destino
         # antes de escribir una sola fila en su base (regla 7 CLAUDE.md).
@@ -147,41 +158,61 @@ def main(argv: list[str] | None = None) -> int:
             log.info("snice.cli.done", target=args.target, raw_only=True)
             return 0
 
-        fa_result = tariff.parse_fracciones(
-            tariff.iter_fraccion_rows(tarifa_path),
-            chapters,
-            source_url=tarifa_capture.source_url,
-            content_hash=tarifa_capture.content_hash,
-            retrieved_at=tarifa_capture.retrieved_at,
-        )
-        nico_result = nico.parse_nicos(
-            nico.iter_nico_rows_from_standalone(nico_path),
-            chapters,
-            source_url=nico_capture.source_url,
-            content_hash=nico_capture.content_hash,
-            retrieved_at=nico_capture.retrieved_at,
-        )
+        fa_result = None
+        nico_result = None
+        if chapters:
+            fa_result = tariff.parse_fracciones(
+                tariff.iter_fraccion_rows(tarifa_path),
+                chapters,
+                source_url=tarifa_capture.source_url,
+                content_hash=tarifa_capture.content_hash,
+                retrieved_at=tarifa_capture.retrieved_at,
+            )
+            nico_result = nico.parse_nicos(
+                nico.iter_nico_rows_from_standalone(nico_path),
+                chapters,
+                source_url=nico_capture.source_url,
+                content_hash=nico_capture.content_hash,
+                retrieved_at=nico_capture.retrieved_at,
+            )
 
-    fa_declared = len(fa_result.accepted) + len(fa_result.rejected)
-    nico_declared = len(nico_result.accepted) + len(nico_result.rejected)
-    print(f"Reconciliación tarifa: {fa_result.reconciliation(declared_by_source=fa_declared)}")
-    print(f"Reconciliación NICO:   {nico_result.reconciliation(declared_by_source=nico_declared)}")
-    if fa_result.rate_warnings:
-        print(f"Advertencias de tasa: {len(fa_result.rate_warnings)}")
+        parsed_notes = None
+        if args.notes:
+            ligie_lines = notes.extract_text(str(ligie_path))
+            parsed_notes = notes.parse_notes(ligie_lines)
+
+    if fa_result is not None and nico_result is not None:
+        fa_declared = len(fa_result.accepted) + len(fa_result.rejected)
+        nico_declared = len(nico_result.accepted) + len(nico_result.rejected)
+        print(f"Reconciliación tarifa: {fa_result.reconciliation(declared_by_source=fa_declared)}")
+        print(
+            f"Reconciliación NICO:   {nico_result.reconciliation(declared_by_source=nico_declared)}"
+        )
+        if fa_result.rate_warnings:
+            print(f"Advertencias de tasa: {len(fa_result.rate_warnings)}")
+    if parsed_notes is not None:
+        print(f"Notas parseadas: {len(parsed_notes)} (Secciones y Capítulos con bloque de notas).")
 
     assert database_url is not None  # solo llegamos aquí sin --raw-only
     engine = create_engine(database_url)
     with Session(engine) as session:
-        n_fracciones, n_nicos = load.load_chapters(
-            session,
-            fracciones=fa_result.accepted,
-            nicos=nico_result.accepted,
-            ligie_content_hash=ligie_capture.content_hash,
-        )
+        if fa_result is not None and nico_result is not None:
+            n_fracciones, n_nicos = load.load_chapters(
+                session,
+                fracciones=fa_result.accepted,
+                nicos=nico_result.accepted,
+                ligie_content_hash=ligie_capture.content_hash,
+            )
+            print(f"OK ({args.target}): {n_fracciones} fracciones, {n_nicos} NICO insertados.")
+            log.info("snice.cli.done", target=args.target, fracciones=n_fracciones, nicos=n_nicos)
+        if parsed_notes is not None:
+            n_notas = load.load_ligie_notes(
+                session, notes=parsed_notes, ligie_content_hash=ligie_capture.content_hash
+            )
+            print(f"OK ({args.target}): {n_notas} notas de Sección/Capítulo insertadas.")
+            log.info("snice.cli.done", target=args.target, notas=n_notas)
         session.commit()
 
-    print(f"OK ({args.target}): {n_fracciones} fracciones, {n_nicos} NICO insertados.")
-    log.info("snice.cli.done", target=args.target, fracciones=n_fracciones, nicos=n_nicos)
     return 0
 
 

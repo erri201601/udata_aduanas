@@ -2,13 +2,19 @@
 
 Implementa el puerto `LegalNotes` del RGI Engine.
 
-HOY NO HAY NOTAS CARGADAS
-
-`regulatory.legal_rules` está vacía: la ingestión de Ley Aduanera y RGCE es
-tarea de Persona 2 y todavía no ha entrado. Este repositorio devuelve listas
-vacías, y eso NO es un fallo silencioso: la RGI 1 dice que la clasificación se
-determina por los textos de las partidas **y por las notas**, así que sin
-notas el motor no puede descartar una partida por exclusión.
+`regulatory.legal_rules` ya no es sólo de la LIGIE: además de las notas de
+Sección/Capítulo trae los artículos de la Ley Aduanera (Task 4, 2026-09-08),
+y pronto las reglas de RGCE. `notes_for()`/`excludes()` buscaban por
+`rule_number.startswith(chapter)` asumiendo que la tabla sólo tendría notas
+de capítulo arancelario — un supuesto que dejó de ser cierto en cuanto se
+cargó un segundo documento. Se reprodujo con datos reales: con la Ley
+Aduanera cargada, `notes_for(chapter="84")` devolvía también sus artículos
+84 y 84-A (cuentas de garantía, tuberías/cables), que no tienen nada que ver
+con el capítulo arancelario 84. Ambos métodos se acotan aquí a
+`LegalDocument.kind == "TARIFF"` — así se registra la LIGIE
+(`ingestion.snice.load.get_or_create_ligie_document`) y ningún otro
+instrumento (LAW, ANNEX…) puede colarse en una búsqueda que es,
+específicamente, sobre notas de la tarifa.
 
 Se devuelve vacío en vez de inventar una nota, y `hay_corpus()` permite que
 quien orqueste avise de que la clasificación se hizo sin ellas. Una
@@ -22,7 +28,7 @@ from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
 
-from database.models import LegalRule
+from database.models import LegalDocument, LegalRule
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -34,6 +40,12 @@ if TYPE_CHECKING:
 #: guarda ahí la ubicación jerárquica del artículo dentro del documento. No hay
 #: columna de tipo, así que el prefijo es lo único que las distingue.
 PREFIJOS_NOTA = ("Nota", "Notas", "Sección", "Capítulo")
+
+#: `regulatory.legal_rules` ya guarda más de un instrumento (Ley Aduanera,
+#: pronto RGCE). Una búsqueda por capítulo arancelario sólo tiene sentido
+#: contra el documento tarifario — nunca contra una ley o un anexo cuya
+#: numeración de artículo puede coincidir por casualidad con un capítulo.
+_DOCUMENTO_TARIFARIO = LegalDocument.kind == "TARIFF"
 
 
 def _vigentes(on_date: date) -> sa.ColumnElement[bool]:
@@ -66,8 +78,10 @@ class LegalNotesRepository:
         """Notas aplicables a un capítulo."""
         filas = self._session.scalars(
             sa.select(LegalRule.text)
+            .join(LegalDocument, LegalRule.legal_document_id == LegalDocument.id)
             .where(
                 _vigentes(on_date),
+                _DOCUMENTO_TARIFARIO,
                 sa.or_(
                     LegalRule.path.ilike(f"%capítulo {chapter}%"),
                     LegalRule.rule_number.startswith(chapter),
@@ -133,8 +147,10 @@ class LegalNotesRepository:
 
         filas = self._session.scalars(
             sa.select(LegalRule.text)
+            .join(LegalDocument, LegalRule.legal_document_id == LegalDocument.id)
             .where(
                 _vigentes(on_date),
+                _DOCUMENTO_TARIFARIO,
                 sa.or_(
                     LegalRule.path.ilike(f"%capítulo {capitulo}%"),
                     LegalRule.rule_number.startswith(capitulo),
