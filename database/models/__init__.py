@@ -3,7 +3,7 @@
 Alembic importa este paquete para descubrir metadata. Cada modelo nuevo debe
 importarse aquí, o su tabla no aparecerá en las migraciones autogeneradas.
 
-23 entidades en 3 esquemas (§8 Persona 1 / §4 TAREA_P2):
+24 entidades en 3 esquemas (§8 Persona 1 / §4 TAREA_P2):
   regulatory   — dato normativo real (OFFICIAL/PUBLIC/LICENSED)
   operational  — clientes, proveedores, operaciones (hoy SYNTHETIC)
   intelligence — decisiones, evidencia, hallazgos
@@ -19,6 +19,7 @@ from database.models.intelligence import (
     ProductAttribute,
     ProductDna,
     RiskFinding,
+    ShadowReview,
 )
 from database.models.operational import (
     Client,
@@ -62,6 +63,7 @@ __all__ = [
     "ProductDna",
     "RegulatoryEvent",
     "RiskFinding",
+    "ShadowReview",
     "Supplier",
     "SyntheticScenario",
     "TariffFraction",
