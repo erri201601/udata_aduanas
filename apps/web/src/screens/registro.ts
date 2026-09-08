@@ -58,6 +58,12 @@ export const PANTALLAS: DefinicionPantalla[] = [
     implementada: false,
   },
   {
+    id: 'human-review',
+    titulo: 'Revisión',
+    descripcion: 'Decisiones que el motor no pudo sostener solo',
+    implementada: true,
+  },
+  {
     id: 'copilot',
     titulo: 'Copilot',
     descripcion: 'Asistente sobre el corpus jurídico y la operación',
