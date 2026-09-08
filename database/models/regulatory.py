@@ -230,7 +230,9 @@ class PedimentoClave(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Regul
     )
 
 
-class NonTariffRegulation(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base):
+class NonTariffRegulation(
+    UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base
+):
     """Identificador de regulación o restricción no arancelaria (Apéndice 9).
 
     `code` se repite entre dependencias que emiten sus propios identificadores
@@ -245,9 +247,7 @@ class NonTariffRegulation(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, 
         sa.Index(
             "ix_non_tariff_regulations_vigencia", "code", "issuing_agency", "valid_from", "valid_to"
         ),
-        sa.UniqueConstraint(
-            "code", "issuing_agency", name="uq_non_tariff_regulations_code_agency"
-        ),
+        sa.UniqueConstraint("code", "issuing_agency", name="uq_non_tariff_regulations_code_agency"),
         {"schema": _SCHEMA},
     )
 

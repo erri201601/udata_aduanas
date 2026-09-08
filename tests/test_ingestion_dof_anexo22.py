@@ -64,7 +64,9 @@ def test_parse_customs_offices_extrae_aduana_seccion_denominacion() -> None:
 
     filas = anexo22.parse_customs_offices(lines)
 
-    assert filas == [anexo22.ParsedCustomsOffice("01", "0", "Acapulco, Acapulco de Juárez, Guerrero.")]
+    assert filas == [
+        anexo22.ParsedCustomsOffice("01", "0", "Acapulco, Acapulco de Juárez, Guerrero.")
+    ]
 
 
 def test_parse_customs_offices_seccion_ausente_queda_none() -> None:
@@ -106,7 +108,10 @@ def test_parse_customs_offices_ignora_pie_de_pagina() -> None:
 
 
 def test_parse_units_of_measure() -> None:
-    lines = _lines("                                      1                         Kilo\n" "Clave                 Descripción")
+    lines = _lines(
+        "                                      1                         Kilo\n"
+        "Clave                 Descripción"
+    )
 
     filas = anexo22.parse_units_of_measure(lines)
 
@@ -135,7 +140,9 @@ def test_parse_pedimento_claves_no_confunde_t_mec_con_clave_t() -> None:
 
 
 def test_parse_pedimento_claves_no_duplica_codigo_repetido() -> None:
-    lines = _lines("A1    -   Importación o exportación definitiva.\n" "A1    -   otra vez por envoltura rara.")
+    lines = _lines(
+        "A1    -   Importación o exportación definitiva.\nA1    -   otra vez por envoltura rara."
+    )
 
     filas = anexo22.parse_pedimento_claves(lines)
 
@@ -176,7 +183,9 @@ def test_parse_non_tariff_regulations_agrupa_por_dependencia() -> None:
 def test_parse_non_tariff_regulations_junta_continuacion_de_8_espacios() -> None:
     filas = anexo22.parse_non_tariff_regulations(_lines(_APENDICE_9_MUESTRA))
 
-    c1_economia = next(f for f in filas if f.code == "C1" and f.issuing_agency == "Secretaría de Economía")
+    c1_economia = next(
+        f for f in filas if f.code == "C1" and f.issuing_agency == "Secretaría de Economía"
+    )
     assert "Continúa en la siguiente línea" in c1_economia.description
 
 
@@ -186,7 +195,10 @@ def test_parse_non_tariff_regulations_mismo_code_dos_dependencias() -> None:
     filas = anexo22.parse_non_tariff_regulations(_lines(_APENDICE_9_MUESTRA))
 
     c1_filas = [f for f in filas if f.code == "C1"]
-    assert {f.issuing_agency for f in c1_filas} == {"Secretaría de Economía", "Secretaría de Energía"}
+    assert {f.issuing_agency for f in c1_filas} == {
+        "Secretaría de Economía",
+        "Secretaría de Energía",
+    }
     assert len(c1_filas) == 2
 
 
