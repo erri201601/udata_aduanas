@@ -316,10 +316,19 @@ class LegalChunkRecord(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Reg
     reformó en 2018 y el 1 viene de 1995, y preguntar qué regía en una fecha
     histórica no puede devolver el texto de hoy.
 
-    No hay FK a `LegalRule`: un chunk puede existir sin que haya una fila de
-    `legal_rules` detrás (p. ej. si algún día se trocea directo de RAW), así
-    que `article`/`path`/`text` se guardan aquí también, aunque hoy coincidan
-    con los de la regla de la que salió.
+    `legal_rule_id` liga el chunk a la fila de `LegalRule` de la que salió —
+    decisión de Persona 1, 2026-09-09: sin ella, `classification_decisions`
+    (que sí une por `legal_rule_ids`) y lo que cita el RAG no tenían cómo
+    cruzarse, y el panel de impacto quedaba `trazable: false` para siempre.
+    Se resuelve por la TERNA `(legal_document_id, article, valid_from)`, no
+    por el par documento/artículo: hoy el par basta porque sólo hay una
+    versión cargada de cada artículo, pero este sistema entero está
+    construido sobre vigencia por chunk, y en cuanto entren versiones
+    históricas el par se vuelve ambiguo. NULLABLE a propósito: un chunk
+    puede existir sin fila de `legal_rules` detrás (p. ej. si algún día se
+    trocea directo de RAW) — es un dato que hay que mirar, no un hueco que
+    se rellena en silencio; `PostgresChunkStore` lo registra con un warning
+    cuando pasa.
     """
 
     __tablename__ = "legal_chunks"
@@ -341,11 +350,15 @@ class LegalChunkRecord(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Reg
             postgresql_with={"m": 16, "ef_construction": 64},
             postgresql_ops={"embedding": "vector_cosine_ops"},
         ),
+        sa.Index("ix_legal_chunks_legal_rule_id", "legal_rule_id"),
         {"schema": _SCHEMA},
     )
 
     legal_document_id: Mapped[uuid.UUID] = mapped_column(
         sa.ForeignKey(f"{_SCHEMA}.legal_documents.id", ondelete="RESTRICT"), nullable=False
+    )
+    legal_rule_id: Mapped[uuid.UUID | None] = mapped_column(
+        sa.ForeignKey(f"{_SCHEMA}.legal_rules.id", ondelete="RESTRICT"), nullable=True
     )
     # Identificador citable: "36-A", "36-A fracción I", "Transitorio Segundo".
     article: Mapped[str] = mapped_column(sa.String(64), nullable=False)

@@ -286,6 +286,7 @@ class RegulatoryEventUpdate(CanonicalModel):
 
 class LegalChunkRecordBase(DataOriginFields, RegulatoryFields):
     legal_document_id: uuid.UUID
+    legal_rule_id: uuid.UUID | None = None
     article: str = Field(max_length=64)
     path: str | None = None
     heading: str | None = None
