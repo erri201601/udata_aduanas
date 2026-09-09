@@ -55,9 +55,9 @@ def test_parse_articles_junta_continuacion_multilinea() -> None:
     ("heading", "esperado"),
     [
         ("ARTICULO 10. Texto.", "10"),
-        ("ARTICULO 167-G. Texto.", "167G"),
+        ("ARTICULO 167-G. Texto.", "167-G"),
         ("ARTICULO 9o. Texto.", "9"),
-        ("ARTICULO 9o.-A. Texto.", "9A"),
+        ("ARTICULO 9o.-A. Texto.", "9-A"),
         ("ARTICULO 49 bis. Texto.", "49-BIS"),
         ("ARTICULO 137 bis 1.- Texto.", "137-BIS-1"),
     ],
@@ -170,6 +170,56 @@ def test_parse_articles_derogado_con_nota_compuesta_en_la_misma_linea() -> None:
 
     assert articulos[0].valid_to == date(2025, 11, 19)
     assert articulos[0].valid_from_override == date(2002, 6, 25)
+
+
+def test_parse_articles_vigente_sin_nota_de_articulo_usa_la_mas_reciente_de_cualquier_nivel() -> (
+    None
+):
+    """Regresión real (hallazgo de Persona 3, 2026-09-08, artículo 36-A):
+
+    La mayoría de las reformas tocan un párrafo o un inciso, no "el artículo"
+    completo — 36-A real nunca trae una nota que empiece con "Artículo", sólo
+    "Párrafo reformado…"/"Inciso reformado…". Antes de este fix, eso hacía que
+    `valid_from_override` quedara en `None` y el llamador usara la fecha de
+    la última reforma del DOCUMENTO completo (2025-11-19) para un artículo
+    que llevaba reformándose desde 2018 — 259 de 274 artículos reales caían
+    en este caso.
+    """
+    lines = _lines(
+        "   ARTICULO 36-A. Texto del artículo.\n"
+        "                                     Párrafo reformado DOF 25-06-2018\n"
+        "                                     Inciso reformado DOF 01-06-2019"
+    )
+
+    articulos = ley_aduanera.parse_articles(lines)
+
+    assert articulos[0].valid_from_override == date(2019, 6, 1)  # la MÁS reciente, no la primera
+    assert articulos[0].valid_to is None
+
+
+def test_parse_articles_vigente_con_varias_fechas_en_nota_de_articulo_usa_la_mas_reciente() -> None:
+    """Regresión real (artículo 37): "Artículo reformado DOF 09-04-2012,
+    09-12-2013" — vigente, no derogado. El texto guardado es el actual, así
+    que rige desde la reforma más reciente (2013), no desde 2012."""
+    lines = _lines(
+        "   ARTICULO 37. Texto.\n                    Artículo reformado DOF 09-04-2012, 09-12-2013"
+    )
+
+    articulos = ley_aduanera.parse_articles(lines)
+
+    assert articulos[0].valid_from_override == date(2013, 12, 9)
+    assert articulos[0].valid_to is None
+
+
+def test_parse_articles_sin_ninguna_nota_no_tiene_valid_from_override() -> None:
+    """Un artículo que nunca se ha tocado desde que se promulgó la ley no
+    trae ninguna nota — el respaldo (la fecha de publicación original) lo
+    decide el llamador, no el parser."""
+    lines = _lines("   ARTICULO 1o. Texto que nunca se ha reformado.")
+
+    articulos = ley_aduanera.parse_articles(lines)
+
+    assert articulos[0].valid_from_override is None
 
 
 def test_parse_articles_no_duplica_ningun_numero() -> None:
