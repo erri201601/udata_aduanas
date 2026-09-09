@@ -932,3 +932,46 @@ code {
   color: var(--tenue);
   max-width: 70ch;
 }
+
+/* --- Regulatory Sentinel -------------------------------------------------
+   El aviso de «no hay vigilancia» va arriba y en el mismo tono que un error,
+   no como nota al pie: es la diferencia entre «sin novedades» y «nadie está
+   mirando», y leerla al revés es el fallo que esta pantalla debe impedir. */
+
+.centinela__aviso code { font-size: 0.85em; }
+
+.centinela__explica {
+  margin: -0.4rem 0 1rem;
+  font-size: 0.85rem;
+  color: var(--tenue);
+  max-width: 74ch;
+  line-height: 1.55;
+}
+
+.reformas { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+
+.reforma {
+  display: grid;
+  grid-template-columns: minmax(9rem, auto) 1fr;
+  gap: 1rem;
+  align-items: baseline;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+}
+
+.reforma__fecha { display: flex; flex-direction: column; gap: 0.15rem; }
+.reforma__fecha strong { font-variant-numeric: tabular-nums; }
+.reforma__fecha span { font-size: 0.72rem; color: var(--tenue); }
+
+.reforma__cuerpo { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.6rem; }
+.reforma__cuenta { font-weight: 600; }
+
+.reforma__muestra { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: baseline; }
+.reforma__muestra code {
+  font-size: 0.75rem;
+  padding: 0.1rem 0.35rem;
+  border: 1px solid var(--borde);
+  border-radius: 4px;
+}
+.reforma__muestra em { font-size: 0.75rem; color: var(--tenue); font-style: normal; }
