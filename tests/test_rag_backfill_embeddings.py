@@ -68,13 +68,29 @@ def test_backfill_consulta_filtra_por_embedding_null() -> None:
     assert "embedding IS NULL" in sql
 
 
-def test_backfill_hace_flush_al_final() -> None:
+def test_backfill_confirma_con_commit_no_con_flush() -> None:
+    """EL TEST QUE IMPORTA (hallazgo real de Ulises, 2026-09-09): `flush()`
+    manda el UPDATE pero no lo hace durable. Si `provider.embed()` lanza más
+    adelante y nadie más confirma, `Session.__exit__` cierra sin commitear y
+    hasta lo ya enviado se revierte — pagado a OpenAI, cero persistido, y el
+    reintento vuelve a pagar por lo mismo."""
     sesion = MagicMock()
     sesion.scalars.return_value.all.return_value = [_chunk(embedding=None)]
 
     backfill(sesion, provider=_ProveedorDeMentira())  # type: ignore[arg-type]
 
-    sesion.flush.assert_called()
+    sesion.commit.assert_called()
+    sesion.flush.assert_not_called()
+
+
+def test_backfill_confirma_cada_commit_every_no_solo_al_final() -> None:
+    sesion = MagicMock()
+    sesion.scalars.return_value.all.return_value = [_chunk(embedding=None) for _ in range(5)]
+
+    backfill(sesion, provider=_ProveedorDeMentira(), commit_every=2)  # type: ignore[arg-type]
+
+    # 2 checkpoints (en 2 y en 4) + el commit final tras el 5: 3 en total.
+    assert sesion.commit.call_count == 3
 
 
 def test_main_pide_openai_explicito_no_el_default(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -153,3 +169,83 @@ def test_backfill_ida_y_vuelta_contra_postgres(pg_session: sa.orm.Session) -> No
 
     fila = pg_session.scalars(sa.select(LegalChunkRecord).filter_by(legal_document_id=doc.id)).one()
     assert list(fila.embedding) == pytest.approx(_VECTOR_DE_MENTIRA)
+
+
+class _ProveedorQueFallaAMitad:
+    """Simula un 429 a media corrida: las primeras llamadas responden bien,
+    luego truena — igual que reportó Ulises con OpenAI."""
+
+    def __init__(self, *, falla_en: int) -> None:
+        self._falla_en = falla_en
+        self.llamadas = 0
+
+    def embed(self, text: str) -> list[float]:
+        self.llamadas += 1
+        if self.llamadas == self._falla_en:
+            raise RuntimeError("429 Too Many Requests")
+        return _VECTOR_DE_MENTIRA
+
+
+@pytest.mark.integration
+def test_backfill_conserva_lo_confirmado_si_falla_a_mitad(pg_session: sa.orm.Session) -> None:  # noqa: F811
+    """EL TEST QUE PIDIÓ ULISES: una corrida interrumpida no debe perder lo
+    que ya vectorizó y pagó. Con `commit_every=2` y un fallo en la 3a
+    llamada, las primeras 2 filas quedan durables aunque la corrida truene
+    y nadie llame `session.commit()` después."""
+    from database.models import LegalChunkRecord, LegalDocument
+    from database.repositories.chunks import PostgresChunkStore
+    from rag.types import LegalChunk
+
+    doc = LegalDocument(
+        title="Ley de prueba (backfill, fallo a mitad)",
+        short_name="LEY_PRUEBA_BACKFILL_FALLA",
+        kind="LAW",
+        data_origin="OFFICIAL",
+        valid_from=date(2020, 1, 1),
+        source_url="https://x",
+        content_hash="h",
+        retrieved_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    pg_session.add(doc)
+    pg_session.flush()
+
+    # `backfill()` es global a propósito (cualquier chunk sin vectorizar, de
+    # cualquier documento): la base ya trae el corpus real de esta sesión
+    # con `embedding IS NULL`. Se marca ese ambiente como ya vectorizado
+    # SÓLO dentro de esta transacción, para que el fallo a la 3a llamada
+    # caiga de verdad sobre las 5 filas de esta prueba y no sobre las 366
+    # reales que llegarían primero. `pg_session` revierte todo al final.
+    pg_session.execute(
+        sa.update(LegalChunkRecord)
+        .where(LegalChunkRecord.embedding.is_(None))
+        .values(embedding=_VECTOR_DE_MENTIRA)
+    )
+
+    store = PostgresChunkStore(pg_session)
+    store.add(
+        [
+            LegalChunk(
+                document_id=doc.id,
+                document=doc.title,
+                article=str(i),
+                text=f"texto {i}",
+                content_hash=f"h{i}",
+                data_origin="OFFICIAL",
+                valid_from=date(2020, 1, 1),
+                url="https://x",
+            )
+            for i in range(1, 6)
+        ]
+    )
+
+    proveedor = _ProveedorQueFallaAMitad(falla_en=3)
+    with pytest.raises(RuntimeError, match="429"):
+        backfill(pg_session, provider=proveedor, commit_every=2)
+
+    # Sin ningún rollback/commit explícito después del fallo: lo que ya
+    # confirmó el checkpoint de `commit_every=2` tiene que seguir ahí.
+    filas = pg_session.scalars(
+        sa.select(LegalChunkRecord).where(LegalChunkRecord.legal_document_id == doc.id)
+    ).all()
+    assert sum(1 for f in filas if f.embedding is not None) == 2
+    assert sum(1 for f in filas if f.embedding is None) == 3

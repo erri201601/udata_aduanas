@@ -51,17 +51,32 @@ def _database_url(target: str) -> str:
     return get_settings().sqlalchemy_url
 
 
-def backfill(session: Session, *, provider: HTTPModelProvider, batch_size: int = 50) -> int:
-    """Vectoriza los chunks con `embedding IS NULL`. Devuelve cuántos tocó."""
+def backfill(session: Session, *, provider: HTTPModelProvider, commit_every: int = 50) -> int:
+    """Vectoriza los chunks con `embedding IS NULL`. Devuelve cuántos tocó.
+
+    `commit_every` NO agrupa llamadas a la API —`Embedder.embed()` recibe un
+    texto, no una lista, así que siempre son N llamadas HTTP secuenciales—:
+    agrupa cuándo se hace durable lo ya vectorizado.
+
+    `session.commit()` en vez de `flush()` a propósito (hallazgo real de
+    Ulises, 2026-09-08): `flush()` manda el UPDATE pero no lo hace durable —
+    si `provider.embed()` lanza más adelante (un 429, por ejemplo) y nadie
+    más hace `commit()`, `Session.__exit__` cierra sin confirmar y hasta lo
+    ya *enviado* se revierte. Pagado a OpenAI, cero persistido, y el
+    reintento vuelve a pagar por lo mismo. Con `commit()` por lote, una
+    corrida interrumpida conserva lo que ya vectorizó, y como la consulta
+    filtra por `embedding IS NULL`, volver a lanzarla retoma sólo lo que
+    falta — reanudación sin ninguna bandera nueva.
+    """
     filas = session.scalars(
         sa.select(LegalChunkRecord).where(LegalChunkRecord.embedding.is_(None))
     ).all()
     for i, fila in enumerate(filas, start=1):
         fila.embedding = provider.embed(fila.text)
-        if i % batch_size == 0:
-            session.flush()
+        if i % commit_every == 0:
+            session.commit()
             log.info("backfill_embeddings.progreso", n=i, total=len(filas))
-    session.flush()
+    session.commit()
     return len(filas)
 
 
@@ -83,10 +98,11 @@ def main(argv: list[str] | None = None) -> int:
         "backfill_embeddings.start", target=args.target, modelo=provider.default_embedding_model
     )
 
+    # `backfill()` confirma cada lote por su cuenta: no hay un commit final
+    # aquí que dependa de que la corrida entera termine sin errores.
     engine = create_engine(_database_url(args.target))
     with Session(engine) as session:
         n = backfill(session, provider=provider)
-        session.commit()
 
     print(f"OK ({args.target}): {n} chunks vectorizados con {provider.default_embedding_model}.")
     log.info("backfill_embeddings.done", target=args.target, n=n)
