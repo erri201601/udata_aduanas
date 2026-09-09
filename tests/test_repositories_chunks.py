@@ -121,6 +121,100 @@ def test_add_devuelve_cuantos_entraron() -> None:
     sesion.flush.assert_called_once()
 
 
+# ── legal_rule_id se resuelve por la terna, nunca por el par ─────────────────
+
+
+@pytest.mark.integration
+def test_add_liga_legal_rule_id_por_la_terna(pg_session: sa.orm.Session) -> None:  # noqa: F811
+    """Decisión de Persona 1 (2026-09-09): la terna (documento, artículo,
+    valid_from), no el par — el par sólo funciona mientras haya una única
+    versión cargada de cada artículo, y este sistema vive de vigencia por
+    chunk."""
+    from database.models import LegalDocument, LegalRule
+
+    doc = LegalDocument(
+        title="Ley de prueba (legal_rule_id)",
+        short_name="LEY_PRUEBA_LEGAL_RULE_ID",
+        kind="LAW",
+        data_origin="OFFICIAL",
+        valid_from=date(2020, 1, 1),
+        source_url="https://x",
+        content_hash="h",
+        retrieved_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    pg_session.add(doc)
+    pg_session.flush()
+
+    regla = LegalRule(
+        legal_document_id=doc.id,
+        rule_number="1",
+        text="Texto de la norma.",
+        data_origin="OFFICIAL",
+        valid_from=date(2020, 1, 1),
+        source_url="https://x",
+        content_hash="h",
+        retrieved_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    pg_session.add(regla)
+    pg_session.flush()
+
+    store = PostgresChunkStore(pg_session)
+    store.add([_chunk(document_id=doc.id, article="1", valid_from=date(2020, 1, 1))])
+
+    from database.models import LegalChunkRecord
+
+    fila = pg_session.scalars(sa.select(LegalChunkRecord).filter_by(legal_document_id=doc.id)).one()
+    assert fila.legal_rule_id == regla.id
+
+
+@pytest.mark.integration
+def test_add_sin_norma_detras_queda_null_y_avisa(
+    pg_session: sa.orm.Session,  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sin match en `legal_rules`, `legal_rule_id` queda NULL — a propósito,
+    no se inventa una fila — pero no en silencio: se registra un warning.
+
+    Se intercepta `log.warning` en vez de leer stdout/`caplog`: la primera
+    prueba de la sesión que arranca `apps.api.main.create_app()` fija el
+    stream de `logging.basicConfig()` una sola vez, y una prueba posterior
+    ya no lo captura — depender de eso sería frágil según el orden en que
+    corran las pruebas.
+    """
+    from database.models import LegalChunkRecord, LegalDocument
+    from database.repositories import chunks as chunks_module
+
+    llamadas: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(
+        chunks_module.log, "warning", lambda evento, **kw: llamadas.append((evento, kw))
+    )
+
+    doc = LegalDocument(
+        title="Ley de prueba (sin norma)",
+        short_name="LEY_PRUEBA_SIN_NORMA",
+        kind="LAW",
+        data_origin="OFFICIAL",
+        valid_from=date(2020, 1, 1),
+        source_url="https://x",
+        content_hash="h",
+        retrieved_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    pg_session.add(doc)
+    pg_session.flush()
+
+    store = PostgresChunkStore(pg_session)
+    store.add([_chunk(document_id=doc.id, article="NO-EXISTE", valid_from=date(2020, 1, 1))])
+
+    fila = pg_session.scalars(sa.select(LegalChunkRecord).filter_by(legal_document_id=doc.id)).one()
+    assert fila.legal_rule_id is None
+    assert llamadas == [
+        (
+            "chunks.sin_norma_detras",
+            {"article": "NO-EXISTE", "document_id": str(doc.id), "valid_from": "2020-01-01"},
+        )
+    ]
+
+
 # ── Integración: la tabla y sus índices existen de verdad ────────────────────
 
 
