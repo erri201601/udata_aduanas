@@ -96,6 +96,16 @@ class LegalRule(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Regulatory
     text: Mapped[str] = mapped_column(sa.Text, nullable=False)
     # Marca la regla como una de las Reglas Generales de Interpretación (RGI 1..6).
     rgi_reference: Mapped[str | None] = mapped_column(sa.String(8), nullable=True)
+    # Las notas de reforma/adición/derogación que justifican `valid_from` y
+    # `valid_to` (p. ej. "Inciso reformado DOF 19-11-2025") no viven en
+    # `text`: se extraen para calcular la vigencia y se descartan del cuerpo
+    # para no ensuciarlo con anotaciones a media frase. Sin guardarlas en
+    # algún lado, la vigencia de la fila no es verificable contra su propio
+    # contenido (hallazgo de Persona 3, 2026-09-08: una fila puede decir que
+    # rige desde 2025 sin que su texto contenga nada que lo explique). NULL
+    # cuando no hubo ninguna nota (el artículo no se ha tocado desde que se
+    # promulgó el documento).
+    reform_note: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
 
 
 class TariffFraction(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base):
