@@ -24,6 +24,7 @@ from apps.api.routers import (
     evidence,
     findings,
     health,
+    metrics,
     pedimentos,
     products,
     review,
@@ -91,6 +92,7 @@ def create_app() -> FastAPI:
     app.include_router(pedimentos.router)
     app.include_router(evidence.router)
     app.include_router(dashboard.router)
+    app.include_router(metrics.router)
     app.include_router(review.router)
     return app
 
