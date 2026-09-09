@@ -92,7 +92,7 @@ base — copiarlos fuera sigue siendo manual.
 ## 3. Estructura del código
 
 ```
-apps/api/            FastAPI, 16 endpoints    ✅ 8 routers
+apps/api/            FastAPI, 17 endpoints    ✅ 9 routers
 apps/web/            React + TS + Vite        ✅ 7 pantallas del §32
 core/evidence/       Evidence Contract        ✅ 7 módulos
 core/rgi_engine/     RGI Engine               ✅ 7 módulos
@@ -117,7 +117,7 @@ ingestion/diputados/ Ley Aduanera             ✅
 ingestion/{anam,banxico,cbp_cross,datamexico,ebti,sat,vucem,wco}/   ❌ VACÍOS
 synthetic/           generador sintético      ❌ sólo __init__.py
 graph/               Knowledge Graph          ❌ sólo __init__.py
-tests/               43 archivos, 582 tests   ✅
+tests/               44 archivos, 593 tests   ✅
 .github/workflows/ci.yml                      ✅ 6 jobs
 ```
 
@@ -306,7 +306,7 @@ La regla 5 se cumple en producción, no sólo en tests.
 índice HNSW está creado y `EMBEDDING_DIM = 1536` no se toca. Hoy la
 recuperación es por término, no por similitud.
 
-### `apps/api/` ✅ 16 endpoints · `apps/web/` ✅ 7 pantallas
+### `apps/api/` ✅ 17 endpoints · `apps/web/` ✅ 7 pantallas
 
 ⚠️ **El servicio systemd no recarga solo.** Entre el 8 y el 9 de septiembre
 sirvió código anterior al PR #38 durante casi un día: 12 endpoints en vivo
@@ -343,14 +343,14 @@ pedimento sintético → Shadow → divergencia → Money Finder
 ```
 
 Está cerrado de punta a punta y **sin medir**. Es la distinción que importa:
-582 tests en verde prueban el motor contra los casos que escribimos nosotros,
+593 tests en verde prueban el motor contra los casos que escribimos nosotros,
 no contra verdad conocida.
 
 ### Lo que de verdad falta
 
 | # | Hueco | Por qué importa |
 |---|---|---|
-| 1 | **Nadie ha medido el acierto** | 1 fila de Ground Truth, 0 veredictos humanos, 7 casos en la bandeja sin tocar. Cualquier porcentaje que diéramos hoy sería inventado. |
+| 1 | **Nadie ha medido el acierto** | El instrumento ya existe: `GET /metrics/classification` (PR #55). Lo que falta son los veredictos — 0 humanos, 7 casos en la bandeja sin tocar, 1 fila de Ground Truth. La métrica devuelve `null`, no `0`: la precisión es **desconocida**, no mala. |
 | 2 | **274 chunks sin vectorizar** | `OPENAI_API_KEY` vacía. Sin vectores no hay búsqueda semántica, que es el punto del §27. |
 | 3 | **Las 92 notas LIGIE no están en `legal_chunks`** | Viven en `legal_rules` y sólo las alcanza el motor determinista. Son justo las que separan 8471 de 8528. |
 | 4 | **RGCE 2026** | La tercera pata del corpus, no iniciada. |
@@ -393,7 +393,7 @@ La base compartida da 180 de 274 artículos vigentes en 2024 gracias al primero.
 
 | # | Tarea | Estado |
 |---|---|---|
-| 1 | **Métrica de precisión, aunque salga vacía** | 🟢 no depende de nadie. «0 revisadas de 7» es información que hoy no tenemos. |
+| 1 | ~~Métrica de precisión~~ | ✅ PR #55, en vivo. Declara el cero: porcentajes en `null`, 0 revisadas de 7. |
 | 2 | Vectorizar los 274 chunks | ⏸ espera llave |
 | 3 | Revisar el backfill de Brandon | ⏸ espera su PR — **revisarlo, no rehacerlo** |
 | 4 | Pantallas Regulatory Sentinel y Copilot | desbloqueadas: dependían del corpus |
@@ -414,7 +414,7 @@ cerrados. Ese es el mismo bloqueo, visto desde la demo.
 
 | # | Tarea | Estado |
 |---|---|---|
-| 1 | ~~`make service-restart`~~ | ✅ hecho el 9-sep, 16 endpoints en vivo |
+| 1 | ~~`make service-restart`~~ | ✅ hecho el 9-sep, 17 endpoints en vivo |
 | 2 | **Llave de OpenAI** | 🔴 desatasca a P2 y P3 a la vez |
 | 3 | Contestar a Ulises quién revisa | 🔴 es su único bloqueo real |
 | 4 | Ratificar el uso de `HUMAN_VALIDATED` para medir acierto | toca el Canonical Model |
