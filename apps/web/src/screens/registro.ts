@@ -36,8 +36,8 @@ export const PANTALLAS: DefinicionPantalla[] = [
   {
     id: 'pedimento-shadow',
     titulo: 'Pedimento Shadow',
-    descripcion: 'Pedimento sombra contra el declarado',
-    implementada: false,
+    descripcion: 'Lo declarado frente a lo que el sistema esperaba',
+    implementada: true,
   },
   {
     id: 'finding-detail',
