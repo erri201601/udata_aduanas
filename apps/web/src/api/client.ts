@@ -31,6 +31,10 @@ export type RevisionRequest = components['schemas']['RevisionRequest']
 export type RevisionResponse = components['schemas']['RevisionResponse']
 export type ServiceCheck = components['schemas']['ServiceCheck']
 export type ServiceStatus = ServiceCheck['status']
+export type Sentinel = components['schemas']['Sentinel']
+export type DocumentoVigilado = components['schemas']['DocumentoVigilado']
+export type OlaDeReforma = components['schemas']['OlaDeReforma']
+export type NormaFueraDeVigencia = components['schemas']['NormaFueraDeVigencia']
 
 /** Error de la API con el código HTTP, para distinguirlo de un fallo de red. */
 export class ApiError extends Error {
@@ -208,4 +212,20 @@ export async function revisarDecision(
   }
 
   return (await respuesta.json()) as RevisionResponse
+}
+
+/**
+ * Vigilancia normativa a una fecha (§32).
+ *
+ * `fecha` decide qué normas cuentan como vigentes (§14): sin ella, el
+ * servidor usa hoy. Se manda tal cual la escribe la pantalla, en ISO, para
+ * que no haya conversión de zona horaria por el camino — es una fecha de
+ * vigencia, no un instante.
+ */
+export async function fetchSentinel(
+  fecha?: string,
+  signal?: AbortSignal,
+): Promise<Sentinel> {
+  const ruta = fecha ? `/sentinel?fecha=${encodeURIComponent(fecha)}` : '/sentinel'
+  return pedir<Sentinel>(ruta, signal)
 }

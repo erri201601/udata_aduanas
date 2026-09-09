@@ -54,8 +54,8 @@ export const PANTALLAS: DefinicionPantalla[] = [
   {
     id: 'regulatory-sentinel',
     titulo: 'Regulatory Sentinel',
-    descripcion: 'Vigilancia de DOF y cambios regulatorios',
-    implementada: false,
+    descripcion: 'Cambios normativos y qué de ellos nos alcanza',
+    implementada: true,
   },
   {
     id: 'human-review',

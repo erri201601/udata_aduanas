@@ -229,6 +229,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pedimentos/{pedimento_id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revisa el pedimento contra su espejo y persiste los hallazgos
+         * @description Corre los cuatro motores sobre el pedimento y guarda el resultado.
+         *
+         *     Nunca devuelve 500 por no poder revisar una partida. Una partida sin
+         *     espejo es un resultado legítimo —va a `unverifiable`— y la revisión se
+         *     persiste igual: saber qué NO se revisó es justamente lo que este endpoint
+         *     aporta sobre no tener nada.
+         */
+        post: operations["revisar_pedimentos__pedimento_id__review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/evidence/{decision_id}": {
         parameters: {
             query?: never;
@@ -258,6 +283,26 @@ export interface paths {
          * @description Todo en una respuesta: un tablero que se pinta a trozos parpadea.
          */
         get: operations["tablero_dashboard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/metrics/classification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Precisión de la clasificación (§39)
+         * @description Compara cada veredicto humano con la decisión de máquina de su DNA.
+         */
+        get: operations["precision_metrics_classification_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -313,10 +358,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sentinel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Vigilancia normativa
+         * @description Todo el estado de la vigilancia en una respuesta.
+         */
+        get: operations["centinela_sentinel_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * Acierto
+         * @description Una métrica de acierto, con lo que hay detrás del porcentaje.
+         */
+        Acierto: {
+            /**
+             * Aciertos
+             * @default 0
+             */
+            aciertos: number;
+            /**
+             * Comparados
+             * @default 0
+             */
+            comparados: number;
+            /** Porcentaje */
+            porcentaje?: string | null;
+        };
         /**
          * AttributeStatus
          * @description §16 maestro — estado de un atributo de Product DNA.
@@ -683,6 +766,11 @@ export interface components {
             requires_human_review: boolean;
             /** Trace Steps */
             trace_steps: number;
+            /**
+             * Legal Refs Used
+             * @default 0
+             */
+            legal_refs_used: number;
             /** Classified Without Legal Notes */
             classified_without_legal_notes: boolean;
             /** Blocked By */
@@ -719,6 +807,34 @@ export interface components {
          * @enum {string}
          */
         DataOrigin: "OFFICIAL" | "PUBLIC" | "LICENSED" | "SYNTHETIC" | "HUMAN_VALIDATED";
+        /**
+         * DocumentoVigilado
+         * @description Un instrumento del corpus y cuánto de él se está vigilando.
+         */
+        DocumentoVigilado: {
+            /** Short Name */
+            short_name: string;
+            /** Title */
+            title: string;
+            /** Kind */
+            kind: string;
+            /** Data Origin */
+            data_origin: string;
+            /** Valid From */
+            valid_from?: string | null;
+            /** Valid To */
+            valid_to?: string | null;
+            /**
+             * Normas
+             * @default 0
+             */
+            normas: number;
+            /**
+             * Es Fuente Oficial
+             * @default false
+             */
+            es_fuente_oficial: boolean;
+        };
         /**
          * DossierRead
          * @description Las diez respuestas, más lo que no se pudo responder.
@@ -860,6 +976,37 @@ export interface components {
             impacto_moneda?: string | null;
         };
         /**
+         * ImpactoEnDecisiones
+         * @description Cuánto de lo que ya decidimos se puede contrastar contra la norma.
+         */
+        ImpactoEnDecisiones: {
+            /**
+             * Decisiones
+             * @default 0
+             */
+            decisiones: number;
+            /**
+             * Con Normas Citadas
+             * @default 0
+             */
+            con_normas_citadas: number;
+            /**
+             * Sin Normas Citadas
+             * @default 0
+             */
+            sin_normas_citadas: number;
+            /**
+             * Afectadas
+             * @default 0
+             */
+            afectadas: number;
+            /**
+             * Trazable
+             * @default false
+             */
+            trazable: boolean;
+        };
+        /**
          * LivenessResponse
          * @description Respuesta de liveness.
          */
@@ -878,6 +1025,48 @@ export interface components {
             version: string;
             /** Timestamp */
             timestamp: string;
+        };
+        /**
+         * NormaFueraDeVigencia
+         * @description Norma con `valid_to`: dejó de estar vigente ese día.
+         */
+        NormaFueraDeVigencia: {
+            /** Rule Number */
+            rule_number: string;
+            /** Documento */
+            documento: string;
+            /**
+             * Valid From
+             * Format: date
+             */
+            valid_from: string;
+            /**
+             * Valid To
+             * Format: date
+             */
+            valid_to: string;
+            /** Encabezado */
+            encabezado?: string | null;
+        };
+        /**
+         * OlaDeReforma
+         * @description Un día en que entró en vigor un bloque de normas.
+         *
+         *     No es un evento del DOF: es lo que el corpus permite deducir sin inventar
+         *     nada. Si el watcher existiera, esto se cruzaría con él.
+         */
+        OlaDeReforma: {
+            /**
+             * Fecha
+             * Format: date
+             */
+            fecha: string;
+            /** Normas */
+            normas: number;
+            /** Documentos */
+            documentos?: string[];
+            /** Muestra */
+            muestra?: string[];
         };
         /**
          * Oportunidades
@@ -1155,6 +1344,42 @@ export interface components {
              */
             pasos_traza: number;
         };
+        /**
+         * PrecisionClasificacion
+         * @description Las cuatro métricas de clasificación del §39.
+         */
+        PrecisionClasificacion: {
+            hs_accuracy?: components["schemas"]["Acierto"];
+            fraction_accuracy?: components["schemas"]["Acierto"];
+            nico_accuracy?: components["schemas"]["Acierto"];
+            /** Human Review Rate */
+            human_review_rate?: string | null;
+            /**
+             * Decisiones Maquina
+             * @default 0
+             */
+            decisiones_maquina: number;
+            /**
+             * Revisadas
+             * @default 0
+             */
+            revisadas: number;
+            /**
+             * Pendientes De Revision
+             * @default 0
+             */
+            pendientes_de_revision: number;
+            /**
+             * Confirmadas
+             * @default 0
+             */
+            confirmadas: number;
+            /**
+             * Corregidas
+             * @default 0
+             */
+            corregidas: number;
+        };
         /** ProductAttributeRead */
         ProductAttributeRead: {
             /**
@@ -1337,6 +1562,89 @@ export interface components {
             };
         };
         /**
+         * ReviewRequest
+         * @description Las tasas de la operación. Todas opcionales; sin ellas no hay monto.
+         */
+        ReviewRequest: {
+            /**
+             * Iva Rate
+             * @description Fracción, no porcentaje: 0.16, no 16. En región fronteriza 0.08.
+             */
+            iva_rate?: number | string | null;
+            /**
+             * Dta Rate
+             * @description Derecho de Trámite Aduanero ad valorem. El 8 al millar es 0.008.
+             */
+            dta_rate?: number | string | null;
+            /**
+             * Dta Fixed
+             * @description Cuota fija de DTA, cuando el régimen la usa en vez de la tasa.
+             */
+            dta_fixed?: number | string | null;
+            /**
+             * Ieps Rate
+             * @description Sólo en mercancías que lo causan.
+             */
+            ieps_rate?: number | string | null;
+        };
+        /**
+         * ReviewResponse
+         * @description Lo que se encontró, y sobre todo lo que no se pudo comprobar.
+         */
+        ReviewResponse: {
+            /**
+             * Review Id
+             * Format: uuid
+             */
+            review_id: string;
+            /**
+             * Pedimento Id
+             * Format: uuid
+             */
+            pedimento_id: string;
+            /** Findings */
+            findings: number;
+            /** Worst Severity */
+            worst_severity?: string | null;
+            /** Is Complete */
+            is_complete: boolean;
+            /** Unverifiable */
+            unverifiable?: string[];
+            /** Total Exposure */
+            total_exposure?: string | null;
+            /** Total Recoverable */
+            total_recoverable?: string | null;
+            /** Currency */
+            currency?: string | null;
+            /**
+             * Mixed Currencies
+             * @default false
+             */
+            mixed_currencies: boolean;
+            /**
+             * Opportunities
+             * @default 0
+             */
+            opportunities: number;
+            /**
+             * Quantified Opportunities
+             * @default 0
+             */
+            quantified_opportunities: number;
+            /**
+             * Is Simulation
+             * @default true
+             */
+            is_simulation: boolean;
+            /**
+             * Lines Without Expectation
+             * @default 0
+             */
+            lines_without_expectation: number;
+            /** Summary */
+            summary: string;
+        };
+        /**
          * RevisionRequest
          * @description El veredicto de una persona.
          */
@@ -1452,6 +1760,54 @@ export interface components {
             is_simulation: boolean;
             /** Evidence Id */
             evidence_id?: string | null;
+        };
+        /**
+         * Sentinel
+         * @description Estado de la vigilancia normativa a una fecha.
+         */
+        Sentinel: {
+            /**
+             * Fecha
+             * Format: date
+             */
+            fecha: string;
+            /** Corpus */
+            corpus?: components["schemas"]["DocumentoVigilado"][];
+            /**
+             * Normas Totales
+             * @default 0
+             */
+            normas_totales: number;
+            /**
+             * Vigentes En Fecha
+             * @default 0
+             */
+            vigentes_en_fecha: number;
+            /**
+             * Fuera De Vigencia Total
+             * @default 0
+             */
+            fuera_de_vigencia_total: number;
+            /** Reformas */
+            reformas?: components["schemas"]["OlaDeReforma"][];
+            /** Fuera De Vigencia */
+            fuera_de_vigencia?: components["schemas"]["NormaFueraDeVigencia"][];
+            /**
+             * Eventos Dof
+             * @default 0
+             */
+            eventos_dof: number;
+            /**
+             * Vigilancia Automatica
+             * @default false
+             */
+            vigilancia_automatica: boolean;
+            impacto?: components["schemas"]["ImpactoEnDecisiones"];
+            /**
+             * Corpus Sintetico
+             * @default 0
+             */
+            corpus_sintetico: number;
         };
         /**
          * ServiceCheck
@@ -1824,6 +2180,41 @@ export interface operations {
             };
         };
     };
+    revisar_pedimentos__pedimento_id__review_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pedimento_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     obtener_dossier_evidence__decision_id__get: {
         parameters: {
             query?: never;
@@ -1871,6 +2262,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Dashboard"];
+                };
+            };
+        };
+    };
+    precision_metrics_classification_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrecisionClasificacion"];
                 };
             };
         };
@@ -1928,6 +2339,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RevisionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    centinela_sentinel_get: {
+        parameters: {
+            query?: {
+                /** @description Fecha de referencia para la vigencia (§14). Por omisión, hoy. */
+                fecha?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Sentinel"];
                 };
             };
             /** @description Validation Error */
