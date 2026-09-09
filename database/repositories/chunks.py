@@ -20,6 +20,19 @@ dato normativo de este sistema y un chunk no es la excepción — inventar un
 valor sería peor que rechazarlo. `retrieved_at` no está en el contrato de
 `LegalChunk` (es metadato de cuándo SE INDEXÓ, no de la norma en sí), así que
 se toma como el momento de este `add()`.
+
+`legal_rule_id` SE RESUELVE SOLO, POR LA TERNA
+
+`add()` busca en `legal_rules` por `(legal_document_id, rule_number, valid_from)`
+—la misma terna del `UniqueConstraint` de esa tabla, así que el cruce es
+1 a 1— y liga el chunk a la fila que encuentra (decisión de Persona 1,
+2026-09-09: sin esto, el panel de impacto no puede cruzar lo que cita el RAG
+con `classification_decisions.legal_rule_ids`). Nunca por `(documento,
+artículo)` solo: eso sólo funciona mientras exista una única versión
+cargada de cada artículo, y este sistema entero está construido sobre
+vigencia por chunk. Si no hay match, `legal_rule_id` queda `NULL` y se
+registra un `warning` — es un dato que hay que mirar, no un hueco que se
+rellena en silencio.
 """
 
 from __future__ import annotations
@@ -31,7 +44,7 @@ import sqlalchemy as sa
 import structlog
 from rag.types import ORIGENES_QUE_FUNDAMENTAN, LegalChunk
 
-from database.models import LegalChunkRecord, LegalDocument
+from database.models import LegalChunkRecord, LegalDocument, LegalRule
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -104,8 +117,23 @@ class PostgresChunkStore:
                 f"chunk {chunk.article!r} sin url: regulatory.legal_chunks exige "
                 "source_url, igual que el resto del dato normativo (§1 CLAUDE.md)."
             )
+        legal_rule_id = self._session.scalar(
+            sa.select(LegalRule.id).where(
+                LegalRule.legal_document_id == chunk.document_id,
+                LegalRule.rule_number == chunk.article,
+                LegalRule.valid_from == chunk.valid_from,
+            )
+        )
+        if legal_rule_id is None:
+            log.warning(
+                "chunks.sin_norma_detras",
+                article=chunk.article,
+                document_id=str(chunk.document_id),
+                valid_from=chunk.valid_from.isoformat(),
+            )
         return LegalChunkRecord(
             legal_document_id=chunk.document_id,
+            legal_rule_id=legal_rule_id,
             source_id=chunk.source_id,
             article=chunk.article,
             path=chunk.path,
