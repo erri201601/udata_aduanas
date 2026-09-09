@@ -133,3 +133,38 @@ def test_la_evidencia_juridica_y_la_de_modelo_se_distinguen() -> None:
     tipos = {e.evidence_kind for e in _filas_del_seed() if isinstance(e, EvidenceRecord)}
 
     assert tipos == {"LEGAL_SOURCE", "MODEL_OUTPUT"}
+
+
+def test_una_legal_source_del_seed_dice_de_qué_documento_sale() -> None:
+    """Una norma sin `document_ref` no puede contestar «¿con qué fuente?».
+
+    El seed no usa `builder.legal_source()` —los ids los genera el servidor y
+    con la sesión simulada no existen— y al saltárselo se saltaba también su
+    validación. La fila nació sin `document_refs` y era la única `LEGAL_SOURCE`
+    de la base que no podía responder una de las diez preguntas del §49.
+
+    `SYNTHETIC` no es el problema aquí: el builder permite construir una norma
+    sintética a propósito, porque las demos la necesitan. Lo que no puede es
+    fundamentar, y de eso se encarga `assert_legal_basis`. Lo que sí es un
+    problema es una norma —sintética o no— que no dice de dónde sale.
+    """
+    from core.evidence.kinds import REQUIRED_FIELDS, EvidenceKind
+    from database.models import EvidenceRecord
+
+    legales = [
+        f
+        for f in _filas_del_seed()
+        if isinstance(f, EvidenceRecord) and f.evidence_kind == "LEGAL_SOURCE"
+    ]
+    assert legales, "el seed debe producir al menos una LEGAL_SOURCE"
+
+    # El contrato lo declara el propio tipo, no este test: si algún día
+    # `document_ref` deja de ser obligatorio, esta comprobación se relaja sola.
+    assert "document_ref" in REQUIRED_FIELDS[EvidenceKind.LEGAL_SOURCE]
+
+    for evidencia in legales:
+        refs = evidencia.document_refs or []
+        assert refs, f"LEGAL_SOURCE sin document_refs: {evidencia.summary!r}"
+        for ref in refs:
+            assert ref.get("document"), "un document_ref sin documento no referencia nada"
+            assert ref.get("content_hash"), "sin content_hash la cita no es verificable"

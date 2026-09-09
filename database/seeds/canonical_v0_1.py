@@ -191,10 +191,24 @@ def seed(session: Session) -> SyntheticScenario:
         # (`gen_random_uuid()`), así que no existen hasta el flush contra
         # PostgreSQL real. Usarlo dejaría el seed inejecutable con la sesión
         # simulada de los tests.
+        #
+        # Saltarse el builder también se salta su validación, y por eso esta
+        # fila nació sin `document_refs`: era la única `LEGAL_SOURCE` de la
+        # base que no podía contestar «¿con qué fuente?» —una de las diez del
+        # §49—. El tipo exige `document_ref` (`kinds.py`), así que se escribe
+        # aquí con la misma forma que produce `to_record_fields()`.
         evidence_kind="LEGAL_SOURCE",
         created_by="engine",
         summary="Clasificación demo sustentada en TIGIE capítulo 84.",
         source_ids=[source.id],
+        document_refs=[
+            {
+                "document": tigie.title,
+                "article": "Capítulo 84",
+                "url": reg["source_url"],
+                "content_hash": reg["content_hash"],
+            }
+        ],
         content_hashes=["sha256:demo"],
         engine_version="0.1.0",
         data_origin=_SYNTHETIC,
