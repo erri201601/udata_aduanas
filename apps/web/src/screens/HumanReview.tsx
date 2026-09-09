@@ -23,6 +23,18 @@ import { fetchPendientes, revisarDecision } from '../api/client'
 import type { PendienteRead } from '../api/client'
 import { SyntheticBanner } from '../components/DataOriginBadge'
 
+/**
+ * Nombre corto de cada causa. El texto largo lo manda la API en
+ * `causas_detalle`: la explicación de qué se le pide al revisor vive junto a
+ * la lógica que la determina, no duplicada aquí donde podría desincronizarse.
+ */
+const ETIQUETAS_CAUSA: Record<string, string> = {
+  SIN_INFORMACION: 'Falta información',
+  DESEMPATE_POR_NUMERACION: 'Desempate sin razón de fondo',
+  SIN_FRACCION_PROPUESTA: 'Sin fracción que confirmar',
+  RESUELTA_PERO_MARCADA: 'Resuelta, pero marcada',
+}
+
 export function HumanReview() {
   const [pendientes, setPendientes] = useState<PendienteRead[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -129,6 +141,17 @@ export function HumanReview() {
                   {p.fraction_code ?? 'sin fracción'}
                 </code>
               </div>
+
+              {p.causas.length > 0 && (
+                <ul className="causas">
+                  {p.causas.map((causa, i) => (
+                    <li key={causa} className={`causa causa--${causa.toLowerCase()}`}>
+                      <span className="causa__nombre">{ETIQUETAS_CAUSA[causa] ?? causa}</span>
+                      <span className="causa__detalle">{p.causas_detalle[i]}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
 
               {p.reasoning && <p className="revision-fila__razon">{p.reasoning}</p>}
 
