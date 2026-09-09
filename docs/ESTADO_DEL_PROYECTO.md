@@ -1,6 +1,6 @@
 # ADUANERO OS — Estado del proyecto y backlog
 
-**Actualizado:** 2026-09-07  
+**Actualizado:** 2026-09-09  
 **Mantiene:** Persona 1 (Erick)
 
 Documento de contexto. Sirve para poner al día a cualquiera —persona o agente—
@@ -54,7 +54,7 @@ La laptop de Persona 1, `udata-nitro`. Se accede **sólo por Tailscale**.
 | PostgreSQL 16 + pgvector | `100.86.182.104:5433` | **no 5432** |
 | Neo4j | `:7474` (browser) · `:7687` (bolt) | vacío, sin usar |
 | Redis | `:6379` | sin usar |
-| MinIO | `:9000` (API) · `:9001` (consola) | buckets `aduanero-raw`, `aduanero-docs`, **vacíos** |
+| MinIO | `:9000` (API) · `:9001` (consola) | `aduanero-raw` con 4 documentos; `aduanero-docs` vacío |
 
 ⚠️ **En el puerto 5432 hay un PostgreSQL nativo de OTRO proyecto**
 (`Conta_inteligente/Tzol_Udata`). No se toca ni para leer.
@@ -71,7 +71,8 @@ IP de Tailscale). Nunca en `0.0.0.0`.
 
 ```bash
 make test              # pytest
-make lint              # ruff + mypy
+make lint              # ruff + ruff format --check + mypy
+make merge PR=54       # mergea sólo si los seis jobs del CI pasaron
 make smoke             # verifica los 4 servicios (22 comprobaciones)
 make backup            # respalda y verifica la restauración
 make service-restart   # ⚠️ tras mergear cualquier PR que toque apps/api/
@@ -91,44 +92,70 @@ base — copiarlos fuera sigue siendo manual.
 ## 3. Estructura del código
 
 ```
-apps/api/            FastAPI. config.py · logging.py · main.py · routers/health.py
-apps/web/            React + TypeScript + Vite (25 archivos)
-core/evidence/       Evidence Contract        ✅ 6 módulos
-core/rgi_engine/     RGI Engine               ⏳ en PR #8
-core/llm/            ModelProvider            ✅ 10 módulos
+apps/api/            FastAPI, 17 endpoints    ✅ 9 routers
+apps/web/            React + TS + Vite        ✅ 7 pantallas del §32
+core/evidence/       Evidence Contract        ✅ 7 módulos
+core/rgi_engine/     RGI Engine               ✅ 7 módulos
+core/llm/            ModelProvider            ✅ 12 módulos
 core/prompts/        loader versionado        ✅
-core/product_dna/    motor de extracción      ❌ VACÍO
-core/classification/ orquestador              ❌ VACÍO
-core/taxation/       Money Finder             ❌ VACÍO
-core/audit/          Audit Engine             ❌ VACÍO
-core/shadow/         Pedimento Espejo         ❌ VACÍO
-core/opportunity/    Opportunity Finder       ❌ VACÍO
-database/models/     23 entidades SQLAlchemy  ✅
-database/migrations/ 2 migraciones aplicadas  ✅
-database/seeds/      canonical_v0_1.py        ✅ (incompleto, ver §6)
+core/product_dna/    motor de extracción      ✅
+core/classification/ orquestador              ✅
+core/taxation/       Money Finder             ✅
+core/audit/          Audit Engine             ✅
+core/shadow/         Pedimento Espejo         ✅
+core/opportunity/    Opportunity Finder       ✅
+core/review/         revisión humana          ✅
+rag/                 RAG jurídico (§27)       ✅ 7 módulos, sin vectorizar
+database/models/     29 entidades SQLAlchemy  ✅
+database/migrations/ 9 migraciones aplicadas  ✅
+database/repositories/  chunks · notes · tariff · classification · review
+database/seeds/      canonical_v0_1.py        ✅ (ver deuda en §7)
 schemas/             contratos Pydantic       ✅
-ingestion/snice/     LIGIE/NICO               ❌ VACÍO ← el hueco más grande
-rag/  graph/  synthetic/                      ❌ VACÍOS
-tests/               13 archivos, 177 tests   ✅
+ingestion/snice/     LIGIE · NICO · notas     ✅
+ingestion/dof/       Anexo 22                 ✅
+ingestion/diputados/ Ley Aduanera             ✅
+ingestion/{anam,banxico,cbp_cross,datamexico,ebti,sat,vucem,wco}/   ❌ VACÍOS
+synthetic/           generador sintético      ❌ sólo __init__.py
+graph/               Knowledge Graph          ❌ sólo __init__.py
+tests/               44 archivos, 593 tests   ✅
 .github/workflows/ci.yml                      ✅ 6 jobs
-infrastructure/scripts/  backup.sh · restore.sh · smoke_test.sh · 00_INSTALACION.md
-docs/                ver §9
 ```
 
-### Base de datos — 23 tablas aplicadas, 0 filas de negocio
+### Base de datos — 29 tablas, corpus jurídico cargado
+
+Alembic en `9877c9584a4c`. Conteos verificados el 9 de septiembre:
 
 ```
-regulatory     legal_sources · legal_documents · legal_rules ·
-               tariff_fractions · nicos · regulatory_events
+regulatory     legal_sources 4 · legal_documents 4 · legal_rules 366 ·
+               legal_chunks 274 (0 vectorizados) · tariff_fractions 1,445 ·
+               nicos 2,171 · customs_offices 127 · units_of_measure 22 ·
+               pedimento_claves 66 · non_tariff_regulations 37 ·
+               regulatory_events 0
 operational    clients · suppliers · products · invoices · invoice_items ·
                coves · pedimentos · pedimento_items · synthetic_scenarios
-intelligence   product_dnas · product_attributes · evidence_records ·
-               classification_decisions · classification_candidates ·
-               risk_findings · opportunity_findings · ground_truth_records
-raw            (landing de ingestión, sin tablas todavía)
+               — 1 fila cada una, del seed
+intelligence   classification_decisions 7 · classification_candidates 106 ·
+               evidence_records 63 · product_dnas 1 · product_attributes 4 ·
+               shadow_reviews 2 · risk_findings 1 · opportunity_findings 0 ·
+               ground_truth_records 1
+raw            sin tablas: el crudo vive en MinIO
 ```
 
----
+Las 366 normas son `OFFICIAL`: 274 artículos de la Ley Aduanera y 92 notas de
+Sección y Capítulo de la LIGIE. Los 1,445 aranceles son los capítulos **84**
+(890) y **85** (555) — 2 de 97.
+
+### RAW en MinIO — cuatro documentos con su hash
+
+```
+diputados/ley_aduanera_20251119.pdf
+dof/anexo22_20260115.pdf
+snice/ligie_unificada_20250728.pdf
+snice/fracciones_20260420.xlsx
+```
+
+La regla 7 se cumple de punta a punta: nada de lo anterior se parseó sin que
+el crudo estuviera antes en MinIO con su `content_hash`.
 
 ## 4. CI — seis jobs en cada PR
 
@@ -146,7 +173,12 @@ raw            (landing de ingestión, sin tablas todavía)
 **Python 3.12 es obligatorio**: es lo que corre el dev server. Desarrollar en
 3.13 o 3.14 rompe el pipeline.
 
-El CI informa pero **no bloquea el merge**. A veces no se dispara solo; se
+El CI informa pero **no bloquea el merge**: `develop` no está protegida y no
+puede estarlo, porque la protección de ramas en repos privados exige plan de
+pago. Por eso se mergea con **`make merge PR=NN`**, que comprueba los seis jobs
+y se niega si alguno no está en `SUCCESS` — nunca con el botón de GitHub. Cinco
+en verde y uno en rojo no es «casi verde», y una comprobación que no arrancó no
+es una que pasó. A veces no se dispara solo; se
 fuerza con `gh pr close <n> && gh pr reopen <n>`. Conviene revisar el consumo
 de Actions en *Settings → Billing*.
 
@@ -185,17 +217,23 @@ contrato central: **detenerse** y marcar `ARCHITECTURE_DECISION_REQUIRED`.
 
 ## 6. Qué está construido
 
+Los siete motores del maestro —Product DNA §16, RGI §18, Classification §19,
+Pedimento Espejo §20, Audit §21, Money Finder §22 y Opportunity §23, sobre el
+Evidence Contract §17— están completos y **alcanzables desde la API**. Esa
+segunda mitad es la que faltaba hasta el 8 de septiembre: cuatro motores
+existían, estaban probados, y ningún endpoint los invocaba.
+
 ### `core/evidence/` — Evidence Contract ✅
 
 Qué debe llevar una evidencia para que una decisión sea defendible.
 
 ```
 kinds.py      EvidenceKind + campos obligatorios por tipo
-types.py      Evidence, DocumentRef, to_record_fields()
+types.py      Evidence, DocumentRef, LegalRef, to_record_fields()
 builder.py    constructores que hacen imposible la evidencia incompleta
 contract.py   assert_legal_basis · assert_temporal_validity · assert_defensible
 questions.py  Dossier — las diez preguntas del §49, ejecutables
-errors.py     IncompleteEvidenceError, EvidenceOutOfValidityError, …
+errors.py     IncompleteEvidenceError, SyntheticLegalBasisError, …
 ```
 
 Cinco tipos, **sólo uno es fundamento jurídico**:
@@ -208,189 +246,199 @@ Cinco tipos, **sólo uno es fundamento jurídico**:
 | `HUMAN` — persona validó | no por sí solo |
 | `COMPARABLE` — CBP CROSS, EBTI, WCO | **nunca** |
 
-Uso:
+Desde el PR #43, el tipo correcto **no basta**: `is_legal_basis` exige además
+un origen real. `LEGAL_BASIS_ORIGINS` son los cinco menos `SYNTHETIC`, y una
+norma sintética lanza `SyntheticLegalBasisError`. El motivo es que una norma
+inventada cumple todos los campos que exige `LEGAL_SOURCE` —incluido un
+`content_hash` perfectamente calculable— y aun así no es ley.
 
-```python
-from core.evidence import builder, contract, questions
-
-ev = builder.model_output(
-    summary="El voltaje 220V aparece en la ficha técnica.",
-    model_provider=meta.model_provider,
-    model_name=meta.model_name,
-    prompt_id=meta.prompt_id,
-    prompt_version=meta.prompt_version,
-    confidence=Decimal("0.92"),
-)
-fila = ev.to_record_fields()  # dict plano
-```
-
-**Deuda:** `evidence_records` no tiene columna `evidence_kind`. Hoy el tipo se
-proyecta sobre `created_by` (16 chars), que no distingue `LEGAL_SOURCE` de
-`COMPARABLE`. Requiere migración de Persona 2. Ya aprobada, pendiente.
-
-### `core/rgi_engine/` — RGI Engine ⏳ PR #8, en verde
-
-Máquina de evaluación de las Reglas Generales de Interpretación.
-
-```
-states.py    RGIStatus: RESOLVED | CONTINUE | INSUFFICIENT_INFORMATION |
-             HUMAN_REVIEW_REQUIRED   (CONTINUE es interno, nunca se persiste)
-ports.py     TariffCatalog · LegalNotes · Interpreter  ← puertos inyectados
-context.py   ClassificationContext, ProductFact, TariffCandidate
-results.py   RGIResult, ClassificationTrace
-rules.py     RGI1 · RGI2 · RGI3A · RGI3B · RGI3C · RGI4 · RGI5 · RGI6
-engine.py    classify()
-```
+### `core/rgi_engine/` — RGI Engine ✅
 
 Dos etapas: RGI 1→5 determinan la **partida**, RGI 6 desciende a **fracción**.
-
-**No toca la base ni llama a ningún modelo.** Toda consulta al catálogo lleva
+No toca la base ni llama a ningún modelo; toda consulta al catálogo lleva
 `on_date` obligatorio.
 
 RGI 2, 4 y 5 no están implementadas pero **no se saltan**: detectan sus
-precondiciones y escalan a `HUMAN_REVIEW_REQUIRED`.
+precondiciones y escalan a `HUMAN_REVIEW_REQUIRED`. `specificity` ya está
+poblada, así que la RGI 3 a) desempata de verdad.
 
-**No resuelve NICO** (llega a 8 dígitos). **`specificity` la aporta el
-catálogo**: si Persona 2 no la puebla, la RGI 3 a) no distingue nada.
+**Lección del 8 de septiembre.** Al cargar las 92 notas reales el motor dejó de
+clasificar: daba una partida por excluida si la nota del capítulo contenía un
+término de búsqueda, y la del Capítulo 84 menciona «portátiles» hablando de
+herramientas de mano. Se quitó esa decisión de la capa determinista (PR #51).
+Una exclusión falsa descarta la partida correcta con toda la apariencia de
+rigor — es peor que no decidir.
 
-### `core/llm/` — ModelProvider ✅
+### `core/product_dna/` · `core/classification/` ✅
 
-`generate` · `generate_structured` · `embed` · `analyze_image`. Adaptadores
-OpenAI, Anthropic, Gemini, hueco Local. Salida estructurada validada con
-Pydantic y reintento. `core/llm/canonical.py` mapea telemetría al Canonical
-Model.
+Product DNA v0.1 con extracción multimodal. El saneamiento **sólo degrada**:
+sin valor pasa a `MISSING`, sin localización baja a `INFERRED`, sin confianza
+cae a `MISSING`. Nunca inventa un valor plausible.
 
-### `database/` — Canonical Model ✅
+El orquestador une DNA → RGI → Evidence y persiste la traza en `rgi_trace`.
 
-23 entidades, mixins componibles, enums como `VARCHAR + CHECK`
-(`native_enum=False`), dinero `NUMERIC(18,6)` + columna de divisa,
-`TIMESTAMPTZ` siempre, fracciones como `VARCHAR`.
+### `core/shadow/` · `core/audit/` · `core/taxation/` · `core/opportunity/` ✅
 
-`AIDecisionMixin` lleva telemetría de LLM (nullable, con CHECK condicional) y
-`requires_human_review` con **default `true`**: el sistema falla hacia la
-cautela.
+Pedimento Espejo construye lo que *debería* declararse **sin mirar lo
+declarado**, y sólo después compara. Money Finder es `Decimal` de punta a
+punta. Lo no verificable se declara `unverifiable` y va a `shadow_reviews`: un
+pedimento que nadie pudo verificar no está limpio, está sin verificar.
 
-### `apps/web/` — Frontend base ✅
+### `rag/` — RAG jurídico (§27) ✅ sin vectorizar
 
-React + TS + Vite. Pantalla de estado contra `/health/ready`. Layout de las 7
-pantallas del §32 con badge `SYNTHETIC DEMO DATA` desde el inicio. Cliente TS
-generado desde `/openapi.json` con `npm run gen:api`.
+```
+types.py      LegalChunk — vigencia y data_origin POR CHUNK
+chunking.py   trocea por artículo y fracción; lee «(Reformado … DOF …)»
+retrieval.py  recuperar() — filtro temporal y de procedencia
+evidencia.py  a_legal_refs() → LegalRef, el puente al contrato
+memoria.py    MemoriaChunkStore, sólo para desarrollo
+ports.py      ChunkStore · Embedder
+```
+
+El almacén real es `database/repositories/chunks.py` sobre pgvector.
+`POST /products/{id}/classify` ya fundamenta con el corpus.
+
+Verificado contra la base compartida: para `2024-03-15` devuelve 8 artículos y
+descarta los reformados el 2025-11-19; para `2026-09-01` devuelve los nuevos.
+La regla 5 se cumple en producción, no sólo en tests.
+
+**Los 274 chunks tienen `embedding` en NULL.** La columna es `vector(1536)`, el
+índice HNSW está creado y `EMBEDDING_DIM = 1536` no se toca. Hoy la
+recuperación es por término, no por similitud.
+
+### `apps/api/` ✅ 17 endpoints · `apps/web/` ✅ 7 pantallas
+
+⚠️ **El servicio systemd no recarga solo.** Entre el 8 y el 9 de septiembre
+sirvió código anterior al PR #38 durante casi un día: 12 endpoints en vivo
+contra 16 en `develop`, sin que nada lo delatara — `/health` respondía `ok`.
+Tras mergear cualquier PR que toque `apps/api/`: `make service-restart`.
 
 ---
 
 ## 7. Qué falta
 
-### Estado contra el scorecard del §44
+### Scorecard del §44
 
 ```
-DATA           0 de 14   ⛔ ninguna fuente jurídica extraída. MinIO vacío.
-CORE           2 de 4    Evidence ✅ · RGI ⏳ · Product DNA ❌ · Classification ❌
-SIMULATOR      0 de 8    synthetic/ vacío
-INTELLIGENCE   1 de 6    Shadow ❌ Audit ❌ Money ❌ Opportunity ❌ Sentinel ❌ Graph ❌
-PRODUCT        0.5 de 3  dashboard en layout · Copilot ❌ · demo AJR ❌
+DATA           4 de 14   LIGIE ✅ (2 capítulos de 97) · NICO ✅ ·
+                         Ley Aduanera ✅ · Anexo 22 ✅
+                         RGCE ❌ · PROSEC ❌ · Regla 8a ❌ · NOM ❌ ·
+                         Cuotas ❌ · CBP ❌ · EBTI ❌ · Banxico ❌ ·
+                         ANAM/SAT/Data México ❌
+CORE           4 de 4    Product DNA ✅ · RGI ✅ · Classification ✅ ·
+                         Evidence ✅
+SIMULATOR      0 de 8    synthetic/ tiene sólo __init__.py. El seed crea una
+                         fila de cada cosa; eso no es un generador.
+INTELLIGENCE   4 de 6    Shadow ✅ · Audit ✅ · Money ✅ · Opportunity ✅ ·
+                         Sentinel ❌ · Knowledge Graph ❌
+PRODUCT        1.5 de 3  Dashboard ✅ · Copilot ❌ · Demo AJR ⏳ guion escrito
 ```
 
-### El vertical slice del §42 — dónde se rompe
+### El vertical slice del §42 — cerrado
 
 ```
 ficha técnica → Product DNA → RGI → Classification → Evidence →
 pedimento sintético → Shadow → divergencia → Money Finder
-       ❌            ⏳          ❌            ✅          ❌
+      ✅            ✅        ✅            ✅         ✅
 ```
 
-**Los dos eslabones que faltan para tener algo demostrable son Product DNA
-(el motor) y el Classification Orchestrator.**
+Está cerrado de punta a punta y **sin medir**. Es la distinción que importa:
+593 tests en verde prueban el motor contra los casos que escribimos nosotros,
+no contra verdad conocida.
+
+### Lo que de verdad falta
+
+| # | Hueco | Por qué importa |
+|---|---|---|
+| 1 | **Nadie ha medido el acierto** | El instrumento ya existe: `GET /metrics/classification` (PR #55). Lo que falta son los veredictos — 0 humanos, 7 casos en la bandeja sin tocar, 1 fila de Ground Truth. La métrica devuelve `null`, no `0`: la precisión es **desconocida**, no mala. |
+| 2 | **274 chunks sin vectorizar** | `OPENAI_API_KEY` vacía. Sin vectores no hay búsqueda semántica, que es el punto del §27. |
+| 3 | **Las 92 notas LIGIE no están en `legal_chunks`** | Viven en `legal_rules` y sólo las alcanza el motor determinista. Son justo las que separan 8471 de 8528. |
+| 4 | **RGCE 2026** | La tercera pata del corpus, no iniciada. |
+| 5 | **95 capítulos de tarifa** | Hoy 84 y 85. |
+
+### Deuda técnica conocida
+
+- `database/seeds/canonical_v0_1.py` escribe una evidencia `LEGAL_SOURCE` con
+  `data_origin = SYNTHETIC`, saltándose `builder.legal_source()` por el orden
+  del flush. El contrato la rechaza al leerla, pero un re-seed la recrea.
+- `GroundTruthRecord` está diseñado para anomalías inyectadas (§26):
+  `error_type`, `original_value`, `mutated_value`. **No sirve** para medir
+  acierto de clasificación. Esa vía son las filas `HUMAN_VALIDATED` que
+  comparten `product_dna_id` (ver §8, Persona 3).
+- Los respaldos viven en el mismo disco que la base.
 
 ---
 
 ## 8. Backlog por persona
 
-### Persona 2 — Brandon (Data Engineer)
+> Al 9 de septiembre: `develop` en `a47895f`, **0 PRs abiertos**, `main` en
+> `v0.4`. Los tres documentos de encargo —`TAREA_P2_CORPUS_JURIDICO.md` y
+> `TAREA_P3_RAG_INTEGRACION.md`— están cumplidos salvo lo que se lista abajo.
 
-**Rama:** `brandon` · **Sin trabajo pendiente de integrar.**
+### Persona 2 — Brandon (Data Engineer)
 
 | # | Tarea | Estado |
 |---|---|---|
-| 1 | **LIGIE/NICO, capítulos 84 y 85** | 🔴 **en curso — la prioridad del proyecto** |
-| 2 | Columna `evidence_kind` en `evidence_records` | aprobada, pendiente |
-| 3 | Ley Aduanera, RGCE 2026, Anexo 22 | pendiente |
-| 4 | Generador sintético + Ground Truth (§24, §26) | pendiente |
-| 5 | DOF Regulatory Watcher | Sprint 6 |
+| 1 | **Verificar su push: `reform_note` + `rag/backfill_embeddings.py`** | 🔴 **bloquea a Persona 3.** Cree tener un PR abierto; no existe. La migración `dce813047e49` no está en el repo y `rag/` no tiene el backfill. |
+| 2 | Notas LIGIE → `legal_chunks` | pendiente, no estaba en su encargo |
+| 3 | RGCE 2026 | no iniciado, confirmar alcance |
+| 4 | Ground Truth de anomalías (§26) | pendiente |
+| 5 | Resto de la tarifa · Anexo 2.2.1 · las nueve fuentes | pendiente |
 
-**Sobre la tarea 1:** SNICE aprobado como fuente, con distinción obligatoria —
-para NICO es *la* fuente; para la tarifa es **complementaria**, el instrumento
-jurídico es la LIGIE del DOF. `source_document` debe registrar el instrumento
-y `source_url` de dónde se leyó.
-
-Empezar por capítulos **84 y 85** (mayor volumen de importación, más ricos en
-NICO, donde ocurren las disputas reales). Criterio para pasar al resto:
-reporte de reconciliación que cuadre, 20 fracciones verificadas a mano,
-cero campos inventados, RAW en MinIO con `content_hash`.
-
-**Debe leer `core/rgi_engine/ports.py`** antes de terminar el parser: define
-qué necesita el motor de un `TariffCatalog` y de `LegalNotes`. Y poblar
-`specificity`, o la RGI 3 a) no desempata.
+**Ya mergeado, no rehacer:** el `valid_from` por artículo (`valid_from_override`,
+commit `421c592`) y el `notes_for()` acotado a `LegalDocument.kind == "TARIFF"`.
+La base compartida da 180 de 274 artículos vigentes en 2024 gracias al primero.
 
 ### Persona 3 — Ulises (AI + Full Stack)
 
-**Rama:** `ulises` · **8 commits sin integrar, sin PR abierto.**
-
 | # | Tarea | Estado |
 |---|---|---|
-| 0 | Abrir PR de los 8 commits pendientes | 🔴 primero |
-| 1 | Extender el seed con `INFERRED` y `MISSING` | pequeño, va antes que el router |
-| 2 | **Product DNA Engine v0.1** | ← **el orden correcto es este, no la pantalla** |
-| 3 | Multimodal (imágenes, fichas escaneadas) | pendiente |
-| 4 | `apps/api/db.py` — engine + sessionmaker + `get_session` | **SÍNCRONO**, ver abajo |
-| 5 | Router de lectura + pantalla de Product DNA | después del motor |
-| 6 | RAG jurídico (§27) — pgvector sin usar | pendiente |
-| 7 | Evidence UI (§49) | depende del Evidence Contract ✅ |
-| 8 | Human review UI · Knowledge Graph · Copilot | Sprint 6-7 |
+| 1 | ~~Métrica de precisión~~ | ✅ PR #55, en vivo. Declara el cero: porcentajes en `null`, 0 revisadas de 7. |
+| 2 | Vectorizar los 274 chunks | ⏸ espera llave |
+| 3 | Revisar el backfill de Brandon | ⏸ espera su PR — **revisarlo, no rehacerlo** |
+| 4 | Pantallas Regulatory Sentinel y Copilot | desbloqueadas: dependían del corpus |
+| 5 | Knowledge Graph sobre Neo4j | sin dueño |
 
-**Sobre la 4:** la capa de sesión debe ser **síncrona**. No hay una sola línea
-async en el repo — `apps/api/routers/health.py`, `tests/test_canonical_model.py`
-y `database/seeds/` usan `Session` con `psycopg`. Meter `AsyncSession` crearía
-dos mundos y los errores de greenlet al mezclarlos son de los peores de
-diagnosticar. Requisitos: engine único a nivel de módulo con
-`pool_pre_ping=True`, `expire_on_commit=False`, dependencia que cierre siempre
-con rollback explícito, URL desde `apps.api.config`. Migrar el health check al
-engine compartido (hoy crea uno desechable por llamada).
+**Sobre la 1.** Una revisión humana **no sobrescribe** la decisión de la
+máquina: crea una fila nueva `HUMAN_VALIDATED` que comparte `product_dna_id`
+(`apps/api/routers/review.py`). De ese par salen *fraction accuracy* y *human
+review rate*. Las dos vías se complementan: la de Brandon mide detección de
+anomalías, ésta mide acierto de clasificación.
 
-**Sobre la 2:** el Product DNA Engine es el **primer eslabón del §42**. La
-pantalla sin él sólo muestra fixtures. Cada atributo declara su origen —
-`OBSERVED` / `EXTRACTED` / `INFERRED` / `MISSING` — y el RGI Engine los trata
-distinto: un hecho `INFERRED` baja la confianza de la clasificación. **El test
-más importante: un dato ausente produce `MISSING`, no un valor plausible.**
+**Quién revisa.** No el equipo: un veredicto de quien construyó el sistema lo
+mide contra sus propias suposiciones. Los revisores calificados son los de
+AJR, y `docs/DEMO_AJR.md` cierra pidiéndoles diez pedimentos reales ya
+cerrados. Ese es el mismo bloqueo, visto desde la demo.
 
 ### Persona 1 — Erick (Tech Lead)
 
 | # | Tarea | Estado |
 |---|---|---|
-| — | Mergear PR #8 (RGI Engine) | verde, pendiente |
-| — | Correr el seed contra la base compartida | decidido, pendiente |
-| 1 | **Classification Orchestrator** (§9.2) | ← siguiente, **espera `apps/api/db.py`** |
-| 2 | Money Finder (§9.5) — `Decimal`, determinista | sin dependencias, se puede adelantar |
-| 3 | Pedimento Espejo (§9.3) | pendiente |
-| 4 | Audit Engine (§9.4) | pendiente |
-| 5 | Opportunity Finder (§9.6) | pendiente |
+| 1 | ~~`make service-restart`~~ | ✅ hecho el 9-sep, 17 endpoints en vivo |
+| 2 | **Llave de OpenAI** | 🔴 desatasca a P2 y P3 a la vez |
+| 3 | Contestar a Ulises quién revisa | 🔴 es su único bloqueo real |
+| 4 | Ratificar el uso de `HUMAN_VALIDATED` para medir acierto | toca el Canonical Model |
+| 5 | Aplicar `dce813047e49` a la compartida | cuando exista |
+| 6 | Sacar los respaldos de la laptop | 50 MB en el mismo disco que la base |
+| 7 | Arreglar el seed (`LEGAL_SOURCE` + `SYNTHETIC`) | ver §7 |
+| 8 | Decidir sobre RGI 3 c) y las reglas 2, 4 y 5 | pendiente |
 
 ---
 
 ## 9. La siguiente tarea
 
-**Product DNA Engine v0.1 — Persona 3.**
+**Medir.** Es lo único que el proyecto no puede responder hoy, y lo pregunta
+cualquiera en los primeros cinco minutos.
 
-Es el primer eslabón del vertical slice y el único que bloquea todo lo demás:
-sin él no hay nada que clasificar, el RGI Engine no tiene entrada real, y la
-demo para AJR no existe.
+Tiene dos mitades y ninguna es código difícil:
 
-En paralelo, **LIGIE/NICO de Persona 2** es igual de urgente por otra razón:
-el RGI Engine ya está construido pero no tiene tarifa contra la que operar.
+1. **La métrica, aunque nazca vacía** — Persona 3, sin dependencias.
+2. **Los veredictos que la llenen** — de AJR, no del equipo.
 
-Cuando ambas existan, **Classification Orchestrator** (Persona 1) une las
-piezas y el vertical slice queda cerrado de punta a punta.
-
----
+Todo lo demás del proyecto puede seguir avanzando en paralelo, pero el número
+honesto de «cuánto llevamos» no se mueve hasta que alguien calificado revise
+mercancía real. Hoy el motor está en ~85 **sin validar**: si el Ground Truth
+revelara 60% de acierto, no valdría 85.
 
 ## 10. Documentos del repositorio
 
@@ -404,6 +452,9 @@ piezas y el vertical slice queda cerrado de punta a punta.
 | `docs/TAREA_P3_MODEL_PROVIDER.md` | especificación de ModelProvider y frontend |
 | `docs/PROMPT_P2.md` · `docs/PROMPT_P3.md` | prompts de arranque para los agentes |
 | `docs/ER_DIAGRAM.md` | diagrama Mermaid del modelo |
+| `docs/DEMO_AJR.md` | guion de la demo, verificado contra el sistema |
+| `docs/TAREA_P2_CORPUS_JURIDICO.md` | encargo del corpus a Persona 2 |
+| `docs/TAREA_P3_RAG_INTEGRACION.md` | encargo del RAG a Persona 3 |
 | `docs/adr/0001-puertos-y-bind-del-dev-server.md` | por qué 8080 y 5433 |
 | `infrastructure/scripts/00_INSTALACION.md` | instalación del dev server |
 
