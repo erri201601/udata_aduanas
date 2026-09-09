@@ -6,6 +6,7 @@ import { Evidence } from './screens/Evidence'
 import { ExecutiveDashboard } from './screens/ExecutiveDashboard'
 import { Findings } from './screens/Findings'
 import { HumanReview } from './screens/HumanReview'
+import { PedimentoShadow } from './screens/PedimentoShadow'
 import { ProductDna } from './screens/ProductDna'
 import { RegulatorySentinel } from './screens/RegulatorySentinel'
 import { SystemStatus } from './screens/SystemStatus'
@@ -62,6 +63,7 @@ export default function App() {
         {pantalla.id === 'evidence' && <Evidence />}
         {pantalla.id === 'human-review' && <HumanReview />}
         {pantalla.id === 'regulatory-sentinel' && <RegulatorySentinel />}
+        {pantalla.id === 'pedimento-shadow' && <PedimentoShadow />}
         {!pantalla.implementada && (
           <Placeholder titulo={pantalla.titulo} descripcion={pantalla.descripcion} />
         )}

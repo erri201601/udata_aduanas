@@ -32,6 +32,9 @@ export type RevisionResponse = components['schemas']['RevisionResponse']
 export type ServiceCheck = components['schemas']['ServiceCheck']
 export type ServiceStatus = ServiceCheck['status']
 export type Sentinel = components['schemas']['Sentinel']
+export type PedimentoEspejo = components['schemas']['PedimentoEspejo']
+export type LineaEspejo = components['schemas']['LineaEspejo']
+export type DivergenciaRead = components['schemas']['DivergenciaRead']
 export type DocumentoVigilado = components['schemas']['DocumentoVigilado']
 export type OlaDeReforma = components['schemas']['OlaDeReforma']
 export type NormaFueraDeVigencia = components['schemas']['NormaFueraDeVigencia']
@@ -228,4 +231,18 @@ export async function fetchSentinel(
 ): Promise<Sentinel> {
   const ruta = fecha ? `/sentinel?fecha=${encodeURIComponent(fecha)}` : '/sentinel'
   return pedir<Sentinel>(ruta, signal)
+}
+
+/**
+ * El pedimento declarado frente a su espejo (§36).
+ *
+ * LEE la última auditoría, no dispara una nueva: abrir una pantalla no debería
+ * gastar llamadas a modelo ni escribir filas. Para auditar está
+ * `POST /pedimentos/{id}/review`.
+ */
+export async function fetchEspejo(
+  pedimentoId: string,
+  signal?: AbortSignal,
+): Promise<PedimentoEspejo> {
+  return pedir<PedimentoEspejo>(`/pedimentos/${pedimentoId}/shadow`, signal)
 }

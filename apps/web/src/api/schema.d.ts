@@ -358,6 +358,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pedimentos/{pedimento_id}/shadow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * El pedimento declarado frente a su espejo
+         * @description Lee la última auditoría. No dispara una nueva.
+         */
+        get: operations["espejo_pedimentos__pedimento_id__shadow_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sentinel": {
         parameters: {
             query?: never;
@@ -808,6 +828,38 @@ export interface components {
          */
         DataOrigin: "OFFICIAL" | "PUBLIC" | "LICENSED" | "SYNTHETIC" | "HUMAN_VALIDATED";
         /**
+         * DivergenciaRead
+         * @description Una diferencia concreta entre lo declarado y lo esperado.
+         */
+        DivergenciaRead: {
+            /**
+             * Finding Id
+             * Format: uuid
+             */
+            finding_id: string;
+            /** Finding Type */
+            finding_type: string;
+            /** Field */
+            field?: string | null;
+            /** Declared Value */
+            declared_value?: string | null;
+            /** Expected Value */
+            expected_value?: string | null;
+            /** Severity */
+            severity: string;
+            /** Rationale */
+            rationale?: string | null;
+            /** Impact Amount */
+            impact_amount?: string | null;
+            /** Impact Amount Currency */
+            impact_amount_currency?: string | null;
+            /**
+             * Is Simulation
+             * @default false
+             */
+            is_simulation: boolean;
+        };
+        /**
          * DocumentoVigilado
          * @description Un instrumento del corpus y cuánto de él se está vigilando.
          */
@@ -1007,6 +1059,43 @@ export interface components {
             trazable: boolean;
         };
         /**
+         * LineaEspejo
+         * @description Una partida, con lo declarado y lo que el espejo esperaba.
+         */
+        LineaEspejo: {
+            /** Line Number */
+            line_number: number;
+            /** Description */
+            description: string;
+            /** Product Id */
+            product_id?: string | null;
+            /** Declared Fraction Code */
+            declared_fraction_code?: string | null;
+            /** Declared Nico Code */
+            declared_nico_code?: string | null;
+            /** Country Of Origin */
+            country_of_origin?: string | null;
+            /** Customs Value */
+            customs_value?: string | null;
+            /** Customs Value Currency */
+            customs_value_currency?: string | null;
+            /** Expected Fraction Code */
+            expected_fraction_code?: string | null;
+            /** Estado */
+            estado: string;
+            /**
+             * Verificacion Parcial
+             * @default false
+             */
+            verificacion_parcial: boolean;
+            /** Divergencias */
+            divergencias?: components["schemas"]["DivergenciaRead"][];
+            /** No Verificable Por */
+            no_verificable_por?: string[];
+            /** Peor Severidad */
+            peor_severidad?: string | null;
+        };
+        /**
          * LivenessResponse
          * @description Respuesta de liveness.
          */
@@ -1082,6 +1171,74 @@ export interface components {
             ahorro_cuantificado?: string | null;
             /** Ahorro Moneda */
             ahorro_moneda?: string | null;
+        };
+        /**
+         * PedimentoEspejo
+         * @description El pedimento declarado frente a su espejo (§36).
+         */
+        PedimentoEspejo: {
+            /**
+             * Pedimento Id
+             * Format: uuid
+             */
+            pedimento_id: string;
+            /** Pedimento Number */
+            pedimento_number: string;
+            /**
+             * Operation Date
+             * Format: date
+             */
+            operation_date: string;
+            /** Customs Office */
+            customs_office?: string | null;
+            /** Data Origin */
+            data_origin: string;
+            /** Is Simulation */
+            is_simulation: boolean;
+            revision?: components["schemas"]["RevisionEspejo"] | null;
+            /**
+             * Revisiones Totales
+             * @default 0
+             */
+            revisiones_totales: number;
+            /** Lineas */
+            lineas?: components["schemas"]["LineaEspejo"][];
+            /**
+             * Partidas
+             * @default 0
+             */
+            partidas: number;
+            /**
+             * Divergentes
+             * @default 0
+             */
+            divergentes: number;
+            /**
+             * Sin Verificar
+             * @default 0
+             */
+            sin_verificar: number;
+            /**
+             * Conformes
+             * @default 0
+             */
+            conformes: number;
+            /** Exposicion Cuantificada */
+            exposicion_cuantificada?: string | null;
+            /** Exposicion Moneda */
+            exposicion_moneda?: string | null;
+            /**
+             * Monedas Mezcladas
+             * @default false
+             */
+            monedas_mezcladas: boolean;
+            /**
+             * Hallazgos Sin Monto
+             * @default 0
+             */
+            hallazgos_sin_monto: number;
+            /** Motivos Sin Atribuir */
+            motivos_sin_atribuir?: string[];
         };
         /**
          * PedimentoFindings
@@ -1643,6 +1800,28 @@ export interface components {
             lines_without_expectation: number;
             /** Summary */
             summary: string;
+        };
+        /**
+         * RevisionEspejo
+         * @description La corrida que se está leyendo.
+         */
+        RevisionEspejo: {
+            /**
+             * Review Id
+             * Format: uuid
+             */
+            review_id: string;
+            /**
+             * Reviewed At
+             * Format: date-time
+             */
+            reviewed_at: string;
+            /** Is Complete */
+            is_complete: boolean;
+            /** Engine Version */
+            engine_version?: string | null;
+            /** Data Origin */
+            data_origin: string;
         };
         /**
          * RevisionRequest
@@ -2339,6 +2518,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RevisionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    espejo_pedimentos__pedimento_id__shadow_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pedimento_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PedimentoEspejo"];
                 };
             };
             /** @description Validation Error */

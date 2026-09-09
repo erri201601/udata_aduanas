@@ -975,3 +975,135 @@ code {
   border-radius: 4px;
 }
 .reforma__muestra em { font-size: 0.75rem; color: var(--tenue); font-style: normal; }
+
+/* --- Pedimento Shadow ----------------------------------------------------
+   Los tres estados tienen que distinguirse de un vistazo, y «sin verificar»
+   NO puede parecerse a «conforme»: es la confusión que esta pantalla existe
+   para impedir. Por eso lleva el color de aviso, no el neutro. */
+
+.alerta--fuerte { border-left-width: 4px; }
+
+.estado-espejo {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid var(--borde);
+}
+
+.estado-espejo--conforme { color: var(--ok); border-color: var(--ok); }
+.estado-espejo--divergente { color: var(--mal); border-color: var(--mal); }
+.estado-espejo--sin_verificar { color: var(--aviso); border-color: var(--aviso); }
+.estado-espejo--parcial { color: var(--aviso); border-style: dashed; }
+
+.espejo__revision {
+  margin: 0.6rem 0 1.4rem;
+  font-size: 0.8rem;
+  color: var(--tenue);
+}
+
+.espejo-lineas { list-style: none; margin: 0; padding: 0; display: grid; gap: 1rem; }
+
+.espejo-linea {
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  padding: 1rem 1.1rem;
+}
+
+.espejo-linea--divergente { border-left: 4px solid var(--mal); }
+.espejo-linea--sin_verificar { border-left: 4px solid var(--aviso); }
+.espejo-linea--conforme { border-left: 4px solid var(--ok); }
+
+.espejo-linea__cabecera {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.9rem;
+}
+
+.espejo-linea__numero {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--tenue);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.espejo-linea__desc { font-weight: 600; }
+.espejo-linea__marcas { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+
+/* Las dos caras pesan lo mismo: si lo esperado se viera secundario, la
+   pantalla sugeriría que lo declarado es la verdad de partida. */
+.espejo__caras {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1rem;
+}
+
+.cara {
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  padding: 0.8rem 0.9rem;
+}
+
+.cara h4 {
+  margin: 0 0 0.6rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--tenue);
+}
+
+.cara dl { margin: 0; display: grid; gap: 0.45rem; }
+.cara dl div { display: flex; justify-content: space-between; gap: 0.8rem; }
+.cara dt { font-size: 0.78rem; color: var(--tenue); }
+.cara dd { margin: 0; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+.cara__divergente { color: var(--mal); font-weight: 600; }
+
+.cara__sin-expectativa {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--tenue);
+  line-height: 1.5;
+}
+
+.espejo-linea__bloque { margin-top: 1rem; }
+.espejo-linea__bloque h5 {
+  margin: 0 0 0.5rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--tenue);
+}
+
+.divergencias,
+.huecos { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.7rem; }
+.divergencias > li { border-left: 2px solid var(--borde); padding-left: 0.8rem; }
+
+.divergencia__titulo { display: flex; gap: 0.5rem; align-items: baseline; flex-wrap: wrap; }
+.divergencia__campo { font-size: 0.75rem; color: var(--tenue); }
+
+.divergencia__valores {
+  margin: 0.35rem 0;
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+  color: var(--tenue);
+}
+
+.divergencia__razon { margin: 0.35rem 0; font-size: 0.82rem; line-height: 1.55; max-width: 72ch; }
+.divergencia__monto { margin: 0.35rem 0 0; font-size: 0.78rem; color: var(--tenue); }
+
+.huecos > li {
+  border-left: 2px solid var(--aviso);
+  padding-left: 0.8rem;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  max-width: 78ch;
+}
