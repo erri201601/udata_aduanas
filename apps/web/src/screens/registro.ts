@@ -66,7 +66,7 @@ export const PANTALLAS: DefinicionPantalla[] = [
   {
     id: 'copilot',
     titulo: 'Copilot',
-    descripcion: 'Asistente sobre el corpus jurídico y la operación',
-    implementada: false,
+    descripcion: 'Qué dice la norma que regía ese día, con su cita',
+    implementada: true,
   },
 ]

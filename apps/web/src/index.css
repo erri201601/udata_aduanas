@@ -1107,3 +1107,99 @@ code {
   line-height: 1.55;
   max-width: 78ch;
 }
+
+/* --- Copilot -------------------------------------------------------------
+   El aviso de «no es búsqueda semántica» va arriba y con peso: presentar una
+   búsqueda por término como si entendiera la pregunta vendería una capacidad
+   que no está puesta. */
+
+.copilot__forma {
+  display: flex;
+  gap: 0.8rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}
+
+.copilot__pregunta { display: flex; flex-direction: column; gap: 0.25rem; flex: 1 1 22rem; }
+.copilot__pregunta span { font-size: 0.72rem; color: var(--tenue); }
+
+.copilot__pregunta input {
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  color: var(--texto);
+  padding: 0.5rem 0.7rem;
+  font-size: 0.9rem;
+}
+
+.copilot__pregunta input:focus { outline: none; border-color: var(--acento); }
+
+.copilot__nota {
+  margin: 0 0 1.4rem;
+  font-size: 0.8rem;
+  color: var(--tenue);
+  max-width: 76ch;
+  line-height: 1.55;
+}
+
+.copilot__resumen { margin: 0 0 1rem; font-size: 0.8rem; color: var(--tenue); }
+.copilot__resumen code { margin-right: 0.3rem; }
+
+.pasajes { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.9rem; }
+
+.pasaje {
+  border: 1px solid var(--borde);
+  border-left: 3px solid var(--ok);
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+}
+
+/* Lo que no fundamenta se ve distinto, no se esconde: sirve para orientarse. */
+.pasaje--sin-fundamento { border-left-color: var(--aviso); }
+
+.pasaje__cabecera {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.pasaje__cita { font-size: 0.88rem; }
+.pasaje__encabezado { display: block; font-size: 0.78rem; color: var(--tenue); }
+.pasaje__marcas { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
+
+.coincidencia {
+  font-size: 0.7rem;
+  padding: 0.12rem 0.45rem;
+  border: 1px solid var(--borde);
+  border-radius: 999px;
+  color: var(--tenue);
+  white-space: nowrap;
+}
+
+.coincidencia--plena { color: var(--ok); border-color: var(--ok); }
+
+.pasaje__vigencia { margin: 0.4rem 0; font-size: 0.75rem; color: var(--tenue); }
+
+.pasaje__texto {
+  margin: 0.6rem 0;
+  font-size: 0.86rem;
+  line-height: 1.6;
+  max-width: 82ch;
+  white-space: pre-wrap;
+}
+
+.pasaje__aviso { margin: 0.5rem 0; font-size: 0.78rem; color: var(--aviso); }
+
+.pasaje__pie {
+  margin: 0.6rem 0 0;
+  display: flex;
+  gap: 1rem;
+  font-size: 0.72rem;
+  color: var(--tenue);
+  flex-wrap: wrap;
+}
+
+.pasaje__pie a { color: var(--acento); }

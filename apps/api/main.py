@@ -20,6 +20,7 @@ from apps.api.db import dispose_engine
 from apps.api.logging import configure_logging, get_logger
 from apps.api.routers import (
     classifications,
+    copilot,
     dashboard,
     evidence,
     findings,
@@ -90,6 +91,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(products.router)
     app.include_router(classifications.router)
+    app.include_router(copilot.router)
     app.include_router(findings.router)
     app.include_router(pedimentos.router)
     app.include_router(evidence.router)

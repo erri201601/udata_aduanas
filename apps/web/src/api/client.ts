@@ -33,6 +33,9 @@ export type ServiceCheck = components['schemas']['ServiceCheck']
 export type ServiceStatus = ServiceCheck['status']
 export type Sentinel = components['schemas']['Sentinel']
 export type PedimentoEspejo = components['schemas']['PedimentoEspejo']
+export type RespuestaCopilot = components['schemas']['Respuesta']
+export type Pasaje = components['schemas']['Pasaje']
+export type Consulta = components['schemas']['Consulta']
 export type LineaEspejo = components['schemas']['LineaEspejo']
 export type DivergenciaRead = components['schemas']['DivergenciaRead']
 export type DocumentoVigilado = components['schemas']['DocumentoVigilado']
@@ -245,4 +248,36 @@ export async function fetchEspejo(
   signal?: AbortSignal,
 ): Promise<PedimentoEspejo> {
   return pedir<PedimentoEspejo>(`/pedimentos/${pedimentoId}/shadow`, signal)
+}
+
+/** Estado del corpus antes de preguntar: con qué se va a buscar. */
+export async function fetchCoberturaCopilot(
+  signal?: AbortSignal,
+): Promise<RespuestaCopilot> {
+  return pedir<RespuestaCopilot>('/copilot/cobertura', signal)
+}
+
+/**
+ * Pregunta al corpus jurídico.
+ *
+ * Devuelve PASAJES, no una respuesta redactada. Parafrasear la ley es como se
+ * producen las citas inventadas; quien lee saca la conclusión sobre el texto
+ * de la norma.
+ */
+export async function consultarCopilot(
+  consulta: Consulta,
+  signal?: AbortSignal,
+): Promise<RespuestaCopilot> {
+  const respuesta = await fetch(`${API_BASE_URL}/copilot/consultas`, {
+    method: 'POST',
+    signal,
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(consulta),
+  })
+
+  if (!respuesta.ok) {
+    throw new ApiError(`La API respondió ${respuesta.status}`, respuesta.status)
+  }
+
+  return (await respuesta.json()) as RespuestaCopilot
 }
