@@ -63,6 +63,16 @@ class LegalRef(BaseModel):
     data_origin: str
     valid_to: date | None = None
 
+    legal_rule_id: uuid.UUID | None = None
+    """La norma de la que salió, para poder auditarla después.
+
+    `DocumentRef` identifica la norma como se CITA —documento y artículo— y
+    eso basta para un dictamen. No basta para cruzarla con
+    `classification_decisions.legal_rule_ids`, que guarda ids: casar por
+    cadena «Ley Aduanera, artículo 34» sería frágil justo donde hace falta
+    ser exacto. `None` cuando el chunk no tenía norma detrás (Persona 1
+    aprobó este cambio de contrato, 2026-09-09)."""
+
 
 class Evidence(BaseModel):
     """Una pieza de respaldo de una afirmación del sistema.

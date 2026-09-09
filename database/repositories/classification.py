@@ -27,6 +27,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from core.evidence.kinds import EvidenceKind
+
 from database.models import (
     ClassificationCandidate,
     ClassificationDecision,
@@ -76,6 +78,7 @@ def save_classification(
         **_niveles(fraccion),
         reasoning=_razonamiento(outcome),
         rgi_path=[p.rule_id for p in outcome.trace.steps],
+        legal_rule_ids=_normas_citadas(outcome),
         rgi_trace=_traza(outcome),
         engine_version=outcome.trace.engine_version,
         input_snapshot=_snapshot(outcome),
@@ -105,6 +108,26 @@ def save_classification(
 
 
 # ── Piezas ───────────────────────────────────────────────────────────────────
+
+
+def _normas_citadas(outcome: ClassificationOutcome) -> list[uuid.UUID]:
+    """Los ids de las normas que fundamentaron la decisión, sin repetir.
+
+    Salen de la evidencia `LEGAL_SOURCE`, que es la única que puede
+    fundamentar. Guardarlos es lo que permite preguntar después «¿esta
+    decisión se apoyó en un artículo que ya se reformó?» — el Sentinel une
+    por aquí, y hasta hoy la columna llegaba siempre vacía.
+
+    Se conserva el orden de aparición en vez de ordenar: es el orden en que
+    el motor las citó, y reordenar perdería esa información sin ganar nada.
+    """
+    vistos: dict[uuid.UUID, None] = {}
+    for evidencia in outcome.evidences:
+        if evidencia.kind is not EvidenceKind.LEGAL_SOURCE:
+            continue
+        for rule_id in evidencia.legal_rule_ids:
+            vistos.setdefault(rule_id, None)
+    return list(vistos)
 
 
 def _niveles(fraccion: str | None) -> dict[str, str | None]:

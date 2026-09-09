@@ -57,6 +57,18 @@ class LegalChunk(BaseModel):
     document: str
     """Nombre del instrumento: «Ley Aduanera», «RGCE 2024»."""
 
+    legal_rule_id: Any | None = None
+    """La fila de `regulatory.legal_rules` de la que salió este chunk.
+
+    Es lo que cierra el círculo entre lo que el RAG cita y lo que el Sentinel
+    puede auditar: `classification_decisions.legal_rule_ids` guarda ids de
+    normas, no de chunks, así que sin esto una decisión no podía contrastarse
+    contra un cambio normativo aunque hubiera guardado sus citas.
+
+    `None` cuando el chunk no tiene una norma detrás — pasa con corpus
+    cargado antes de que existiera la columna, y con fixtures. No es un
+    error: es una cita que no se puede auditar, y se sabe."""
+
     article: str
     """Identificador citable: «36-A», «36-A fracción I», «Transitorio Segundo»."""
 
