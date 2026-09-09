@@ -1,6 +1,6 @@
 # ADUANERO OS — Estado del proyecto y backlog
 
-**Actualizado:** 2026-09-09  
+**Actualizado:** 2026-09-09 (cierre del día)  
 **Mantiene:** Persona 1 (Erick)
 
 Documento de contexto. Sirve para poner al día a cualquiera —persona o agente—
@@ -92,8 +92,8 @@ base — copiarlos fuera sigue siendo manual.
 ## 3. Estructura del código
 
 ```
-apps/api/            FastAPI, 17 endpoints    ✅ 9 routers
-apps/web/            React + TS + Vite        ✅ 7 pantallas del §32
+apps/api/            FastAPI, 21 endpoints    ✅ 11 routers
+apps/web/            React + TS + Vite        ✅ 10 de 10 del §32
 core/evidence/       Evidence Contract        ✅ 7 módulos
 core/rgi_engine/     RGI Engine               ✅ 7 módulos
 core/llm/            ModelProvider            ✅ 12 módulos
@@ -105,7 +105,7 @@ core/audit/          Audit Engine             ✅
 core/shadow/         Pedimento Espejo         ✅
 core/opportunity/    Opportunity Finder       ✅
 core/review/         revisión humana          ✅
-rag/                 RAG jurídico (§27)       ✅ 7 módulos, sin vectorizar
+rag/                 RAG jurídico (§27)       ✅ 366 chunks vectorizados
 database/models/     29 entidades SQLAlchemy  ✅
 database/migrations/ 9 migraciones aplicadas  ✅
 database/repositories/  chunks · notes · tariff · classification · review
@@ -117,7 +117,7 @@ ingestion/diputados/ Ley Aduanera             ✅
 ingestion/{anam,banxico,cbp_cross,datamexico,ebti,sat,vucem,wco}/   ❌ VACÍOS
 synthetic/           generador sintético      ❌ sólo __init__.py
 graph/               Knowledge Graph          ❌ sólo __init__.py
-tests/               44 archivos, 593 tests   ✅
+tests/               47 archivos, 642 tests   ✅
 .github/workflows/ci.yml                      ✅ 6 jobs
 ```
 
@@ -127,7 +127,7 @@ Alembic en `9877c9584a4c`. Conteos verificados el 9 de septiembre:
 
 ```
 regulatory     legal_sources 4 · legal_documents 4 · legal_rules 366 ·
-               legal_chunks 274 (0 vectorizados) · tariff_fractions 1,445 ·
+               legal_chunks 366 (366 vectorizados) · tariff_fractions 1,445 ·
                nicos 2,171 · customs_offices 127 · units_of_measure 22 ·
                pedimento_claves 66 · non_tariff_regulations 37 ·
                regulatory_events 0
@@ -284,7 +284,7 @@ declarado**, y sólo después compara. Money Finder es `Decimal` de punta a
 punta. Lo no verificable se declara `unverifiable` y va a `shadow_reviews`: un
 pedimento que nadie pudo verificar no está limpio, está sin verificar.
 
-### `rag/` — RAG jurídico (§27) ✅ sin vectorizar
+### `rag/` — RAG jurídico (§27) ✅ vectorizado
 
 ```
 types.py      LegalChunk — vigencia y data_origin POR CHUNK
@@ -302,11 +302,16 @@ Verificado contra la base compartida: para `2024-03-15` devuelve 8 artículos y
 descarta los reformados el 2025-11-19; para `2026-09-01` devuelve los nuevos.
 La regla 5 se cumple en producción, no sólo en tests.
 
-**Los 274 chunks tienen `embedding` en NULL.** La columna es `vector(1536)`, el
-índice HNSW está creado y `EMBEDDING_DIM = 1536` no se toca. Hoy la
-recuperación es por término, no por similitud.
+**Los 366 chunks están vectorizados** con `text-embedding-3-small` (1536,
+igual que la columna). Verificado: «mercancía que se deteriora si permanece
+almacenada mucho tiempo» devuelve los artículos de depósito ante la aduana (34,
+27, 25), que la búsqueda por término no encontraba.
 
-### `apps/api/` ✅ 17 endpoints · `apps/web/` ✅ 7 pantallas
+⚠️ **Y aun así, nadie los consume.** Ningún llamador pasa `embedder=`, así que
+`classify` y el Copilot siguen buscando por coincidencia de palabra. Falta el
+adaptador — ver §7.
+
+### `apps/api/` ✅ 21 endpoints · `apps/web/` ✅ 10 de 10 pantallas
 
 ⚠️ **El servicio systemd no recarga solo.** Entre el 8 y el 9 de septiembre
 sirvió código anterior al PR #38 durante casi un día: 12 endpoints en vivo
@@ -322,7 +327,7 @@ Tras mergear cualquier PR que toque `apps/api/`: `make service-restart`.
 No son intercambiables, y confundirlas cuesta una tarde. Verificado el 9 de
 septiembre con una llamada real:
 
-| | Anthropic ✅ configurada | OpenAI ❌ | Gemini ❌ |
+| | Anthropic ✅ | OpenAI ✅ | Gemini ❌ |
 |---|---|---|---|
 | `generate` · `generate_structured` · `analyze_image` | **sí** | sí | sí |
 | `embed` | **no existe** | `text-embedding-3-small`, 1536 | `text-embedding-004` |
@@ -334,13 +339,14 @@ en la base venía del seed, marcada `SYNTHETIC`.
 **Lo que no desbloquea es el §27.** Anthropic no publica endpoint de
 embeddings: `AnthropicProvider.default_embedding_model` es `None` a propósito y
 `embed()` lanza `ProviderCapabilityError` en vez de devolver un vector
-inventado. Los 274 chunks siguen en NULL.
+inventado. Por eso hizo falta la de OpenAI, específicamente.
 
-La columna es `vector(1536)` con índice HNSW, que es exactamente
-`text-embedding-3-small` de OpenAI. Gemini declara `text-embedding-004`, pero su
-dimensionalidad por defecto **no es 1536**: usarlo obligaría a migrar la columna
-y reconstruir el índice, y Persona 3 pidió expresamente no tocar
-`EMBEDDING_DIM`. La vía barata sigue siendo una llave de OpenAI.
+`text-embedding-3-small` devuelve 1536, que es exactamente la columna: cero
+migración. Gemini declara `text-embedding-004`, cuya dimensionalidad por defecto
+**no es 1536** — usarlo obligaría a migrar y reconstruir el índice HNSW.
+
+⚠️ **La llave de OpenAI viajó por un chat.** Debe rotarse; la de reemplazo va
+directa al `.env` del dev server.
 
 ### Scorecard del §44
 
@@ -354,9 +360,9 @@ CORE           4 de 4    Product DNA ✅ · RGI ✅ · Classification ✅ ·
                          Evidence ✅
 SIMULATOR      0 de 8    synthetic/ tiene sólo __init__.py. El seed crea una
                          fila de cada cosa; eso no es un generador.
-INTELLIGENCE   4 de 6    Shadow ✅ · Audit ✅ · Money ✅ · Opportunity ✅ ·
-                         Sentinel ❌ · Knowledge Graph ❌
-PRODUCT        1.5 de 3  Dashboard ✅ · Copilot ❌ · Demo AJR ⏳ guion escrito
+INTELLIGENCE   5 de 6    Shadow ✅ · Audit ✅ · Money ✅ · Opportunity ✅ ·
+                         Sentinel ✅ · Knowledge Graph ❌
+PRODUCT        2.5 de 3  Dashboard ✅ · Copilot ✅ · Demo AJR ⏳ guion escrito
 ```
 
 ### El vertical slice del §42 — cerrado
@@ -368,7 +374,7 @@ pedimento sintético → Shadow → divergencia → Money Finder
 ```
 
 Está cerrado de punta a punta y **sin medir**. Es la distinción que importa:
-593 tests en verde prueban el motor contra los casos que escribimos nosotros,
+642 tests en verde prueban el motor contra los casos que escribimos nosotros,
 no contra verdad conocida.
 
 ### Lo que de verdad falta
@@ -376,8 +382,8 @@ no contra verdad conocida.
 | # | Hueco | Por qué importa |
 |---|---|---|
 | 1 | **Nadie ha medido el acierto** | El instrumento ya existe: `GET /metrics/classification` (PR #55). Lo que falta son los veredictos — 0 humanos, 7 casos en la bandeja sin tocar, 1 fila de Ground Truth. La métrica devuelve `null`, no `0`: la precisión es **desconocida**, no mala. |
-| 2 | **274 chunks sin vectorizar** | Hay llave de **Anthropic**, y no sirve: no publica endpoint de embeddings, y `embed()` lanza `ProviderCapabilityError` en vez de inventar un vector. Hace falta una de **OpenAI** — ver abajo. |
-| 3 | **Las 92 notas LIGIE no están en `legal_chunks`** | Viven en `legal_rules` y sólo las alcanza el motor determinista. Son justo las que separan 8471 de 8528. |
+| 2 | **Los 366 vectores no los usa nadie** | Están calculados y el índice HNSW está creado, pero ningún llamador pasa `embedder=`: falta el adaptador que convierta la pregunta en vector. Pagamos la vectorización y seguimos buscando por coincidencia de palabra. |
+| 3 | **`legal_chunks` no apunta a `legal_rules`** | El Sentinel une por `legal_rule_ids` y el RAG cita chunks; no hay columna que los ligue, así que `trazable: false` es permanente. Decisión de Persona 1. |
 | 4 | **RGCE 2026** | La tercera pata del corpus, no iniciada. |
 | 5 | **95 capítulos de tarifa** | Hoy 84 y 85. |
 
@@ -404,7 +410,7 @@ no contra verdad conocida.
 
 | # | Tarea | Estado |
 |---|---|---|
-| 1 | **Verificar su push: `reform_note` + `rag/backfill_embeddings.py`** | 🔴 **bloquea a Persona 3.** Cree tener un PR abierto; no existe. La migración `dce813047e49` no está en el repo y `rag/` no tiene el backfill. |
+| 1 | ~~`reform_note` + backfill~~ | ✅ #58, #60 y #64 mergeados. `dce813047e49` aplicada; 220 normas con nota de reforma. |
 | 2 | Notas LIGIE → `legal_chunks` | pendiente, no estaba en su encargo |
 | 3 | RGCE 2026 | no iniciado, confirmar alcance |
 | 4 | Ground Truth de anomalías (§26) | pendiente |
@@ -418,10 +424,10 @@ La base compartida da 180 de 274 artículos vigentes en 2024 gracias al primero.
 
 | # | Tarea | Estado |
 |---|---|---|
-| 1 | ~~Métrica de precisión~~ | ✅ PR #55, en vivo. Declara el cero: porcentajes en `null`, 0 revisadas de 7. |
-| 2 | Vectorizar los 274 chunks | ⏸ espera llave |
+| 1 | ~~Métrica de precisión~~ | ✅ PR #55, en vivo. `null`, 0 revisadas de 7. |
+| 2 | ~~Vectorizar los chunks~~ | ✅ 366/366 |
 | 3 | Revisar el backfill de Brandon | ⏸ espera su PR — **revisarlo, no rehacerlo** |
-| 4 | Pantallas Regulatory Sentinel y Copilot | desbloqueadas: dependían del corpus |
+| 4 | ~~Sentinel y Copilot~~ | ✅ #62 y #65. Con esto, 10 de 10 pantallas |
 | 5 | Knowledge Graph sobre Neo4j | sin dueño |
 
 **Sobre la 1.** Una revisión humana **no sobrescribe** la decisión de la
@@ -439,8 +445,8 @@ cerrados. Ese es el mismo bloqueo, visto desde la demo.
 
 | # | Tarea | Estado |
 |---|---|---|
-| 1 | ~~`make service-restart`~~ | ✅ hecho el 9-sep, 17 endpoints en vivo |
-| 2 | **Llave de OpenAI**, específicamente | 🔴 la de Anthropic ya está y desbloquea el Product DNA, pero no vectoriza |
+| 1 | ~~`make service-restart`~~ | ✅ hecho, 21 endpoints en vivo |
+| 2 | ~~Llave de OpenAI~~ | ✅ puesta. 366/366 vectorizados en 2m27s. **Rótala: viajó por chat.** |
 | 3 | Contestar a Ulises quién revisa | 🔴 es su único bloqueo real |
 | 4 | Ratificar el uso de `HUMAN_VALIDATED` para medir acierto | toca el Canonical Model |
 | 5 | Aplicar `dce813047e49` a la compartida | cuando exista |
