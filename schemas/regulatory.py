@@ -83,6 +83,7 @@ class LegalRuleBase(DataOriginFields, RegulatoryFields):
     heading_text: str | None = None
     text: str
     rgi_reference: str | None = Field(default=None, max_length=8)
+    reform_note: str | None = None
 
 
 class LegalRuleCreate(LegalRuleBase):
@@ -97,6 +98,7 @@ class LegalRuleUpdate(CanonicalModel):
     text: str | None = None
     path: str | None = None
     heading_text: str | None = None
+    reform_note: str | None = None
     valid_to: date | None = None
 
 

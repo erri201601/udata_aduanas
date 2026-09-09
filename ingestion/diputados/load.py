@@ -107,6 +107,7 @@ def to_legal_rule_row(
         legal_document_id=document.id,
         rule_number=parsed.rule_number,
         text=parsed.text,
+        reform_note=parsed.reform_note,
         data_origin="OFFICIAL",
         source_id=source.id,
         valid_from=parsed.valid_from_override or LEY_ADUANERA_PUBLICACION_ORIGINAL,

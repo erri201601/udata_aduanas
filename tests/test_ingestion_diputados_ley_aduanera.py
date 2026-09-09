@@ -30,6 +30,7 @@ def test_parse_articles_extrae_numero_y_texto() -> None:
             text="Para los efectos de esta Ley se considera algo.",
             valid_to=None,
             valid_from_override=None,
+            reform_note=None,
         )
     ]
 
@@ -220,6 +221,33 @@ def test_parse_articles_sin_ninguna_nota_no_tiene_valid_from_override() -> None:
     articulos = ley_aduanera.parse_articles(lines)
 
     assert articulos[0].valid_from_override is None
+
+
+def test_parse_articles_reform_note_deja_la_vigencia_verificable() -> None:
+    """Hallazgo real de Persona 3 (2026-09-08): sin esto, una fila puede decir
+    que rige desde una fecha sin que su `text` contenga nada que lo explique.
+    `reform_note` guarda la nota tal como aparece en el documento, aparte del
+    cuerpo del artículo."""
+    lines = _lines(
+        "   ARTICULO 36-A. Texto del artículo.\n"
+        "                                     Párrafo reformado DOF 25-06-2018\n"
+        "                                     Inciso reformado DOF 01-06-2019"
+    )
+
+    articulos = ley_aduanera.parse_articles(lines)
+
+    assert articulos[0].reform_note == (
+        "Párrafo reformado DOF 25-06-2018; Inciso reformado DOF 01-06-2019"
+    )
+    assert "reformad" not in articulos[0].text.lower()
+
+
+def test_parse_articles_sin_notas_reform_note_es_none() -> None:
+    lines = _lines("   ARTICULO 1o. Texto que nunca se ha reformado.")
+
+    articulos = ley_aduanera.parse_articles(lines)
+
+    assert articulos[0].reform_note is None
 
 
 def test_parse_articles_no_duplica_ningun_numero() -> None:

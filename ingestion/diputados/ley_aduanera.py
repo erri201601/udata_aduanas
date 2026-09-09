@@ -48,6 +48,12 @@ class ParsedArticle:
     # (la fecha de publicación original de la Ley, no la de su última reforma:
     # esa es del documento completo, no de este artículo en particular).
     valid_from_override: date | None
+    # Las notas de reforma/adición/derogación tal como aparecen en el
+    # documento, unidas — es lo único que justifica `valid_from`/`valid_to`
+    # contra el propio contenido (hallazgo de Persona 3, 2026-09-08: sin
+    # esto, nadie puede verificar por qué una fila dice regir desde tal
+    # fecha). None si no hubo ninguna nota.
+    reform_note: str | None
 
 
 _HEADING_RE = re.compile(
@@ -82,8 +88,10 @@ def _fechas_en(line: str) -> list[date]:
     return [date(int(a), int(m), int(d)) for d, m, a in _FECHA_RE.findall(line)]
 
 
-def _vigencia_de_notas(footnote_lines: list[str]) -> tuple[date | None, date | None]:
-    """(`valid_from_override`, `valid_to`) a partir de las notas del artículo.
+def _vigencia_de_notas(
+    footnote_lines: list[str],
+) -> tuple[date | None, date | None, str | None]:
+    """(`valid_from_override`, `valid_to`, `reform_note`) a partir de las notas del artículo.
 
     `valid_to` sólo si el ARTÍCULO COMPLETO fue derogado: "Fracción derogada"/
     "Párrafo derogado"/etc. no cierran la vigencia del artículo, sólo quitan
@@ -115,6 +123,11 @@ def _vigencia_de_notas(footnote_lines: list[str]) -> tuple[date | None, date | N
     `None` sólo cuando el artículo no trae ninguna nota, de ningún nivel: no
     se ha tocado desde que se promulgó la ley. El llamador decide el
     respaldo — la fecha de publicación original.
+
+    `reform_note` es la unión de TODAS las notas del artículo, tal como
+    aparecen en el documento (no sólo la que ganó la fecha): es lo que deja
+    la vigencia verificable contra el propio contenido, sin ensuciar `text`
+    con anotaciones a media frase.
     """
     fechas_articulo: list[date] = []
     fechas_todas: list[date] = []
@@ -128,11 +141,13 @@ def _vigencia_de_notas(footnote_lines: list[str]) -> tuple[date | None, date | N
         if m:
             dia, mes, anio = int(m.group(1)), int(m.group(2)), int(m.group(3))
             valid_to = date(anio, mes, dia)
+
+    reform_note = "; ".join(line.strip() for line in footnote_lines) or None
     if valid_to is not None:
-        return min(fechas_articulo), valid_to
+        return min(fechas_articulo), valid_to, reform_note
     if fechas_todas:
-        return max(fechas_todas), None
-    return None, None
+        return max(fechas_todas), None, reform_note
+    return None, None, reform_note
 
 
 def parse_articles(lines: list[str]) -> list[ParsedArticle]:
@@ -156,12 +171,13 @@ def parse_articles(lines: list[str]) -> list[ParsedArticle]:
     def flush() -> None:
         if numero is not None:
             texto = " ".join(t.strip() for t in cuerpo_texto if t.strip())
-            valid_from_override, valid_to = _vigencia_de_notas(notas)
+            valid_from_override, valid_to, reform_note = _vigencia_de_notas(notas)
             articulos.append(
                 ParsedArticle(
                     rule_number=numero,
                     text=texto,
                     valid_to=valid_to,
+                    reform_note=reform_note,
                     valid_from_override=valid_from_override,
                 )
             )
