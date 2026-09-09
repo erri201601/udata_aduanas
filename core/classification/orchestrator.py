@@ -187,6 +187,9 @@ def _evidencias_de(
                 valid_to=norma.valid_to,
                 content_hash=norma.content_hash,
                 data_origin=norma.data_origin,
+                # Sin esto la evidencia sabe QUÉ norma cita pero no CUÁL fila
+                # es, y el Sentinel no puede contrastarla contra una reforma.
+                legal_rule_ids=(norma.legal_rule_id,) if norma.legal_rule_id else (),
             )
         )
 

@@ -71,6 +71,7 @@ def _row_to_chunk(row: LegalChunkRecord, *, document: str) -> LegalChunk:
     return LegalChunk(
         source_id=row.source_id,
         document_id=row.legal_document_id,
+        legal_rule_id=row.legal_rule_id,
         document=document,
         article=row.article,
         path=row.path,

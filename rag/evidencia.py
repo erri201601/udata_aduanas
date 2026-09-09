@@ -62,6 +62,7 @@ def a_legal_ref(chunk: LegalChunk) -> LegalRef:
         valid_to=chunk.valid_to,
         content_hash=chunk.content_hash,
         data_origin=chunk.data_origin,
+        legal_rule_id=chunk.legal_rule_id,
     )
 
 
