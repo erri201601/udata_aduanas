@@ -57,6 +57,12 @@ sobre pgvector necesita la tabla de chunks que todavía no existe.
 from __future__ import annotations
 
 from rag.chunking import trocear
+from rag.embedder import (
+    MODO_SEMANTICO,
+    MODO_TERMINO,
+    EmbedderDegradable,
+    embedder_opcional,
+)
 from rag.evidencia import a_legal_ref, a_legal_refs, citar
 from rag.memoria import MemoriaChunkStore
 from rag.ports import ChunkStore, Embedder
@@ -75,16 +81,20 @@ from rag.types import (
 
 __all__ = [
     "LIMITE_POR_DEFECTO",
+    "MODO_SEMANTICO",
+    "MODO_TERMINO",
     "ORIGENES_QUE_FUNDAMENTAN",
     "ChunkStore",
     "DataOrigin",
     "Embedder",
+    "EmbedderDegradable",
     "LegalChunk",
     "MemoriaChunkStore",
     "Recuperacion",
     "a_legal_ref",
     "a_legal_refs",
     "citar",
+    "embedder_opcional",
     "hash_contenido",
     "recuperar",
     "terminos_de_consulta",

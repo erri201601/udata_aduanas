@@ -71,7 +71,12 @@ class SesionFalsa:
 
 
 @contextmanager
-def _cliente(chunks: list[LegalChunk] | None = None, **cobertura: int) -> Iterator[TestClient]:
+def _cliente(
+    chunks: list[LegalChunk] | None = None,
+    *,
+    embedder: Any = None,
+    **cobertura: int,
+) -> Iterator[TestClient]:
     """Cliente con el almacén en memoria en lugar del de Postgres.
 
     El parcheo se deshace al salir: dejarlo puesto contaminaría cualquier otro
@@ -91,6 +96,7 @@ def _cliente(chunks: list[LegalChunk] | None = None, **cobertura: int) -> Iterat
     # memoria para no necesitar Postgres en un test unitario.
     with (
         patch("apps.api.routers.copilot.PostgresChunkStore", lambda _s: almacen),
+        patch("apps.api.routers.copilot.embedder_opcional", lambda: embedder),
         TestClient(app) as cliente,
     ):
         yield cliente
@@ -259,3 +265,98 @@ def test_la_cobertura_se_puede_consultar_sin_preguntar(cliente: TestClient) -> N
     assert d["chunks_totales"] == 366
     assert d["busqueda_semantica_disponible"] is False
     assert d["pasajes"] == []
+
+
+# ── El embedder conectado (Tarea 1 de Persona 1, 9 de septiembre) ────────────
+
+
+class EmbedderFalso:
+    """Se comporta como `EmbedderDegradable` sin llamar a nadie."""
+
+    def __init__(self, *, funciona: bool = True) -> None:
+        self._funciona = funciona
+        self.uso_vectores = False
+        self.motivo_degradacion: str | None = None
+
+    def embed(self, textos: list[str]) -> list[list[float]]:
+        if not self._funciona:
+            self.motivo_degradacion = "ProviderResponseError: 429 Too Many Requests"
+            return []
+        self.uso_vectores = True
+        return [[0.0] * 1536 for _ in textos]
+
+
+def test_con_vectores_no_se_reordena_por_terminos() -> None:
+    """EL FALLO QUE ENCONTRÉ VERIFICANDO CONTRA EL CORPUS REAL.
+
+    Con vector, el almacén ya ordenó por distancia coseno y ese orden ES la
+    pertinencia. Reordenar por solapamiento de palabras lo destruye: la
+    consulta de Persona 1 —«mercancía que se deteriora si permanece almacenada
+    mucho tiempo»— devolvía por coseno los artículos 34, 27 y 25, y mi
+    reordenamiento los sustituía por el 119 y el 135-C, que sólo comparten las
+    palabras «mercancía» y «permanece».
+    """
+    from apps.api.routers.copilot import Pasaje, _reordenar
+
+    def _p(articulo: str, casados: int) -> Pasaje:
+        return Pasaje(
+            documento="Ley Aduanera",
+            articulo=articulo,
+            texto="x",
+            cita=f"Ley Aduanera, artículo {articulo}",
+            valid_from=date(2020, 1, 1),
+            data_origin="OFFICIAL",
+            puede_fundamentar=True,
+            terminos_coincidentes=["t"] * casados,
+        )
+
+    # Orden del almacén por coseno: el 34 primero aunque case menos palabras.
+    por_coseno = [_p("34", 1), _p("119", 3)]
+
+    assert [x.articulo for x in _reordenar(por_coseno, uso_vectores=True)] == ["34", "119"]
+    assert [x.articulo for x in _reordenar(por_coseno, uso_vectores=False)] == ["119", "34"]
+
+
+def test_declara_semantica_solo_si_el_proveedor_respondio() -> None:
+    with _cliente(
+        [_chunk(article="34", text="conservación de mercancías")],
+        embedder=EmbedderFalso(funciona=True),
+        totales=366,
+        vectorizados=366,
+    ) as c:
+        d = _preguntar(c, "mercancía que se deteriora almacenada")
+
+    assert d["modo_busqueda"] == "SEMANTICA"
+    assert d["busqueda_semantica_disponible"] is True
+    assert d["degradado_por"] is None
+
+
+def test_si_el_proveedor_falla_se_degrada_y_se_dice() -> None:
+    """Un 429 no tumba la consulta: la hace peor, y eso se declara."""
+    with _cliente(
+        [_chunk(article="58", text="obligaciones del importador y el valor en aduana")],
+        embedder=EmbedderFalso(funciona=False),
+        totales=366,
+        vectorizados=366,
+    ) as c:
+        d = _preguntar(c, "obligaciones del importador en el valor en aduana")
+
+    assert d["modo_busqueda"] == "TERMINO_Y_VIGENCIA"
+    assert d["busqueda_semantica_disponible"] is False
+    assert d["degradado_por"] is not None
+    assert "429" in d["degradado_por"]
+    assert d["pasajes"], "la consulta siguió funcionando"
+
+
+def test_sin_proveedor_la_consulta_sigue_funcionando() -> None:
+    with _cliente(
+        [_chunk(article="58", text="obligaciones del importador y el valor en aduana")],
+        embedder=None,
+        totales=366,
+        vectorizados=366,
+    ) as c:
+        d = _preguntar(c, "obligaciones del importador en el valor en aduana")
+
+    assert d["modo_busqueda"] == "TERMINO_Y_VIGENCIA"
+    assert d["degradado_por"] == "no hay proveedor de embeddings configurado"
+    assert d["pasajes"]

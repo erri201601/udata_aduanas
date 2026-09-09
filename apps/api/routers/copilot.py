@@ -22,14 +22,18 @@ esté completo. Las dos cosas las hace `rag.recuperar`; este router las
 expone y —sobre todo— DICE cuántos candidatos tiró por cada motivo. Un
 buscador que descarta en silencio parece que no encontró nada.
 
-LA BÚSQUEDA DE HOY NO ES SEMÁNTICA, Y SE DECLARA
+CÓMO SE BUSCÓ SE DECLARA EN CADA RESPUESTA
 
-Los 366 chunks están sin vectorizar porque no hay `OPENAI_API_KEY`. Sin
-vector, `PostgresChunkStore` busca por coincidencia de término y ordena por
-lo más vigente primero. Funciona —así se fundamentan hoy las
-clasificaciones— pero no es lo mismo que buscar por significado, y
-presentarlo como si lo fuera sería vender una capacidad que no está puesta.
-`modo_busqueda` lo dice en cada respuesta.
+El corpus ya está vectorizado (Persona 1 corrió el backfill el 9 de
+septiembre), así que la consulta se vectoriza y se busca por significado.
+Pero eso puede no ocurrir: sin llave, sin cuota o con un 429, `rag.embedder`
+degrada a búsqueda por término y vigencia en vez de tumbar la petición.
+
+`modo_busqueda` dice cuál de las dos pasó DE VERDAD, no de cuál es capaz el
+corpus. La distinción tiene una historia: la primera versión de este router
+lo derivaba de si había vectores en la base, y cuando el backfill terminó
+empezó a anunciar SEMANTICA mientras seguía buscando por palabra. Un módulo
+cuya tesis es no anunciar estados falsos no puede permitirse eso.
 """
 
 from __future__ import annotations
@@ -42,7 +46,14 @@ from database.models.regulatory import LegalChunkRecord
 from database.repositories.chunks import PostgresChunkStore
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
-from rag import recuperar, terminos_de_consulta
+from rag import (
+    MODO_SEMANTICO,
+    MODO_TERMINO,
+    EmbedderDegradable,
+    embedder_opcional,
+    recuperar,
+    terminos_de_consulta,
+)
 from rag.retrieval import LIMITE_POR_DEFECTO
 
 from apps.api.db import SessionDep
@@ -59,14 +70,6 @@ LIMITE_MAXIMO = 20
 #: importador en el valor en aduana» devolvía notas de capítulo de la LIGIE
 #: porque contenían «valor», y nada más.
 FACTOR_CANDIDATOS: Final = 4
-
-#: Cómo se buscó. Hoy sólo puede ser el primero: ningún consumidor del RAG
-#: pasa un embedder todavía, así que tener el corpus vectorizado no cambia
-#: cómo se busca. El segundo existe para cuando se conecte el adaptador — y
-#: hasta entonces no se emite, porque anunciarlo sería vender la capacidad sin
-#: haberla puesto.
-MODO_TERMINO = "TERMINO_Y_VIGENCIA"
-MODO_SEMANTICO = "SEMANTICA"
 
 
 class Consulta(BaseModel):
@@ -152,13 +155,19 @@ class Respuesta(BaseModel):
     """
 
     busqueda_semantica_disponible: bool = False
-    """¿Esta consulta se resolvió por significado? Hoy, nunca.
+    """¿ESTA consulta se resolvió por significado?
 
-    No es lo mismo que «el corpus tiene vectores»: eso es `chunks_vectorizados`.
-    Falta el adaptador que convierta la pregunta en vector, y conectarlo tiene
-    coste por consulta — es decisión de Persona 1, no efecto de que alguien
-    corriera el backfill.
+    No es lo mismo que «el corpus tiene vectores» —eso es
+    `chunks_vectorizados`— ni que «hay llave configurada». Es si se llegó a
+    vectorizar la pregunta y el proveedor respondió.
     """
+
+    degradado_por: str | None = None
+    """Por qué se buscó por término teniendo el corpus vectorizado.
+
+    `None` cuando no hubo degradación. Degradar en silencio sería tan malo
+    como fallar: el resultado saldría peor sin que nadie pudiera saber por qué
+    (Persona 1, 2026-09-09)."""
 
     chunks_vectorizados: int = 0
     """Cuántos chunks ya tienen vector. Los consuma alguien o no."""
@@ -184,19 +193,39 @@ def _coincidencias(texto: str, terminos: tuple[str, ...]) -> list[str]:
     return [t for t in terminos if t in bajo]
 
 
-def _reordenar(pasajes: list[Pasaje]) -> list[Pasaje]:
+def _reordenar(pasajes: list[Pasaje], *, uso_vectores: bool) -> list[Pasaje]:
     """Primero los que casan más términos; a igualdad, lo más vigente.
 
-    El almacén ordena sólo por vigencia porque sin vector es el desempate
-    menos arbitrario. Pero deja que un pasaje que casa un término adelante a
-    uno que casa cuatro, y entonces el orden se lee como pertinencia sin
-    serlo. Reordenar aquí no toca el repositorio ni inventa un ranking: usa
-    los términos que el propio buscador empleó.
+    SÓLO CUANDO SE BUSCÓ POR TÉRMINO. Con vectores, el almacén ya ordenó por
+    distancia coseno y ese orden ES la pertinencia: reordenar por solapamiento
+    de palabras lo destruye.
+
+    Lo comprobé contra el corpus real y la diferencia es total. «mercancía que
+    se deteriora si permanece almacenada mucho tiempo», por coseno, devuelve
+    los artículos 34, 27 y 25 —conservación y depósito ante la aduana, que es
+    la respuesta correcta—. Reordenando por términos salían el 119, 135-C y 94,
+    que sólo comparten las palabras «mercancía» y «permanece». El vector
+    entiende «se deteriora»; contar palabras, no.
+
+    Sin vector sigue haciendo falta: el almacén ordena por vigencia, que es el
+    desempate menos arbitrario pero deja que un pasaje que casa un término
+    adelante a uno que casa cuatro.
     """
+    if uso_vectores:
+        return pasajes
     return sorted(
         pasajes,
         key=lambda p: (-len(p.terminos_coincidentes), -p.valid_from.toordinal()),
     )
+
+
+def _porque_no_vectores(embedder: EmbedderDegradable | None) -> str:
+    """Por qué esta consulta no usó vectores. Siempre hay una razón que dar."""
+    if embedder is None:
+        return "no hay proveedor de embeddings configurado"
+    if embedder.motivo_degradacion:
+        return f"el proveedor falló y se siguió por término: {embedder.motivo_degradacion}"
+    return "no se intentó vectorizar la consulta"
 
 
 def _cobertura(session: SessionDep) -> tuple[int, int]:
@@ -224,21 +253,35 @@ def consultar(consulta: Consulta, session: SessionDep) -> Respuesta:
     on_date = consulta.fecha or date.today()
     totales, vectorizados = _cobertura(session)
 
-    # `embedder=None`: sin OPENAI_API_KEY no hay con qué vectorizar la
-    # pregunta. `PostgresChunkStore` cae entonces a término + vigencia, que es
-    # exactamente lo que `modo_busqueda` declara. Cuando haya llave, aquí entra
-    # el embedder y el resto del camino no cambia.
     terminos = terminos_de_consulta(consulta.pregunta)
 
-    # Se piden más de los que se van a devolver para poder reordenar por
-    # cuántos términos casa cada uno. Ver FACTOR_CANDIDATOS.
+    # El embedder puede ser `None` (sin proveedor) o degradarse a mitad (429,
+    # timeout). En los dos casos `recuperar` sigue por término y vigencia: una
+    # consulta no se cae porque el proveedor de vectores esté caído.
+    embedder = embedder_opcional()
+
+    # Se sobre-piden candidatos SÓLO para poder reordenar por términos. Con
+    # vectores no se reordena, así que pedir de más sería traer resultados
+    # peores por coseno para luego tirarlos. Ver FACTOR_CANDIDATOS.
+    #
+    # Se decide antes de saber si el embedder respondió: si degrada a mitad,
+    # se habrá pedido de menos y el reordenamiento trabajará sobre menos
+    # candidatos. Es el precio de no llamar dos veces al almacén, y afecta al
+    # orden, nunca a si un pasaje puede fundamentar.
+    posible_vector = embedder is not None
+    candidatos = consulta.limite if posible_vector else consulta.limite * FACTOR_CANDIDATOS
+
     recuperacion = recuperar(
         consulta.pregunta,
         on_date=on_date,
         store=PostgresChunkStore(session),
-        embedder=None,
-        limit=consulta.limite * FACTOR_CANDIDATOS,
+        embedder=embedder,
+        limit=candidatos,
     )
+
+    # Se pregunta DESPUÉS de recuperar: hasta que no se intentó vectorizar no
+    # se sabe si el proveedor respondió.
+    uso_vectores = embedder is not None and embedder.uso_vectores
 
     pasajes = [
         Pasaje(
@@ -257,7 +300,7 @@ def consultar(consulta: Consulta, session: SessionDep) -> Respuesta:
         )
         for c in recuperacion.chunks
     ]
-    pasajes = _reordenar(pasajes)[: consulta.limite]
+    pasajes = _reordenar(pasajes, uso_vectores=uso_vectores)[: consulta.limite]
 
     return Respuesta(
         pregunta=consulta.pregunta,
@@ -268,10 +311,10 @@ def consultar(consulta: Consulta, session: SessionDep) -> Respuesta:
         descartados_por_vigencia=recuperacion.descartados_por_vigencia,
         descartados_por_origen=recuperacion.descartados_por_origen,
         terminos_buscados=list(terminos),
-        # `embedder=None` arriba: la búsqueda fue por término, punto. El modo
-        # dice lo que pasó, no lo que el corpus permitiría.
-        modo_busqueda=MODO_TERMINO,
-        busqueda_semantica_disponible=False,
+        # El modo dice lo que pasó, no lo que el corpus permitiría.
+        modo_busqueda=MODO_SEMANTICO if uso_vectores else MODO_TERMINO,
+        busqueda_semantica_disponible=uso_vectores,
+        degradado_por=None if uso_vectores else _porque_no_vectores(embedder),
         chunks_vectorizados=vectorizados,
         chunks_totales=totales,
         redacta_respuesta=False,

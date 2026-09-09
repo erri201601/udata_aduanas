@@ -25,7 +25,14 @@ from database.repositories.notes import LegalNotesRepository
 from database.repositories.tariff import TariffCatalogRepository
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from rag import a_legal_refs, recuperar
+from rag import (
+    MODO_SEMANTICO,
+    MODO_TERMINO,
+    EmbedderDegradable,
+    a_legal_refs,
+    embedder_opcional,
+    recuperar,
+)
 from schemas.intelligence import ProductAttributeRead, ProductDnaRead
 from schemas.operational import ProductRead
 
@@ -156,6 +163,23 @@ class ClassifyResponse(BaseModel):
 
     blocked_by: str | None = None
 
+    modo_busqueda: str = MODO_TERMINO
+    """Cómo se recuperaron las normas que sostienen esta clasificación.
+
+    No es un detalle de implementación: dos clasificaciones del mismo producto
+    con distinto modo se apoyan en normas que pudieron ser distintas, y quien
+    audite la decisión tiene que poder saberlo. Se declara aquí porque la
+    decisión persiste y el modo no.
+    """
+
+    degradado_por: str | None = None
+    """Por qué se buscó por término en vez de por significado.
+
+    `None` cuando no hubo degradación. Una clasificación NUNCA falla porque el
+    proveedor de vectores esté caído (Persona 1, 2026-09-09): se busca peor,
+    se dice, y se sigue. Callarlo sería peor que degradar.
+    """
+
 
 #: Lo que hay que preguntarle al corpus jurídico para fundamentar una
 #: clasificación. Son conceptos de la Ley Aduanera, no del producto.
@@ -164,6 +188,15 @@ CONCEPTOS_DE_CLASIFICACION = (
     "valor en aduana base gravable de la importación",
     "fracción arancelaria declarada en el pedimento",
 )
+
+
+def _porque_no_vectores(embedder: EmbedderDegradable | None) -> str:
+    """Por qué esta clasificación no usó vectores. Siempre hay razón que dar."""
+    if embedder is None:
+        return "no hay proveedor de embeddings configurado"
+    if embedder.motivo_degradacion:
+        return f"el proveedor falló y se siguió por término: {embedder.motivo_degradacion}"
+    return "no se intentó vectorizar la consulta"
 
 
 def _consulta_juridica(terminos_producto: list[str]) -> str:
@@ -222,12 +255,19 @@ def clasificar(
     #
     # `operation_date` viaja a la recuperación igual que al motor: se cita lo
     # que regía ese día, no lo que rige hoy (§14).
+    # Si el proveedor de vectores no está o falla, `embedder_opcional` lo
+    # absorbe y se sigue por término y vigencia. Clasificar es lo que no puede
+    # dejar de ocurrir; buscar por significado es lo que lo hace mejor.
+    embedder = embedder_opcional()
+
     recuperacion = recuperar(
         _consulta_juridica(busqueda),
         on_date=peticion.operation_date,
         store=PostgresChunkStore(session),
+        embedder=embedder,
     )
     legal_refs = a_legal_refs(recuperacion)
+    uso_vectores = embedder is not None and embedder.uso_vectores
 
     outcome = classify_product(
         borrador,
@@ -258,4 +298,6 @@ def clasificar(
         legal_refs_used=len(legal_refs),
         classified_without_legal_notes=not hay_notas,
         blocked_by=outcome.blocked_by,
+        modo_busqueda=MODO_SEMANTICO if uso_vectores else MODO_TERMINO,
+        degradado_por=None if uso_vectores else _porque_no_vectores(embedder),
     )

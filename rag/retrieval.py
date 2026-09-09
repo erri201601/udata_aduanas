@@ -89,10 +89,19 @@ def recuperar(
     `permitir_no_fundamentables` existe para poder inspeccionar el índice en
     desarrollo. Está en `False` por defecto y quien lo active lo hace a
     sabiendas.
+
+    Un `embedder` que devuelve vacío NO es un fallo: es la degradación
+    prevista de `rag.embedder`, y se sigue por término y vigencia.
     """
+    # Un embedder puede devolver vacío a propósito: es como `rag.embedder`
+    # señala que el proveedor falló y que hay que seguir por término. Indexar
+    # sin comprobarlo convertiría una degradación prevista en un IndexError
+    # dentro de una petición de usuario.
     embedding = None
     if embedder is not None:
-        embedding = list(embedder.embed([consulta])[0])
+        vectores = embedder.embed([consulta])
+        if vectores:
+            embedding = list(vectores[0])
 
     candidatos = list(
         store.search(

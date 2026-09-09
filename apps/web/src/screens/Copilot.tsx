@@ -130,22 +130,23 @@ export function Copilot() {
         </div>
       </header>
 
-      {cobertura && (
+      {datos?.degradado_por && (
         <div className="alerta" role="note">
-          <strong>La búsqueda es por término y vigencia, no por significado.</strong>
+          <strong>Esta consulta se resolvió por término, no por significado.</strong>
+          <p>{datos.degradado_por}</p>
           <p>
-            Un pasaje puede salir por contener una sola de las palabras buscadas — por eso
-            cada resultado enseña cuántos términos casó, y por eso el orden no debe leerse
-            como pertinencia.
-          </p>
-          <p>
-            {cobertura.chunks_vectorizados} de {cobertura.chunks_totales} fragmentos ya están
-            vectorizados
-            {cobertura.chunks_vectorizados > 0
-              ? ", pero todavía nadie los usa: falta el adaptador que convierta la pregunta en vector, y conectarlo tiene coste por consulta."
-              : "."}
+            No es un fallo: la consulta siguió respetando la vigencia (§14) y los pasajes
+            fundamentan igual. Busca peor, y por eso se dice — cada resultado enseña cuántos
+            términos casó para que el orden no se lea como pertinencia.
           </p>
         </div>
+      )}
+
+      {datos && !datos.degradado_por && datos.modo_busqueda === "SEMANTICA" && (
+        <p className="copilot__modo">
+          Búsqueda por significado sobre {cobertura?.chunks_vectorizados ?? 0} fragmentos
+          vectorizados. El orden es por cercanía semántica, no por coincidencia de palabras.
+        </p>
       )}
 
       <form className="copilot__forma" onSubmit={preguntar}>

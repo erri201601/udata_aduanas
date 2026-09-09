@@ -840,6 +840,13 @@ export interface components {
             classified_without_legal_notes: boolean;
             /** Blocked By */
             blocked_by?: string | null;
+            /**
+             * Modo Busqueda
+             * @default TERMINO_Y_VIGENCIA
+             */
+            modo_busqueda: string;
+            /** Degradado Por */
+            degradado_por?: string | null;
         };
         /**
          * Consulta
@@ -1860,6 +1867,8 @@ export interface components {
              * @default false
              */
             busqueda_semantica_disponible: boolean;
+            /** Degradado Por */
+            degradado_por?: string | null;
             /**
              * Chunks Vectorizados
              * @default 0

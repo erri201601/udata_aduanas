@@ -1203,3 +1203,13 @@ code {
 }
 
 .pasaje__pie a { color: var(--acento); }
+
+/* Cómo se buscó, cuando fue por significado. El caso degradado usa .alerta:
+   pesa más porque el resultado es peor y quien lo lee tiene que saberlo. */
+.copilot__modo {
+  margin: 0 0 1.2rem;
+  font-size: 0.8rem;
+  color: var(--tenue);
+  max-width: 76ch;
+  line-height: 1.55;
+}
