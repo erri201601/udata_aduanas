@@ -27,6 +27,13 @@ def test_notes_solo_no_exige_chapters(monkeypatch: pytest.MonkeyPatch) -> None:
         main(["--target", "shared", "--notes"])
 
 
+def test_chunks_sin_notes_falla() -> None:
+    """`--chunks` sólo tiene sentido junto a `--notes`: falla ruidoso en vez de
+    ignorarlo en silencio (regla 7 CLAUDE.md)."""
+    with pytest.raises(SystemExit, match="--chunks sólo tiene efecto junto con --notes"):
+        main(["--target", "local", "--chapters", "84", "--chunks"])
+
+
 def test_raw_only_no_exige_chapters_ni_la_url_de_la_base(monkeypatch: pytest.MonkeyPatch) -> None:
     """`--raw-only` no toca la base: no debe pedir `ADUANERO_SHARED_URL`. Falla más
     adelante, al buscar las credenciales de MinIO compartido (no configuradas aquí),

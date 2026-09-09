@@ -105,6 +105,15 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
             "completo del documento, no de los capítulos ya cargados)."
         ),
     )
+    parser.add_argument(
+        "--chunks",
+        action="store_true",
+        help=(
+            "Con --notes, además carga un chunk por nota en regulatory.legal_chunks "
+            "(§27, RAG) — sin embedding todavía: recuperable por término, no por "
+            "similitud, hasta que se vectorice."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -112,6 +121,8 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     if not args.raw_only and not args.chapters and not args.notes:
         raise SystemExit("--chapters o --notes es obligatorio salvo con --raw-only")
+    if args.chunks and not args.notes:
+        raise SystemExit("--chunks sólo tiene efecto junto con --notes")
     chapters = frozenset(args.chapters or ())
     # `--raw-only` no toca la base: no le exigimos su URL, que puede no
     # estar configurada si solo se va a recapturar el crudo.
@@ -211,6 +222,12 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(f"OK ({args.target}): {n_notas} notas de Sección/Capítulo insertadas.")
             log.info("snice.cli.done", target=args.target, notas=n_notas)
+            if args.chunks:
+                n_chunks = load.load_ligie_notes_chunks(
+                    session, notes=parsed_notes, ligie_content_hash=ligie_capture.content_hash
+                )
+                print(f"OK ({args.target}): {n_chunks} chunks de notas insertados.")
+                log.info("snice.cli.done", target=args.target, chunks=n_chunks)
         session.commit()
 
     return 0

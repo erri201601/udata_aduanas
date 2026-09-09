@@ -14,6 +14,8 @@ from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from database.models.regulatory import LegalDocument, LegalRule, LegalSource, Nico, TariffFraction
+from database.repositories.chunks import PostgresChunkStore
+from rag.types import LegalChunk, hash_contenido
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -256,3 +258,42 @@ def load_ligie_notes(session: Session, *, notes: list[ParsedNote], ligie_content
 
     session.flush()
     return len(notes)
+
+
+def load_ligie_notes_chunks(
+    session: Session, *, notes: list[ParsedNote], ligie_content_hash: str
+) -> int:
+    """Un chunk por nota de Sección/Capítulo en `regulatory.legal_chunks` (§27).
+
+    Las 92 notas ya estaban en `legal_rules` — las alcanzaba el motor
+    determinista (RGI 1), pero no el RAG de Persona 3, porque
+    `ingestion.snice` nunca tocaba `legal_chunks`. Son las notas que
+    distinguen 8471 de 8528 (Persona 1, 2026-09-09): sin ellas en el RAG, una
+    consulta jurídica sobre esa frontera no recupera nada.
+
+    Mismo contrato que `ingestion.diputados.load.load_ley_aduanera_chunks`:
+    reutiliza el `ParsedNote` que ya llena `legal_rules`, no vuelve a
+    parsear el PDF. Sin `embedding`: se rellena con
+    `rag.backfill_embeddings` en cuanto haya proveedor.
+    """
+    source = get_or_create_snice_source(session)
+    document = get_or_create_ligie_document(
+        session, source, content_hash=ligie_content_hash, retrieved_at=datetime.now(UTC)
+    )
+
+    chunks = [
+        LegalChunk(
+            source_id=source.id,
+            document_id=document.id,
+            document=document.title,
+            article=parsed_note.rule_number,
+            path=parsed_note.path,
+            text=parsed_note.text,
+            content_hash=hash_contenido(parsed_note.text),
+            data_origin="OFFICIAL",
+            valid_from=LIGIE_VALID_FROM,
+            url=LIGIE_SOURCE_URL,
+        )
+        for parsed_note in notes
+    ]
+    return PostgresChunkStore(session).add(chunks)
