@@ -60,7 +60,12 @@ from rag.chunking import trocear
 from rag.evidencia import a_legal_ref, a_legal_refs, citar
 from rag.memoria import MemoriaChunkStore
 from rag.ports import ChunkStore, Embedder
-from rag.retrieval import LIMITE_POR_DEFECTO, Recuperacion, recuperar
+from rag.retrieval import (
+    LIMITE_POR_DEFECTO,
+    Recuperacion,
+    recuperar,
+    terminos_de_consulta,
+)
 from rag.types import (
     ORIGENES_QUE_FUNDAMENTAN,
     DataOrigin,
@@ -82,5 +87,6 @@ __all__ = [
     "citar",
     "hash_contenido",
     "recuperar",
+    "terminos_de_consulta",
     "trocear",
 ]

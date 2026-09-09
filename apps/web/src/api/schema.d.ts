@@ -172,6 +172,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/copilot/consultas": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pregunta al corpus jurídico
+         * @description Recupera los pasajes vigentes que hablan de la pregunta.
+         *
+         *     No redacta una respuesta: devuelve la norma. Ver el módulo para el porqué.
+         */
+        post: operations["consultar_copilot_consultas_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/copilot/cobertura": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Qué corpus hay detrás del Copilot
+         * @description El estado del corpus sin hacer una consulta.
+         *
+         *     Sirve para que la pantalla pueda decir con qué se va a buscar ANTES de que
+         *     alguien escriba la primera pregunta.
+         */
+        get: operations["cobertura_copilot_cobertura_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/findings": {
         parameters: {
             query?: never;
@@ -797,6 +842,24 @@ export interface components {
             blocked_by?: string | null;
         };
         /**
+         * Consulta
+         * @description Una pregunta al corpus, situada en el tiempo.
+         */
+        Consulta: {
+            /** Pregunta */
+            pregunta: string;
+            /**
+             * Fecha
+             * @description Fecha de la operación. Decide qué normas podían citarse (§14). Por omisión, hoy — que es lo correcto para una consulta general y lo INCORRECTO para revisar una operación pasada.
+             */
+            fecha?: string | null;
+            /**
+             * Limite
+             * @default 8
+             */
+            limite: number;
+        };
+        /**
          * Dashboard
          * @description El estado del sistema en cifras que se pueden defender.
          */
@@ -1171,6 +1234,42 @@ export interface components {
             ahorro_cuantificado?: string | null;
             /** Ahorro Moneda */
             ahorro_moneda?: string | null;
+        };
+        /**
+         * Pasaje
+         * @description Un fragmento de norma, tal como está en el corpus.
+         *
+         *     Se devuelve el texto, no un resumen: resumir una norma es donde se pierde
+         *     la condición que hacía que no aplicara.
+         */
+        Pasaje: {
+            /** Documento */
+            documento: string;
+            /** Articulo */
+            articulo?: string | null;
+            /** Encabezado */
+            encabezado?: string | null;
+            /** Texto */
+            texto: string;
+            /** Cita */
+            cita: string;
+            /**
+             * Valid From
+             * Format: date
+             */
+            valid_from: string;
+            /** Valid To */
+            valid_to?: string | null;
+            /** Data Origin */
+            data_origin: string;
+            /** Puede Fundamentar */
+            puede_fundamentar: boolean;
+            /** Url */
+            url?: string | null;
+            /** Content Hash */
+            content_hash?: string | null;
+            /** Terminos Coincidentes */
+            terminos_coincidentes?: string[];
         };
         /**
          * PedimentoEspejo
@@ -1719,6 +1818,65 @@ export interface components {
             };
         };
         /**
+         * Respuesta
+         * @description Lo que el corpus tiene sobre la pregunta, y qué se puede hacer con ello.
+         */
+        Respuesta: {
+            /** Pregunta */
+            pregunta: string;
+            /**
+             * Fecha
+             * Format: date
+             */
+            fecha: string;
+            /** Pasajes */
+            pasajes?: components["schemas"]["Pasaje"][];
+            /**
+             * Hay Fundamento
+             * @default false
+             */
+            hay_fundamento: boolean;
+            /** Sin Evidencia */
+            sin_evidencia?: string | null;
+            /**
+             * Descartados Por Vigencia
+             * @default 0
+             */
+            descartados_por_vigencia: number;
+            /**
+             * Descartados Por Origen
+             * @default 0
+             */
+            descartados_por_origen: number;
+            /** Terminos Buscados */
+            terminos_buscados?: string[];
+            /**
+             * Modo Busqueda
+             * @default TERMINO_Y_VIGENCIA
+             */
+            modo_busqueda: string;
+            /**
+             * Busqueda Semantica Disponible
+             * @default false
+             */
+            busqueda_semantica_disponible: boolean;
+            /**
+             * Chunks Vectorizados
+             * @default 0
+             */
+            chunks_vectorizados: number;
+            /**
+             * Chunks Totales
+             * @default 0
+             */
+            chunks_totales: number;
+            /**
+             * Redacta Respuesta
+             * @default false
+             */
+            redacta_respuesta: boolean;
+        };
+        /**
          * ReviewRequest
          * @description Las tasas de la operación. Todas opcionales; sin ellas no hay monto.
          */
@@ -2251,6 +2409,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ClassificationDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    consultar_copilot_consultas_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Consulta"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Respuesta"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cobertura_copilot_cobertura_get: {
+        parameters: {
+            query?: {
+                fecha?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Respuesta"];
                 };
             };
             /** @description Validation Error */

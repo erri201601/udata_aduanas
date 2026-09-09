@@ -98,7 +98,7 @@ def recuperar(
         store.search(
             on_date=on_date,
             query_embedding=embedding,
-            terms=_terminos(consulta),
+            terms=terminos_de_consulta(consulta),
             limit=limit * 2,
             solo_fundamentables=not permitir_no_fundamentables,
         )
@@ -118,8 +118,12 @@ def recuperar(
     )
 
 
-def _terminos(consulta: str) -> tuple[str, ...]:
+def terminos_de_consulta(consulta: str) -> tuple[str, ...]:
     """Palabras con las que buscar por texto, sin las vacías.
+
+    Público porque quien presenta un resultado tiene que poder decir con qué
+    se buscó: el Copilot enseña cuántos de estos términos casa cada pasaje,
+    y sin acceso a la lista esa cifra no se podría calcular ni comprobar.
 
     Búsqueda simple a propósito: la semántica la aporta el vector. Esto sólo
     acota el conjunto para que el almacén no tenga que leerlo entero.

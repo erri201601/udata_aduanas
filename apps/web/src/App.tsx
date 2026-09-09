@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 import { Placeholder } from './screens/Placeholder'
 import { Classification } from './screens/Classification'
+import { Copilot } from './screens/Copilot'
 import { Evidence } from './screens/Evidence'
 import { ExecutiveDashboard } from './screens/ExecutiveDashboard'
 import { Findings } from './screens/Findings'
@@ -64,6 +65,7 @@ export default function App() {
         {pantalla.id === 'human-review' && <HumanReview />}
         {pantalla.id === 'regulatory-sentinel' && <RegulatorySentinel />}
         {pantalla.id === 'pedimento-shadow' && <PedimentoShadow />}
+        {pantalla.id === 'copilot' && <Copilot />}
         {!pantalla.implementada && (
           <Placeholder titulo={pantalla.titulo} descripcion={pantalla.descripcion} />
         )}
