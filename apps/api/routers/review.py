@@ -17,12 +17,33 @@ que es lo que permite emparejarlas al evaluar.
 
 Es el mismo criterio que Persona 1 aplicó a `shadow_reviews`: una revisión es
 un evento, no un atributo.
+
+LA BANDEJA DICE POR QUÉ ESTÁ CADA CASO
+
+No todos los pendientes piden lo mismo, y hasta ahora se veían iguales. Desde
+que la RGI 3 c) marca sus resoluciones (PR #69 de Persona 1) conviven tres
+especies:
+
+    · no se pudo resolver — falta información
+    · se resolvió y aun así hay que mirarlo
+    · se llegó al desempate de último recurso, que aplica la regla
+      correctamente y no distingue nada: entre una computadora y un monitor
+      elige el monitor porque 8528 va después de 8471
+
+Un revisor que no distingue la tercera de la primera no sabe qué le están
+pidiendo: en una falta información, en la otra sobra una respuesta que nadie
+debería firmar tal cual.
+
+`causas` es una LISTA, no un valor único, y no lleva severidad. Elegir una
+sola exigiría un orden de precedencia que el dato no sostiene —un caso puede
+carecer de información Y haber llegado al desempate— y ordenarlas por gravedad
+sería una opinión disfrazada de dato. Se nombran; el revisor decide.
 """
 
 from __future__ import annotations
 
 import uuid
-from typing import Annotated, Literal
+from typing import Annotated, Final, Literal
 
 import sqlalchemy as sa
 from database.models import ClassificationDecision, Product
@@ -39,6 +60,64 @@ LIMITE_MAXIMO = 200
 #: Lo que puede decir quien revisa.
 Veredicto = Literal["CONFIRMA", "CORRIGE"]
 
+#: La regla de desempate de último recurso: «la última por orden de
+#: numeración». Aplica correctamente y no distingue nada.
+REGLA_DESEMPATE = "RGI-3c"
+
+#: Por qué un caso está en la bandeja. Sin severidad y sin precedencia: son
+#: causas concurrentes, no niveles.
+CAUSAS: Final[dict[str, str]] = {
+    "SIN_INFORMACION": (
+        "El motor no pudo resolver: falta información del producto. "
+        "Lo que se pide es completar el dato, no juzgar una fracción."
+    ),
+    "DESEMPATE_POR_NUMERACION": (
+        "Se llegó a la RGI 3 c), que elige la última partida por orden de "
+        "numeración. Aplica la regla correctamente y no distingue nada: entre "
+        "una computadora y un monitor elegiría el monitor porque 8528 va "
+        "después de 8471."
+    ),
+    "SIN_FRACCION_PROPUESTA": (
+        "No hay fracción que confirmar. Revisar aquí es proponerla, no validar la del motor."
+    ),
+    "RESUELTA_PERO_MARCADA": (
+        "El motor resolvió y aun así pidió revisión. La fracción propuesta es "
+        "un punto de partida, no una conclusión."
+    ),
+}
+
+
+def _normalizar(rule_id: str) -> str:
+    """`RGI-3c`, `RGI3C` y `rgi 3 c` son la misma regla.
+
+    El seed antiguo escribió `RGI1` sin guion y la traza del motor escribe
+    `RGI-1`. Comparar en crudo dejaría casos sin causa según quién los
+    escribiera, y un caso sin causa es justo lo que esta pantalla viene a
+    eliminar.
+    """
+    return "".join(c for c in rule_id if c.isalnum()).upper()
+
+
+def _causas(fila: ClassificationDecision) -> list[str]:
+    """Por qué está este caso en la bandeja. Puede haber más de una razón."""
+    encontradas: list[str] = []
+
+    if fila.status == "INSUFFICIENT_INFORMATION":
+        encontradas.append("SIN_INFORMACION")
+
+    camino = {_normalizar(r) for r in (fila.rgi_path or [])}
+    if _normalizar(REGLA_DESEMPATE) in camino:
+        encontradas.append("DESEMPATE_POR_NUMERACION")
+
+    if fila.fraction_code is None:
+        encontradas.append("SIN_FRACCION_PROPUESTA")
+    elif not encontradas:
+        # Con fracción y sin ninguna otra causa, lo único que consta es que el
+        # motor pidió revisión. Decirlo es mejor que dejar el caso mudo.
+        encontradas.append("RESUELTA_PERO_MARCADA")
+
+    return encontradas
+
 
 class PendienteRead(ClassificationDecisionRead):
     """Una decisión esperando a una persona, con contexto para decidir."""
@@ -49,6 +128,16 @@ class PendienteRead(ClassificationDecisionRead):
     pasos_traza: int = 0
     """Cuántas reglas se evaluaron. Cero significa que no consta el
     razonamiento, y eso cambia cuánto puede fiarse quien revisa."""
+
+    causas: list[str] = Field(default_factory=list)
+    """Por qué está aquí. Lista, no valor único: las causas concurren.
+
+    Vacía nunca debería estar — si lo está, el caso llegó a la bandeja por un
+    camino que esta pantalla no sabe nombrar, y eso también es información.
+    """
+
+    causas_detalle: list[str] = Field(default_factory=list)
+    """Qué se le pide al revisor en cada caso, en una frase."""
 
 
 class RevisionRequest(BaseModel):
@@ -95,6 +184,7 @@ def pendientes(
     pendientes: list[PendienteRead] = []
     for fila in filas:
         producto = session.get(Product, fila.product_id) if fila.product_id else None
+        causas = _causas(fila)
         detalle = PendienteRead.model_validate(fila, from_attributes=True)
         pendientes.append(
             detalle.model_copy(
@@ -102,6 +192,8 @@ def pendientes(
                     "producto": producto.commercial_name if producto else None,
                     "sku": producto.sku if producto else None,
                     "pasos_traza": len(fila.rgi_trace or []),
+                    "causas": causas,
+                    "causas_detalle": [CAUSAS[c] for c in causas],
                 }
             )
         )

@@ -1606,6 +1606,10 @@ export interface components {
              * @default 0
              */
             pasos_traza: number;
+            /** Causas */
+            causas?: string[];
+            /** Causas Detalle */
+            causas_detalle?: string[];
         };
         /**
          * PrecisionClasificacion

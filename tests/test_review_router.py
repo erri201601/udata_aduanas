@@ -260,3 +260,108 @@ def test_el_motivo_queda_por_escrito() -> None:
     assert "ulises" in razon
     assert "84714902" in razon and "84713001" in razon
     assert "Es portátil completa." in razon
+
+
+# ── La bandeja dice por qué está cada caso (Persona 1, 9-sep) ────────────────
+
+
+def _caso(**kwargs: Any) -> Any:
+    from database.models import ClassificationDecision
+
+    campos: dict[str, Any] = {
+        "trade_flow": "IMPORT",
+        "operation_date": date(2026, 3, 15),
+        "status": "HUMAN_REVIEW_REQUIRED",
+        "data_origin": "SYNTHETIC",
+        "requires_human_review": True,
+    }
+    campos.update(kwargs)
+    return ClassificationDecision(**campos)
+
+
+def test_falta_informacion_y_desempate_no_son_lo_mismo() -> None:
+    """EL TEST QUE IMPORTA.
+
+    En un caso falta información; en el otro sobra una respuesta que nadie
+    debería firmar tal cual. Un revisor que no los distingue no sabe qué le
+    están pidiendo.
+    """
+    from apps.api.routers.review import _causas
+
+    sin_info = _causas(_caso(status="INSUFFICIENT_INFORMATION", rgi_path=["RGI-1"]))
+    desempate = _causas(_caso(rgi_path=["RGI-1", "RGI-3c"], fraction_code="85285900"))
+
+    assert "SIN_INFORMACION" in sin_info
+    assert "DESEMPATE_POR_NUMERACION" not in sin_info
+    assert "DESEMPATE_POR_NUMERACION" in desempate
+    assert "SIN_INFORMACION" not in desempate
+
+
+def test_la_causa_del_desempate_sale_del_camino_rgi() -> None:
+    """El dato ya estaba persistido: `rgi_path` lleva las reglas aplicadas."""
+    from apps.api.routers.review import _causas
+
+    assert "DESEMPATE_POR_NUMERACION" not in _causas(
+        _caso(rgi_path=["RGI-1", "RGI-3a"], fraction_code="84713001")
+    )
+    assert "DESEMPATE_POR_NUMERACION" in _causas(
+        _caso(rgi_path=["RGI-1", "RGI-3c"], fraction_code="84713001")
+    )
+
+
+def test_las_causas_concurren_sin_orden_de_gravedad() -> None:
+    """No se inventa jerarquía: un caso puede tener varias razones a la vez."""
+    from apps.api.routers.review import _causas
+
+    causas = _causas(_caso(status="INSUFFICIENT_INFORMATION", rgi_path=["RGI-3c"]))
+
+    assert set(causas) >= {"SIN_INFORMACION", "DESEMPATE_POR_NUMERACION"}
+
+
+def test_sin_fraccion_revisar_es_proponerla_no_validarla() -> None:
+    from apps.api.routers.review import _causas
+
+    assert "SIN_FRACCION_PROPUESTA" in _causas(_caso(fraction_code=None))
+    assert "SIN_FRACCION_PROPUESTA" not in _causas(
+        _caso(fraction_code="84713001", rgi_path=["RGI-1"])
+    )
+
+
+def test_una_decision_resuelta_y_marcada_no_se_queda_muda() -> None:
+    """Sin causa, el caso llega a la bandeja y nadie sabe qué se le pide."""
+    from apps.api.routers.review import _causas
+
+    assert _causas(_caso(status="RESOLVED", fraction_code="84713001", rgi_path=["RGI-1"])) == [
+        "RESUELTA_PERO_MARCADA"
+    ]
+
+
+def test_el_identificador_de_regla_se_compara_normalizado() -> None:
+    """El seed escribió `RGI1` y el motor escribe `RGI-1`.
+
+    Comparar en crudo dejaría casos sin causa según quién los escribiera, y un
+    caso sin causa es lo que esta pantalla viene a eliminar.
+    """
+    from apps.api.routers.review import _causas, _normalizar
+
+    assert _normalizar("RGI-3c") == _normalizar("RGI3C") == "RGI3C"
+    assert "DESEMPATE_POR_NUMERACION" in _causas(
+        _caso(rgi_path=["RGI3C"], fraction_code="85285900")
+    )
+
+
+def test_toda_causa_tiene_explicacion() -> None:
+    """Nombrar la causa sin decir qué se pide dejaría el trabajo a medias."""
+    from apps.api.routers.review import CAUSAS, _causas
+
+    todas = set()
+    for fila in (
+        _caso(status="INSUFFICIENT_INFORMATION"),
+        _caso(rgi_path=["RGI-3c"], fraction_code="85285900"),
+        _caso(fraction_code=None),
+        _caso(status="RESOLVED", fraction_code="84713001", rgi_path=["RGI-1"]),
+    ):
+        todas.update(_causas(fila))
+
+    assert todas <= set(CAUSAS), "hay causas sin texto"
+    assert all(CAUSAS[c].strip() for c in todas)
