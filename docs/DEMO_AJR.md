@@ -167,6 +167,10 @@ Y el cierre, que es una petición concreta:
 
 Eso convierte la demo en un piloto sin pedirles presupuesto.
 
+**Qué pedirles exactamente:** `docs/PETICION_AJR.md`. No basta con los diez
+pedimentos — hace falta la documentación técnica de la mercancía, o estaríamos
+comparando contra la fracción que ellos ya declararon.
+
 ---
 
 ## Preguntas que van a hacer
