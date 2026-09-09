@@ -317,6 +317,31 @@ Tras mergear cualquier PR que toque `apps/api/`: `make service-restart`.
 
 ## 7. Qué falta
 
+### Qué desbloquea cada llave
+
+No son intercambiables, y confundirlas cuesta una tarde. Verificado el 9 de
+septiembre con una llamada real:
+
+| | Anthropic ✅ configurada | OpenAI ❌ | Gemini ❌ |
+|---|---|---|---|
+| `generate` · `generate_structured` · `analyze_image` | **sí** | sí | sí |
+| `embed` | **no existe** | `text-embedding-3-small`, 1536 | `text-embedding-004` |
+
+**Lo que la llave de Anthropic desbloquea** es el Product DNA leyendo fichas
+técnicas e imágenes de verdad (§16). Hasta ahora toda la telemetría de modelo
+en la base venía del seed, marcada `SYNTHETIC`.
+
+**Lo que no desbloquea es el §27.** Anthropic no publica endpoint de
+embeddings: `AnthropicProvider.default_embedding_model` es `None` a propósito y
+`embed()` lanza `ProviderCapabilityError` en vez de devolver un vector
+inventado. Los 274 chunks siguen en NULL.
+
+La columna es `vector(1536)` con índice HNSW, que es exactamente
+`text-embedding-3-small` de OpenAI. Gemini declara `text-embedding-004`, pero su
+dimensionalidad por defecto **no es 1536**: usarlo obligaría a migrar la columna
+y reconstruir el índice, y Persona 3 pidió expresamente no tocar
+`EMBEDDING_DIM`. La vía barata sigue siendo una llave de OpenAI.
+
 ### Scorecard del §44
 
 ```
@@ -351,7 +376,7 @@ no contra verdad conocida.
 | # | Hueco | Por qué importa |
 |---|---|---|
 | 1 | **Nadie ha medido el acierto** | El instrumento ya existe: `GET /metrics/classification` (PR #55). Lo que falta son los veredictos — 0 humanos, 7 casos en la bandeja sin tocar, 1 fila de Ground Truth. La métrica devuelve `null`, no `0`: la precisión es **desconocida**, no mala. |
-| 2 | **274 chunks sin vectorizar** | `OPENAI_API_KEY` vacía. Sin vectores no hay búsqueda semántica, que es el punto del §27. |
+| 2 | **274 chunks sin vectorizar** | Hay llave de **Anthropic**, y no sirve: no publica endpoint de embeddings, y `embed()` lanza `ProviderCapabilityError` en vez de inventar un vector. Hace falta una de **OpenAI** — ver abajo. |
 | 3 | **Las 92 notas LIGIE no están en `legal_chunks`** | Viven en `legal_rules` y sólo las alcanza el motor determinista. Son justo las que separan 8471 de 8528. |
 | 4 | **RGCE 2026** | La tercera pata del corpus, no iniciada. |
 | 5 | **95 capítulos de tarifa** | Hoy 84 y 85. |
@@ -415,7 +440,7 @@ cerrados. Ese es el mismo bloqueo, visto desde la demo.
 | # | Tarea | Estado |
 |---|---|---|
 | 1 | ~~`make service-restart`~~ | ✅ hecho el 9-sep, 17 endpoints en vivo |
-| 2 | **Llave de OpenAI** | 🔴 desatasca a P2 y P3 a la vez |
+| 2 | **Llave de OpenAI**, específicamente | 🔴 la de Anthropic ya está y desbloquea el Product DNA, pero no vectoriza |
 | 3 | Contestar a Ulises quién revisa | 🔴 es su único bloqueo real |
 | 4 | Ratificar el uso de `HUMAN_VALIDATED` para medir acierto | toca el Canonical Model |
 | 5 | Aplicar `dce813047e49` a la compartida | cuando exista |
