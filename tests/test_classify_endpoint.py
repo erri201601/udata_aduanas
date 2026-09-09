@@ -204,3 +204,55 @@ def _capturar_applicable(**kwargs: object) -> str:
     sesion = MagicMock()
     LegalNotesRepository(sesion).applicable(**kwargs)  # type: ignore[arg-type]
     return _sql(sesion.scalars.call_args.args[0])
+
+
+# ── El embedder no puede tumbar una clasificación ────────────────────────────
+
+
+def test_la_respuesta_declara_como_se_buscó() -> None:
+    """Dos clasificaciones con distinto modo se apoyan en normas distintas.
+
+    Quien audite la decisión tiene que poder saberlo: la decisión persiste y
+    el modo no.
+    """
+    from apps.api.routers.products import ClassifyResponse
+
+    assert "modo_busqueda" in ClassifyResponse.model_fields
+    assert "degradado_por" in ClassifyResponse.model_fields
+    assert ClassifyResponse.model_fields["degradado_por"].default is None
+
+
+def test_siempre_hay_una_razon_que_dar_por_no_usar_vectores() -> None:
+    """Degradar en silencio sería tan malo como fallar (Persona 1, 9-sep)."""
+    from apps.api.routers.products import _porque_no_vectores
+    from core.llm.errors import ProviderResponseError
+    from rag.embedder import EmbedderDegradable
+
+    assert "no hay proveedor" in _porque_no_vectores(None)
+
+    class Falla:
+        name = "openai"
+        default_embedding_model = "text-embedding-3-small"
+
+        def embed(self, text: str, *, model: str | None = None) -> list[float]:
+            raise ProviderResponseError("429 Too Many Requests", provider="openai")
+
+    e = EmbedderDegradable(Falla())  # type: ignore[arg-type]
+    e.embed(["x"])
+
+    razon = _porque_no_vectores(e)
+    assert "429" in razon
+    assert "se siguió por término" in razon
+
+
+def test_clasificar_pide_el_embedder_opcional_no_uno_obligatorio() -> None:
+    """La garantía vive aquí: `embedder_opcional` devuelve `None` en vez de
+    lanzar, así que no hay camino por el que la falta de llave impida
+    clasificar."""
+    import inspect
+
+    from apps.api.routers import products
+
+    fuente = inspect.getsource(products.clasificar)
+    assert "embedder_opcional()" in fuente
+    assert "build_provider" not in fuente, "el router no construye proveedores"
