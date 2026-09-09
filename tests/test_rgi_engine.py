@@ -315,6 +315,56 @@ def test_dos_partidas_sin_desempate_terminan_en_rgi3c_con_confianza_baja() -> No
     assert tres_c.confidence < Decimal("0.8")
 
 
+def test_lo_desempatado_por_rgi3c_sale_marcado_para_revision() -> None:
+    """Resolver por orden de numeración no es resolver por una razón.
+
+    La RGI 3 c) elige «la última partida por orden de numeración». Entre una
+    computadora (8471) y un monitor (8528) elige el monitor, porque 8528 va
+    después. El código es válido y la regla se aplica bien; lo que no hay es
+    un motivo de fondo.
+
+    Antes esto salía `RESOLVED` y con `requires_human_review` en `False`: la
+    regla escribía «conviene revisión humana» en su `reasoning_summary` —que
+    nadie lee en tiempo de ejecución— y la traza sólo miraba el estado final.
+    La penalización de confianza tampoco bastaba, porque nada la usa de
+    umbral. El resultado era el peor que puede dar este sistema: una
+    clasificación equivocada con apariencia de fundada.
+
+    El código se conserva a propósito. La RGI 3 c) es una regla real y el
+    resultado que produce es el que prescribe: lo que cambia es que ya no se
+    presenta como una conclusión limpia.
+    """
+    a = TariffCandidate(code="8471", text="Máquinas automáticas", level="HEADING", specificity=3)
+    b = TariffCandidate(code="8528", text="Monitores", level="HEADING", specificity=3)
+    # La subpartida y la fracción cuelgan de 8528 —la que gana el desempate—,
+    # que es lo que permite a la RGI 6 llegar hasta el final. Con el catálogo
+    # colgando de 8471 la secuencia moría antes y el fallo no se veía.
+    sub = TariffCandidate(
+        code="852859", text="Los demás monitores", level="SUBHEADING", specificity=3
+    )
+    frac = TariffCandidate(code="85285999", text="Los demás", level="FRACTION", specificity=3)
+
+    traza = classify(contexto(), catalog=CatalogoFalso([a, b], [sub], [frac]), notes=NotasFalsas())
+
+    assert "RGI-3c" in [p.rule_id for p in traza.steps]
+    assert traza.final_status is RGIStatus.RESOLVED
+    assert traza.resolved_code == "85285999"
+    assert traza.requires_human_review, "un desempate por numeración no es una conclusión limpia"
+
+
+def test_una_resolucion_limpia_no_pide_revision() -> None:
+    """El control del test anterior: no se marca todo por si acaso.
+
+    Marcar de más vacía de significado la bandeja de revisión — si todo pide
+    revisión, nada la pide.
+    """
+    traza = classify(contexto(), catalog=catalogo_completo(), notes=NotasFalsas())
+
+    assert "RGI-3c" not in [p.rule_id for p in traza.steps]
+    assert traza.final_status is RGIStatus.RESOLVED
+    assert not traza.requires_human_review
+
+
 # ── Confianza ────────────────────────────────────────────────────────────────
 
 

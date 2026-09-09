@@ -416,6 +416,12 @@ class RGI3C:
             ),
             source_ids=tuple(c.source_id for c in (ultima,) if c.source_id is not None),
             confidence=_confianza(context, penalizacion=Decimal("0.30")),
+            # Resuelve, y aun así lo tiene que ver alguien. Hasta ahora esto
+            # sólo estaba dicho en el `reasoning_summary` de arriba, que nadie
+            # lee en tiempo de ejecución: la clasificación salía RESOLVED y sin
+            # marcar. La confianza baja no bastaba, porque nada la usa de
+            # umbral.
+            requires_human_review=True,
         )
 
 

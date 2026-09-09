@@ -33,6 +33,20 @@ class RGIResult(BaseModel):
     confidence: Decimal | None = None
     missing_information: tuple[str, ...] = ()
 
+    requires_human_review: bool = False
+    """La regla resolvió, pero su resolución necesita que alguien la mire.
+
+    No es lo mismo que no resolver. Un desempate de último recurso —la RGI
+    3 c), «la última por orden de numeración»— produce un código válido y
+    aplica la regla correctamente, y aun así no distingue nada: entre una
+    computadora y un monitor elige el monitor porque 8528 va después de 8471.
+
+    Existe como campo, y no como una comprobación del `rule_id` en la traza,
+    porque quien sabe si su resolución es sustantiva es la propia regla.
+    Cualquier regla futura que resuelva sin una razón de fondo lo declara
+    aquí y el resto del sistema lo respeta sin tener que conocerla.
+    """
+
     @property
     def is_terminal(self) -> bool:
         """¿Detiene la secuencia?"""
@@ -76,10 +90,21 @@ class ClassificationTrace(BaseModel):
     def requires_human_review(self) -> bool:
         """¿Necesita que alguien lo mire?
 
-        Todo lo que no sea una resolución limpia. El sistema falla hacia la
+        Todo lo que no sea una resolución limpia, MÁS las resoluciones que la
+        propia regla marcó como no sustantivas. El sistema falla hacia la
         cautela, igual que el default de la base.
+
+        La segunda mitad no estaba y hacía falta: la RGI 3 c) escribía
+        «conviene revisión humana» en su `reasoning_summary` y la traza no la
+        escuchaba, porque sólo miraba el estado final. Una clasificación
+        desempatada por orden de numeración salía `RESOLVED` y sin marcar —
+        una computadora declarada como monitor, con apariencia de resuelta.
+        Es el fallo que el §36 llama por su nombre: un resultado equivocado
+        que parece fundado.
         """
-        return self.final_status is not RGIStatus.RESOLVED or self.resolved_code is None
+        if self.final_status is not RGIStatus.RESOLVED or self.resolved_code is None:
+            return True
+        return any(paso.requires_human_review for paso in self.steps)
 
     def rejected(self) -> tuple[str, ...]:
         """Por qué se descartó cada regla anterior a la que resolvió.
