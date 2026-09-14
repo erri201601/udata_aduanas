@@ -1,5 +1,11 @@
 # Petición a AJR — diez pedimentos cerrados
 
+> ⏸ **EN PAUSA desde el 14 de septiembre de 2026. No enviar.**
+> Persona 1 decidió omitir los pedimentos por ahora, tanto los reales como los
+> sintéticos. El documento se conserva tal cual para cuando se retome: el
+> análisis de qué pedir y por qué sigue siendo válido. Quién es AJR:
+> `docs/AJR_Y_ANA.md`.
+
 > Preparado el 9 de septiembre de 2026. Los campos de este documento salen de
 > `database/models/operational.py` y del camino que recorre
 > `POST /pedimentos/{id}/review`, no de una lista de deseos.

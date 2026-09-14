@@ -2,6 +2,13 @@
 
 > Estado verificado el 8 de septiembre de 2026. Todo lo que aparece aquí lo
 > corrí antes de escribirlo. Nada es aspiracional.
+>
+> **Actualización 14-sep-2026.** Se corrigieron las cifras de la sección 2 y se
+> pausó la petición de la sección 7. **Las secciones 3 y 4 no se han vuelto a
+> correr** desde dos cambios que pueden alterar lo que se ve en vivo: la tarifa
+> completa (97 capítulos) y el arreglo de la RGI 3 c) del PR #69, que marca
+> para revisión humana lo desempatado por numeración. Vuelve a correrlas antes
+> de entrar. Quién es AJR y qué es ANA: `docs/AJR_Y_ANA.md`.
 
 ## La decisión de fondo
 
@@ -42,8 +49,8 @@ regla, con qué fuente, en qué versión, vigente cuándo.
 Enseña la base, no una diapositiva:
 
 ```
-1,445 fracciones arancelarias   capítulos 84 y 85, del SNICE
-2,171 NICO
+8,136 fracciones arancelarias   los 97 capítulos de la LIGIE
+11,503 NICO
    92 notas de Sección y Capítulo de la LIGIE
       Ley Aduanera
 ```
@@ -155,8 +162,12 @@ Dilo tú antes de que lo pregunten. Enseña el tablero, que declara
 |---|---|
 | RGCE 2026 y el resto de la Ley Aduanera | interpretación de notas → clasificaciones cerradas |
 | Anexo 2.2.1 de la SE | validación de NOM por fracción |
-| Resto de la tarifa | hoy son 2 capítulos de 97 |
-| Datos reales de AJR | **esto se lo pides a ellos** |
+| Datos reales de AJR | ⏸ **en pausa desde el 14-sep** — no se piden por ahora |
+
+> ⏸ **En pausa desde el 14-sep-2026.** El cierre de abajo y la petición de
+> `docs/PETICION_AJR.md` quedan sin usar hasta que Persona 1 retome los
+> pedimentos. **No lo digas en la demo.** Se conserva el texto porque el
+> razonamiento sigue siendo válido.
 
 Y el cierre, que es una petición concreta:
 
