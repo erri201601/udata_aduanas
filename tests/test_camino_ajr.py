@@ -117,6 +117,21 @@ class SesionFalsa:
     def flush(self) -> None:
         return None
 
+    def scalar(self, sentencia: Any) -> Any:
+        """«¿Hay un veredicto que apunte a esta decisión?» — la única escalar."""
+        objetivo = [v for v in sentencia.compile().params.values() if isinstance(v, uuid.UUID)]
+        return next(
+            (
+                f.id
+                for f in self.filas
+                if f.data_origin == "HUMAN_VALIDATED" and f.reviews_decision_id in objetivo
+            ),
+            None,
+        )
+
+    def rollback(self) -> None:
+        return None
+
     def commit(self) -> None:
         return None
 
@@ -395,42 +410,89 @@ def test_la_original_se_lee_bloqueada_para_escribir() -> None:
     assert opciones and opciones[0].get("with_for_update") is True
 
 
-def test_hueco_declarado_dos_casos_del_mismo_dna_se_emparejan_con_la_misma_decision() -> None:
-    """ARCHITECTURE_DECISION_REQUIRED — no se arregla aquí.
+def _escenario_real() -> tuple[
+    ClassificationDecision, ClassificationDecision, ClassificationDecision
+]:
+    """Lo que hay en la compartida: UN DNA, tres fechas de operación.
 
-    El 409 impide revisar dos veces EL MISMO caso. No impide esto: la métrica
-    no sabe qué decisión revisó cada veredicto, así que empareja por DNA y
-    tiempo con «la última decisión de máquina anterior al veredicto».
-
-    En la compartida hay UN solo DNA con nueve decisiones y tres fechas de
-    operación (2024-03-15, 2026-01-15, 2026-03-15). Revisar el caso de 2024
-    lo compararía contra la decisión más reciente, que es de 2026 — otra
-    tarifa vigente, otro caso. Y dos veredictos sobre casos distintos se
-    emparejan con la misma decisión: se cuenta dos veces.
-
-    Cerrarlo exige guardar en el veredicto qué decisión revisa. Toca el
-    Canonical Model y lo aprueba Persona 1. Este test fija el comportamiento
-    de hoy y FALLA el día que se corrija, para que se actualice a la vez.
+    Cada decisión propone una fracción distinta para que, si el emparejamiento
+    se equivoca de decisión, el conteo de confirmadas y corregidas lo delate.
     """
-    caso_2024 = _decision_maquina(fraccion=None, minutos=0)
-    caso_2026 = _decision_maquina(fraccion=None, minutos=5)
-    caso_2026.operation_date = date(2026, 3, 15)
-    cliente, _ = _cliente([caso_2024, caso_2026])
+    caso_2024 = _decision_maquina(fraccion="84713001", minutos=0)
+    caso_2024.operation_date = date(2024, 3, 15)
+    caso_2026_ene = _decision_maquina(fraccion="85285900", minutos=5)
+    caso_2026_ene.operation_date = date(2026, 1, 15)
+    caso_2026_mar = _decision_maquina(fraccion="85176201", minutos=10)
+    caso_2026_mar.operation_date = date(2026, 3, 15)
+    return caso_2024, caso_2026_ene, caso_2026_mar
+
+
+def test_un_veredicto_sobre_2024_se_empareja_con_la_decision_de_2024() -> None:
+    """EL HUECO QUE FIJABA EL #79, AL REVÉS.
+
+    Con la heurística de DNA + tiempo este veredicto se comparaba contra el
+    caso de 2026-03-15, que es la decisión más reciente del DNA: otra tarifa
+    vigente, otro caso. Ahora se compara contra la de 2024, que es la que
+    revisó. Confirmar 84713001 frente a 85176201 habría salido «corregida».
+    """
+    caso_2024, caso_2026_ene, caso_2026_mar = _escenario_real()
+    cliente, _ = _cliente([caso_2024, caso_2026_ene, caso_2026_mar])
 
     with cliente as c:
-        for caso in (caso_2024, caso_2026):
-            r = c.post(
-                f"/review/{caso.id}",
-                json={
-                    "veredicto": "CORRIGE",
-                    "reviewer": REVISOR_EXTERNO,
-                    "fraction_code": "84713001",
-                },
-            )
-            assert r.status_code == 201, "son casos distintos: los dos se admiten"
+        r = c.post(
+            f"/review/{caso_2024.id}",
+            json={"veredicto": "CONFIRMA", "reviewer": REVISOR_EXTERNO},
+        )
         m = c.get("/metrics/classification").json()
 
-    # Dos veredictos, pero los dos se emparejaron con caso_2026: el de 2024 se
-    # comparó contra una decisión que no era la suya.
+    assert r.status_code == 201
+    assert m["confirmadas"] == 1
+    assert m["corregidas"] == 0
+    assert m["fraction_accuracy"]["aciertos"] == 1
+
+
+def test_dos_veredictos_de_casos_distintos_del_mismo_dna_van_cada_uno_a_su_decision() -> None:
+    """Antes los dos se emparejaban con la misma decisión y se contaba dos veces."""
+    caso_2024, caso_2026_ene, caso_2026_mar = _escenario_real()
+    cliente, _ = _cliente([caso_2024, caso_2026_ene, caso_2026_mar])
+
+    with cliente as c:
+        c.post(
+            f"/review/{caso_2024.id}",
+            json={"veredicto": "CONFIRMA", "reviewer": REVISOR_EXTERNO},
+        )
+        c.post(
+            f"/review/{caso_2026_mar.id}",
+            json={
+                "veredicto": "CORRIGE",
+                "reviewer": REVISOR_EXTERNO,
+                "fraction_code": "84713001",
+            },
+        )
+        m = c.get("/metrics/classification").json()
+
     assert m["revisadas"] == 2
+    assert m["confirmadas"] == 1, "el de 2024 confirmó su propia decisión"
+    assert m["corregidas"] == 1, "el de 2026-03 corrigió la suya"
     assert m["fraction_accuracy"]["comparados"] == 2
+    assert m["fraction_accuracy"]["aciertos"] == 1
+
+
+def test_un_segundo_veredicto_sobre_la_misma_decision_da_409_por_la_aplicacion() -> None:
+    """La capa de aplicación. La de la base (UNIQUE) se prueba contra Postgres
+    en `test_reviews_decision_id_integracion.py`."""
+    caso_2024, caso_2026_ene, caso_2026_mar = _escenario_real()
+    cliente, sesion = _cliente([caso_2024, caso_2026_ene, caso_2026_mar])
+
+    with cliente as c:
+        primero = c.post(
+            f"/review/{caso_2024.id}",
+            json={"veredicto": "CONFIRMA", "reviewer": REVISOR_EXTERNO},
+        )
+        segundo = c.post(
+            f"/review/{caso_2024.id}",
+            json={"veredicto": "CORRIGE", "reviewer": "otro", "fraction_code": "85285900"},
+        )
+
+    assert (primero.status_code, segundo.status_code) == (201, 409)
+    assert sum(1 for f in sesion.filas if f.data_origin == "HUMAN_VALIDATED") == 1

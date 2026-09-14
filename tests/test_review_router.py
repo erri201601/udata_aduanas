@@ -72,10 +72,21 @@ def _producto() -> Product:
 
 
 class SesionFalsa:
-    def __init__(self, *, decision: ClassificationDecision | None) -> None:
+    def __init__(
+        self, *, decision: ClassificationDecision | None, ya_revisada: bool = False
+    ) -> None:
         self._decision = decision
+        self._ya_revisada = ya_revisada
         self.agregadas: list[Any] = []
         self.commits = 0
+        self.rollbacks = 0
+
+    def scalar(self, _sentencia: Any) -> Any:
+        # La única consulta escalar de `revisar`: ¿hay un veredicto que apunte aquí?
+        return uuid.uuid4() if self._ya_revisada else None
+
+    def rollback(self) -> None:
+        self.rollbacks += 1
 
     def get(self, modelo: type, _id: uuid.UUID, **_opciones: Any) -> Any:
         if modelo is Product:
@@ -365,3 +376,88 @@ def test_toda_causa_tiene_explicacion() -> None:
 
     assert todas <= set(CAUSAS), "hay causas sin texto"
     assert all(CAUSAS[c].strip() for c in todas)
+
+
+# ── El veredicto dice qué revisó (Persona 1, opción 1, 14-sep) ───────────────
+
+
+def test_el_veredicto_guarda_que_decision_revisa() -> None:
+    """Es lo que empareja el veredicto con SU decisión en la métrica."""
+    app = create_app()
+    sesion = SesionFalsa(decision=_decision())
+    app.dependency_overrides[get_session] = lambda: sesion
+
+    with TestClient(app) as c:
+        c.post(f"/review/{DECISION_ID}", json={"veredicto": "CONFIRMA", "reviewer": "u"})
+
+    assert sesion.agregadas[0].reviews_decision_id == DECISION_ID
+
+
+def test_una_decision_con_veredicto_da_409_y_no_escribe() -> None:
+    app = create_app()
+    sesion = SesionFalsa(decision=_decision(), ya_revisada=True)
+    app.dependency_overrides[get_session] = lambda: sesion
+
+    with TestClient(app) as c:
+        r = c.post(f"/review/{DECISION_ID}", json={"veredicto": "CONFIRMA", "reviewer": "u"})
+
+    assert r.status_code == 409
+    assert sesion.agregadas == []
+
+
+def test_una_resuelta_limpia_vuelve_a_poder_revisarse() -> None:
+    """Deshace la consecuencia del #79: muestrear lo que la bandeja deja pasar."""
+    with _cliente(decision=_decision(pendiente=False)) as c:
+        r = c.post(f"/review/{DECISION_ID}", json={"veredicto": "CONFIRMA", "reviewer": "u"})
+
+    assert r.status_code == 201
+
+
+class _Diag:
+    def __init__(self, constraint: str) -> None:
+        self.constraint_name = constraint
+
+
+class _OrigError(Exception):
+    def __init__(self, constraint: str) -> None:
+        super().__init__(constraint)
+        self.diag = _Diag(constraint)
+
+
+class _SesionQueChoca(SesionFalsa):
+    def __init__(self, constraint: str) -> None:
+        super().__init__(decision=_decision())
+        self._constraint = constraint
+
+    def commit(self) -> None:
+        from sqlalchemy.exc import IntegrityError
+
+        raise IntegrityError("INSERT", {}, _OrigError(self._constraint))
+
+
+def test_si_el_unique_decide_se_responde_409() -> None:
+    """Dos POST simultáneos que llegaron a escribir: la base decide."""
+    from apps.api.routers.review import UNICO_VEREDICTO
+
+    app = create_app()
+    sesion = _SesionQueChoca(UNICO_VEREDICTO)
+    app.dependency_overrides[get_session] = lambda: sesion
+
+    with TestClient(app) as c:
+        r = c.post(f"/review/{DECISION_ID}", json={"veredicto": "CONFIRMA", "reviewer": "u"})
+
+    assert r.status_code == 409
+    assert sesion.rollbacks == 1
+
+
+def test_otra_violacion_de_integridad_no_se_disfraza_de_409() -> None:
+    """Un CHECK o una FK rotos son un fallo real, no un «ya estaba revisada»."""
+    from sqlalchemy.exc import IntegrityError
+
+    app = create_app()
+    app.dependency_overrides[get_session] = lambda: _SesionQueChoca(
+        "ck_classification_decisions_revision_dice_que_revisa"
+    )
+
+    with TestClient(app) as c, pytest.raises(IntegrityError):
+        c.post(f"/review/{DECISION_ID}", json={"veredicto": "CONFIRMA", "reviewer": "u"})
