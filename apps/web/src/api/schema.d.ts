@@ -1003,6 +1003,40 @@ export interface components {
             uninterpretable_evidences: number;
         };
         /**
+         * EntradaEnVigor
+         * @description Normas que empiezan a regir un día SIN que conste reforma.
+         *
+         *     No es una ola de reforma y no se presenta como tal. Dos casos:
+         *
+         *     - `DOCUMENTO_COMPLETO`: el día coincide con la vigencia del documento. Una
+         *       resolución anual que se sustituye entera (RGCE 2026) o una tarifa nueva
+         *       (LIGIE 2022).
+         *     - `SIN_REFORMA_REGISTRADA`: el día no coincide con el del documento y
+         *       ninguna nota cita reforma. Puede ser la publicación original de la ley
+         *       o una entrada en vigor diferida por transitorio; el corpus no dice
+         *       cuál, así que no se afirma ninguna de las dos.
+         */
+        EntradaEnVigor: {
+            /**
+             * Fecha
+             * Format: date
+             */
+            fecha: string;
+            /** Documento */
+            documento: string;
+            /** Kind */
+            kind: string;
+            /** Normas */
+            normas: number;
+            /**
+             * Tipo
+             * @enum {string}
+             */
+            tipo: "DOCUMENTO_COMPLETO" | "SIN_REFORMA_REGISTRADA";
+            /** Muestra */
+            muestra?: string[];
+        };
+        /**
          * EvidenceKind
          * @description Tipo de evidencia en evidence_records. Espejo de core.evidence.kinds.EvidenceKind.
          * @enum {string}
@@ -1209,10 +1243,12 @@ export interface components {
         };
         /**
          * OlaDeReforma
-         * @description Un día en que entró en vigor un bloque de normas.
+         * @description Un día en que el DOF modificó normas de UN documento.
          *
-         *     No es un evento del DOF: es lo que el corpus permite deducir sin inventar
-         *     nada. Si el watcher existiera, esto se cruzaría con él.
+         *     Sólo cuenta las normas cuya `reform_note` cita ese mismo día («reformado»,
+         *     «adicionado» o «derogado» DOF dd-mm-aaaa). No es un evento del DOF: es lo
+         *     que el corpus permite deducir sin inventar nada. Si el watcher existiera,
+         *     esto se cruzaría con él.
          */
         OlaDeReforma: {
             /**
@@ -1220,10 +1256,12 @@ export interface components {
              * Format: date
              */
             fecha: string;
+            /** Documento */
+            documento: string;
+            /** Kind */
+            kind: string;
             /** Normas */
             normas: number;
-            /** Documentos */
-            documentos?: string[];
             /** Muestra */
             muestra?: string[];
         };
@@ -2140,6 +2178,18 @@ export interface components {
             fuera_de_vigencia_total: number;
             /** Reformas */
             reformas?: components["schemas"]["OlaDeReforma"][];
+            /**
+             * Total Olas
+             * @default 0
+             */
+            total_olas: number;
+            /** Entradas En Vigor */
+            entradas_en_vigor?: components["schemas"]["EntradaEnVigor"][];
+            /**
+             * Total Entradas En Vigor
+             * @default 0
+             */
+            total_entradas_en_vigor: number;
             /** Fuera De Vigencia */
             fuera_de_vigencia?: components["schemas"]["NormaFueraDeVigencia"][];
             /**

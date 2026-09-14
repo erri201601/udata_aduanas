@@ -1236,3 +1236,8 @@ code {
 
 .causa__nombre { font-size: 0.75rem; font-weight: 600; }
 .causa__detalle { font-size: 0.78rem; color: var(--tenue); line-height: 1.5; max-width: 76ch; }
+
+/* Entrada en vigor sin reforma: se ve distinta de una reforma a propósito.
+   Confundirlas es el error que esta sección existe para evitar. */
+.reforma--entrada { border-style: dashed; }
+.reforma__tipo { font-size: 0.75rem; color: var(--tenue); }

@@ -192,23 +192,32 @@ export function RegulatorySentinel() {
 
           <h2 className="seccion">Olas de reforma</h2>
           <p className="centinela__explica">
-            No son avisos del DOF: son los días en que un bloque de artículos
-            entró en vigor, deducidos de la vigencia que trae cada norma. Es la
-            vigilancia que se puede sostener hoy sin inventar un feed.
+            Días en que el DOF modificó normas de un documento: sólo cuentan las que
+            su nota de reforma cita ese mismo día. No son avisos del DOF, son lo que
+            el corpus permite deducir sin inventar un feed.
+            {datos.total_olas > datos.reformas.length && (
+              <>
+                {' '}
+                <strong>
+                  Se muestran las {datos.reformas.length} más recientes de{' '}
+                  {datos.total_olas}.
+                </strong>
+              </>
+            )}
           </p>
           {datos.reformas.length === 0 ? (
-            <p className="vacio">El corpus no registra ninguna fecha de entrada en vigor.</p>
+            <p className="vacio">Ninguna norma del corpus anota una reforma.</p>
           ) : (
             <ul className="reformas">
               {datos.reformas.map((ola) => (
-                <li key={ola.fecha} className="reforma">
+                <li key={`${ola.documento}-${ola.fecha}`} className="reforma">
                   <div className="reforma__fecha">
                     <strong>{ola.fecha}</strong>
-                    <span>{ola.documentos.join(', ')}</span>
+                    <span>{ola.documento}</span>
                   </div>
                   <div className="reforma__cuerpo">
                     <span className="reforma__cuenta">
-                      {ola.normas} {ola.normas === 1 ? 'norma' : 'normas'}
+                      {ola.normas} {ola.normas === 1 ? 'norma modificada' : 'normas modificadas'}
                     </span>
                     <span className="reforma__muestra">
                       {ola.muestra.map((n) => (
@@ -217,6 +226,46 @@ export function RegulatorySentinel() {
                       {ola.normas > ola.muestra.length && (
                         <em>y {ola.normas - ola.muestra.length} más</em>
                       )}
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <h2 className="seccion">Entradas en vigor sin reforma</h2>
+          <p className="centinela__explica">
+            Normas que empiezan a regir sin que ninguna nota cite una reforma ese día.
+            No se cuentan como reformas: una resolución anual que se sustituye entera
+            no reforma cientos de reglas.
+            {datos.total_entradas_en_vigor > datos.entradas_en_vigor.length && (
+              <>
+                {' '}
+                <strong>
+                  Se muestran {datos.entradas_en_vigor.length} de{' '}
+                  {datos.total_entradas_en_vigor}.
+                </strong>
+              </>
+            )}
+          </p>
+          {datos.entradas_en_vigor.length === 0 ? (
+            <p className="vacio">No hay normas que entren en vigor sin reforma anotada.</p>
+          ) : (
+            <ul className="reformas">
+              {datos.entradas_en_vigor.map((e) => (
+                <li key={`${e.documento}-${e.fecha}`} className="reforma reforma--entrada">
+                  <div className="reforma__fecha">
+                    <strong>{e.fecha}</strong>
+                    <span>{e.documento}</span>
+                  </div>
+                  <div className="reforma__cuerpo">
+                    <span className="reforma__cuenta">
+                      {e.normas} {e.normas === 1 ? 'norma' : 'normas'}
+                    </span>
+                    <span className="reforma__tipo">
+                      {e.tipo === 'DOCUMENTO_COMPLETO'
+                        ? 'entra en vigor el documento completo'
+                        : 'sin reforma registrada: publicación original o vigencia diferida'}
                     </span>
                   </div>
                 </li>
