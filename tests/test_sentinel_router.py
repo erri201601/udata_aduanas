@@ -156,3 +156,125 @@ def test_las_olas_de_reforma_no_se_presentan_como_eventos_del_dof() -> None:
     from apps.api.routers.sentinel import OlaDeReforma
 
     assert "DOF" in (OlaDeReforma.__doc__ or "")
+
+
+# ── Reforma frente a entrada en vigor (Persona 1, 14-sep) ────────────────────
+#
+# Los números de las filas RGCE reproducen el reconocimiento de Persona 2
+# (docs/RECONOCIMIENTO_RGCE_2026.md): ~535 reglas con valid_from 2026-01-01 y 2
+# con 2026-02-02. Son DOBLES DE PRUEBA de una carga que todavía no existe, no
+# dato cargado.
+
+
+def _fila(
+    documento: str,
+    dia: date,
+    *,
+    citan: int = 0,
+    no_citan: int = 0,
+    kind: str = "LAW",
+    vigencia_doc: date | None = None,
+) -> tuple[Any, ...]:
+    muestra = [f"{i}" for i in range(1, 8)]
+    return (
+        documento,
+        kind,
+        vigencia_doc,
+        dia,
+        citan,
+        no_citan,
+        muestra if citan else None,
+        muestra if no_citan else None,
+    )
+
+
+def test_una_resolucion_anual_no_es_una_ola_de_reforma() -> None:
+    """EL TEST QUE IMPORTA.
+
+    «535 normas reformadas el 2026-01-01» sería falso: la RGCE se sustituye
+    entera cada año. Ni una de esas reglas puede aparecer como reforma.
+    """
+    from apps.api.routers.sentinel import _clasificar_olas
+
+    rgce = date(2026, 1, 1)
+    reformas, entradas = _clasificar_olas(
+        [
+            _fila("RGCE_2026", rgce, no_citan=535, kind="RULE", vigencia_doc=rgce),
+            _fila("RGCE_2026", date(2026, 2, 2), no_citan=2, kind="RULE", vigencia_doc=rgce),
+        ]
+    )
+
+    assert reformas == []
+    principal = next(e for e in entradas if e.fecha == rgce)
+    assert principal.normas == 535
+    assert principal.tipo == "DOCUMENTO_COMPLETO"
+    diferida = next(e for e in entradas if e.fecha == date(2026, 2, 2))
+    assert diferida.tipo == "SIN_REFORMA_REGISTRADA", "no se afirma que sea transitorio"
+
+
+def test_la_ley_aduanera_2025_sigue_siendo_reforma_aunque_coincida_con_su_documento() -> None:
+    """Por qué `kind` no decide: estas 80 son reformas reales de un `LAW` cuya
+    vigencia de documento es ese mismo día. Lo que decide es la nota."""
+    from apps.api.routers.sentinel import _clasificar_olas
+
+    dia = date(2025, 11, 19)
+    reformas, entradas = _clasificar_olas([_fila("LEY_ADUANERA", dia, citan=80, vigencia_doc=dia)])
+
+    assert [(r.documento, r.normas) for r in reformas] == [("LEY_ADUANERA", 80)]
+    assert entradas == []
+
+
+def test_un_mismo_dia_puede_tener_reforma_y_entrada_en_vigor() -> None:
+    """Ley Aduanera 1995-12-15: 54 de la publicación original y 1 derogada ese día.
+    Colapsarlo en una sola cosa mentiría sobre 54 o sobre 1."""
+    from apps.api.routers.sentinel import _clasificar_olas
+
+    dia = date(1995, 12, 15)
+    reformas, entradas = _clasificar_olas(
+        [_fila("LEY_ADUANERA", dia, citan=1, no_citan=54, vigencia_doc=date(2025, 11, 19))]
+    )
+
+    assert reformas[0].normas == 1
+    assert entradas[0].normas == 54
+    assert entradas[0].tipo == "SIN_REFORMA_REGISTRADA"
+
+
+def test_se_agrupa_por_documento_no_solo_por_dia() -> None:
+    """Lo que dos documentos hicieron el mismo día no se suma en una ola."""
+    from apps.api.routers.sentinel import _clasificar_olas
+
+    dia = date(2026, 1, 1)
+    reformas, _ = _clasificar_olas(
+        [_fila("LEY_ADUANERA", dia, citan=3), _fila("LIGIE", dia, citan=5, kind="TARIFF")]
+    )
+
+    assert sorted((r.documento, r.normas) for r in reformas) == [
+        ("LEY_ADUANERA", 3),
+        ("LIGIE", 5),
+    ]
+
+
+def test_lo_que_no_cabe_en_el_tope_se_cuenta() -> None:
+    """Las olas viejas no pueden desaparecer sin que nada lo diga."""
+    from apps.api.routers.sentinel import TOPE_REFORMAS
+
+    filas = [_fila("LEY_ADUANERA", date(1990 + i, 1, 1), citan=1) for i in range(TOPE_REFORMAS + 5)]
+    corpus: list[Any] = []
+    with _cliente(escalares=[0, 0, 0, 0, 0, 0, 0], filas=[corpus, filas, []]) as c:
+        d = c.get("/sentinel").json()
+
+    assert len(d["reformas"]) == TOPE_REFORMAS
+    assert d["total_olas"] == TOPE_REFORMAS + 5
+    # Las que caben son las más recientes.
+    assert d["reformas"][0]["fecha"] == f"{1990 + TOPE_REFORMAS + 4}-01-01"
+
+
+def test_la_nota_se_compara_con_la_fecha_en_formato_del_dof() -> None:
+    """«Párrafo reformado DOF 19-11-2025»: día-mes-año, no ISO."""
+    from apps.api.routers.sentinel import _cita_su_fecha
+
+    sql = str(_cita_su_fecha().compile())
+
+    assert "to_char" in sql.lower()
+    assert "reform_note" in sql
+    assert "coalesce" in sql.lower(), "sin nota no consta reforma: NULL tiene que dar falso"
