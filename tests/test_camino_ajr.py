@@ -104,7 +104,7 @@ class SesionFalsa:
     def __init__(self, filas: list[ClassificationDecision]) -> None:
         self.filas = filas
 
-    def get(self, _modelo: type, id_: uuid.UUID) -> Any:
+    def get(self, _modelo: type, id_: uuid.UUID, **_opciones: Any) -> Any:
         return next((f for f in self.filas if f.id == id_), None)
 
     def add(self, fila: Any) -> None:
@@ -320,3 +320,117 @@ def test_hoy_no_se_puede_saber_quien_emitio_un_veredicto() -> None:
     )
     # Lo único que queda del revisor es texto libre dentro del razonamiento.
     assert REVISOR_EXTERNO in (humana.reasoning or "")
+
+
+# ── Un caso se revisa una sola vez (Persona 1, 14-sep) ───────────────────────
+
+
+def test_un_caso_ya_revisado_no_admite_un_segundo_veredicto() -> None:
+    """EL HUECO QUE VERIFICÓ PERSONA 1.
+
+    El único 409 impedía «revisar una revisión». Un segundo POST sobre la
+    decisión de MÁQUINA ya revisada creaba otro HUMAN_VALIDATED y la métrica
+    contaba dos veces el mismo caso.
+    """
+    decision = _decision_maquina(fraccion="85285900")
+    cliente, sesion = _cliente([decision])
+
+    with cliente as c:
+        primero = c.post(
+            f"/review/{decision.id}",
+            json={"veredicto": "CONFIRMA", "reviewer": REVISOR_EXTERNO},
+        )
+        segundo = c.post(
+            f"/review/{decision.id}",
+            json={
+                "veredicto": "CORRIGE",
+                "reviewer": "otro.revisor",
+                "fraction_code": "84713001",
+            },
+        )
+        m = c.get("/metrics/classification").json()
+
+    assert primero.status_code == 201
+    assert segundo.status_code == 409
+    humanos = [f for f in sesion.filas if f.data_origin == "HUMAN_VALIDATED"]
+    assert len(humanos) == 1, "el segundo no escribió nada"
+    assert m["revisadas"] == 1
+    assert m["fraction_accuracy"]["comparados"] == 1
+
+
+def test_la_tasa_de_revision_humana_no_pasa_del_cien_por_ciento() -> None:
+    """Con el hueco abierto, revisar dos veces el único caso daba 200 %."""
+    decision = _decision_maquina(fraccion="85285900")
+    cliente, _ = _cliente([decision])
+
+    with cliente as c:
+        for _ in range(3):
+            c.post(
+                f"/review/{decision.id}",
+                json={"veredicto": "CONFIRMA", "reviewer": REVISOR_EXTERNO},
+            )
+        tasa = c.get("/metrics/classification").json()["human_review_rate"]
+
+    assert tasa == "100.00"
+
+
+def test_la_original_se_lee_bloqueada_para_escribir() -> None:
+    """Sin FOR UPDATE, dos POST simultáneos leerían los dos «pendiente»."""
+    decision = _decision_maquina(fraccion="85285900")
+    cliente, sesion = _cliente([decision])
+    opciones: list[dict[str, Any]] = []
+    get_real = sesion.get
+
+    def espia(modelo: type, id_: uuid.UUID, **kw: Any) -> Any:
+        opciones.append(kw)
+        return get_real(modelo, id_, **kw)
+
+    sesion.get = espia  # type: ignore[method-assign]
+    with cliente as c:
+        c.post(
+            f"/review/{decision.id}",
+            json={"veredicto": "CONFIRMA", "reviewer": REVISOR_EXTERNO},
+        )
+
+    assert opciones and opciones[0].get("with_for_update") is True
+
+
+def test_hueco_declarado_dos_casos_del_mismo_dna_se_emparejan_con_la_misma_decision() -> None:
+    """ARCHITECTURE_DECISION_REQUIRED — no se arregla aquí.
+
+    El 409 impide revisar dos veces EL MISMO caso. No impide esto: la métrica
+    no sabe qué decisión revisó cada veredicto, así que empareja por DNA y
+    tiempo con «la última decisión de máquina anterior al veredicto».
+
+    En la compartida hay UN solo DNA con nueve decisiones y tres fechas de
+    operación (2024-03-15, 2026-01-15, 2026-03-15). Revisar el caso de 2024
+    lo compararía contra la decisión más reciente, que es de 2026 — otra
+    tarifa vigente, otro caso. Y dos veredictos sobre casos distintos se
+    emparejan con la misma decisión: se cuenta dos veces.
+
+    Cerrarlo exige guardar en el veredicto qué decisión revisa. Toca el
+    Canonical Model y lo aprueba Persona 1. Este test fija el comportamiento
+    de hoy y FALLA el día que se corrija, para que se actualice a la vez.
+    """
+    caso_2024 = _decision_maquina(fraccion=None, minutos=0)
+    caso_2026 = _decision_maquina(fraccion=None, minutos=5)
+    caso_2026.operation_date = date(2026, 3, 15)
+    cliente, _ = _cliente([caso_2024, caso_2026])
+
+    with cliente as c:
+        for caso in (caso_2024, caso_2026):
+            r = c.post(
+                f"/review/{caso.id}",
+                json={
+                    "veredicto": "CORRIGE",
+                    "reviewer": REVISOR_EXTERNO,
+                    "fraction_code": "84713001",
+                },
+            )
+            assert r.status_code == 201, "son casos distintos: los dos se admiten"
+        m = c.get("/metrics/classification").json()
+
+    # Dos veredictos, pero los dos se emparejaron con caso_2026: el de 2024 se
+    # comparó contra una decisión que no era la suya.
+    assert m["revisadas"] == 2
+    assert m["fraction_accuracy"]["comparados"] == 2

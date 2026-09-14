@@ -77,7 +77,7 @@ class SesionFalsa:
         self.agregadas: list[Any] = []
         self.commits = 0
 
-    def get(self, modelo: type, _id: uuid.UUID) -> Any:
+    def get(self, modelo: type, _id: uuid.UUID, **_opciones: Any) -> Any:
         if modelo is Product:
             return _producto()
         return self._decision

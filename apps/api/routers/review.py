@@ -18,6 +18,23 @@ que es lo que permite emparejarlas al evaluar.
 Es el mismo criterio que Persona 1 aplicó a `shadow_reviews`: una revisión es
 un evento, no un atributo.
 
+UN CASO SE REVISA UNA SOLA VEZ
+
+Antes, el único 409 impedía «revisar una revisión». Pero un segundo POST
+sobre una decisión de máquina que ya había sido revisada creaba OTRO veredicto
+HUMAN_VALIDATED: `human_review_rate` podía pasar del 100 % y la métrica contaba
+dos veces el mismo caso (Persona 1, 14-sep).
+
+Sólo se revisa lo que está en la bandeja (`requires_human_review = true`), que
+es exactamente lo que la revisión apaga. Y la fila original se lee con
+`SELECT … FOR UPDATE`: dos POST simultáneos sobre el mismo caso se ordenan, y
+el segundo ya la encuentra fuera de la bandeja. Sin el bloqueo, los dos
+leerían «pendiente» antes de que ninguno escribiera.
+
+No hizo falta columna nueva: la señal ya existía. Lo que SÍ la necesitaría es
+otro hueco, distinto y declarado abajo en los tests: la métrica empareja cada
+veredicto con su decisión por DNA y tiempo, no por el caso que revisó.
+
 LA BANDEJA DICE POR QUÉ ESTÁ CADA CASO
 
 No todos los pendientes piden lo mismo, y hasta ahora se veían iguales. Desde
@@ -214,7 +231,9 @@ def revisar(
     bandeja. Las dos comparten `product_dna_id`, que es lo que permite
     emparejarlas para medir precisión (§39).
     """
-    original = session.get(ClassificationDecision, decision_id)
+    # FOR UPDATE: dos veredictos simultáneos sobre el mismo caso tienen que
+    # ordenarse, o los dos verían la decisión pendiente y los dos escribirían.
+    original = session.get(ClassificationDecision, decision_id, with_for_update=True)
     if original is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "decisión no encontrada")
 
@@ -222,6 +241,15 @@ def revisar(
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             "esta fila ya es una revisión humana: no se revisa una revisión",
+        )
+
+    if not original.requires_human_review:
+        # Ya se revisó, o nunca estuvo en la bandeja. En los dos casos un
+        # veredicto nuevo contaría dos veces el mismo caso en la métrica.
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "esta decisión no está en la bandeja: ya tiene veredicto o nunca pidió "
+            "revisión. Un segundo veredicto la contaría dos veces en la métrica.",
         )
 
     if peticion.veredicto == "CORRIGE" and not peticion.fraction_code:
