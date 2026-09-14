@@ -251,8 +251,12 @@ def test_clasificar_pide_el_embedder_opcional_no_uno_obligatorio() -> None:
     clasificar."""
     import inspect
 
+    from apps.api import clasificacion
     from apps.api.routers import products
 
-    fuente = inspect.getsource(products.clasificar)
-    assert "embedder_opcional()" in fuente
-    assert "build_provider" not in fuente, "el router no construye proveedores"
+    # La tubería vive en `apps.api.clasificacion` desde que el harness de
+    # evaluación la comparte; el router la llama.
+    tuberia = inspect.getsource(clasificacion.clasificar_borrador)
+    assert "embedder_opcional()" in tuberia
+    assert "build_provider" not in tuberia, "la tubería no construye proveedores"
+    assert "clasificar_borrador(" in inspect.getsource(products.clasificar)
