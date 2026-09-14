@@ -17,27 +17,21 @@ from decimal import Decimal
 from typing import Annotated
 
 import sqlalchemy as sa
-from core.classification import classify_product
 from database.models import Product, ProductAttribute, ProductDna
 from database.repositories import save_classification
-from database.repositories.chunks import PostgresChunkStore
-from database.repositories.notes import LegalNotesRepository
-from database.repositories.tariff import TariffCatalogRepository
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from rag import (
     MODO_SEMANTICO,
     MODO_TERMINO,
     EmbedderDegradable,
-    a_legal_refs,
-    embedder_opcional,
-    recuperar,
 )
 from schemas.intelligence import ProductAttributeRead, ProductDnaRead
 from schemas.operational import ProductRead
 
+from apps.api.clasificacion import clasificar_borrador
 from apps.api.db import SessionDep
-from apps.api.dna import cargar_borrador, terminos, version_vigente
+from apps.api.dna import cargar_borrador, version_vigente
 
 router = APIRouter(prefix="/products", tags=["products"])
 
@@ -245,39 +239,20 @@ def clasificar(
     borrador = cargar_borrador(session, product_id)
     assert borrador is not None  # `version_vigente` ya garantizó que existe
 
-    notas = LegalNotesRepository(session)
-    hay_notas = notas.hay_corpus(on_date=peticion.operation_date)
-    busqueda = peticion.search_terms or terminos(borrador)
-
-    # Las normas que sostienen la clasificación. Sin al menos una, el contrato
-    # de evidencia marca el resultado como no defendible — que es correcto: una
-    # fracción sin norma detrás no se puede declarar.
-    #
-    # `operation_date` viaja a la recuperación igual que al motor: se cita lo
-    # que regía ese día, no lo que rige hoy (§14).
-    # Si el proveedor de vectores no está o falla, `embedder_opcional` lo
-    # absorbe y se sigue por término y vigencia. Clasificar es lo que no puede
-    # dejar de ocurrir; buscar por significado es lo que lo hace mejor.
-    embedder = embedder_opcional()
-
-    recuperacion = recuperar(
-        _consulta_juridica(busqueda),
-        on_date=peticion.operation_date,
-        store=PostgresChunkStore(session),
-        embedder=embedder,
-    )
-    legal_refs = a_legal_refs(recuperacion)
-    uso_vectores = embedder is not None and embedder.uso_vectores
-
-    outcome = classify_product(
+    # La tubería vive en `apps.api.clasificacion` para que el harness de
+    # evaluación mida EXACTAMENTE este camino, no una copia que se desvíe.
+    clasificado = clasificar_borrador(
+        session,
         borrador,
         operation_date=peticion.operation_date,
-        catalog=TariffCatalogRepository(session),
-        notes=notas,
-        search_terms=busqueda,
-        legal_refs=legal_refs,
         trade_flow=peticion.trade_flow,
+        search_terms=peticion.search_terms or None,
     )
+    outcome = clasificado.outcome
+    legal_refs = clasificado.legal_refs
+    hay_notas = clasificado.hay_notas
+    uso_vectores = clasificado.uso_vectores
+    embedder = clasificado.embedder
 
     decision = save_classification(
         session,
