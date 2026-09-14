@@ -1,6 +1,6 @@
 # ADUANERO OS — Estado del proyecto y backlog
 
-**Actualizado:** 2026-09-09 (cierre del día)  
+**Actualizado:** 2026-09-14  
 **Mantiene:** Persona 1 (Erick)
 
 Documento de contexto. Sirve para poner al día a cualquiera —persona o agente—
@@ -23,7 +23,8 @@ versión de esa fuente, cuándo era vigente, qué dato usaste, cuánta confianza
 cuánto dinero, si requiere revisión humana.
 
 El objetivo inmediato es un MVP demostrable ante **AJR**, con fuentes
-jurídicas reales y datos operativos sintéticos.
+jurídicas reales y datos operativos sintéticos. Quién es AJR y qué es ANA:
+`docs/AJR_Y_ANA.md`.
 
 ---
 
@@ -54,7 +55,7 @@ La laptop de Persona 1, `udata-nitro`. Se accede **sólo por Tailscale**.
 | PostgreSQL 16 + pgvector | `100.86.182.104:5433` | **no 5432** |
 | Neo4j | `:7474` (browser) · `:7687` (bolt) | vacío, sin usar |
 | Redis | `:6379` | sin usar |
-| MinIO | `:9000` (API) · `:9001` (consola) | `aduanero-raw` con 4 documentos; `aduanero-docs` vacío |
+| MinIO | `:9000` (API) · `:9001` (consola) | `aduanero-raw` con 5 documentos; `aduanero-docs` vacío |
 
 ⚠️ **En el puerto 5432 hay un PostgreSQL nativo de OTRO proyecto**
 (`Conta_inteligente/Tzol_Udata`). No se toca ni para leer.
@@ -92,66 +93,67 @@ base — copiarlos fuera sigue siendo manual.
 ## 3. Estructura del código
 
 ```
-apps/api/            FastAPI, 21 endpoints    ✅ 11 routers
+apps/api/            FastAPI, 21 endpoints    ✅ 12 routers
 apps/web/            React + TS + Vite        ✅ 10 de 10 del §32
-core/evidence/       Evidence Contract        ✅ 7 módulos
-core/rgi_engine/     RGI Engine               ✅ 7 módulos
-core/llm/            ModelProvider            ✅ 12 módulos
+core/evidence/       Evidence Contract        ✅
+core/rgi_engine/     RGI Engine               ✅
+core/llm/            ModelProvider            ✅
 core/prompts/        loader versionado        ✅
 core/product_dna/    motor de extracción      ✅
-core/classification/ orquestador              ✅
+core/classification/ orquestador              ✅ persiste las normas citadas
 core/taxation/       Money Finder             ✅
 core/audit/          Audit Engine             ✅
 core/shadow/         Pedimento Espejo         ✅
 core/opportunity/    Opportunity Finder       ✅
 core/review/         revisión humana          ✅
-rag/                 RAG jurídico (§27)       ✅ 366 chunks vectorizados
+rag/                 RAG jurídico (§27)       ✅ semántico, degrada a término
 database/models/     29 entidades SQLAlchemy  ✅
-database/migrations/ 9 migraciones aplicadas  ✅
+database/migrations/ 11 migraciones aplicadas ✅
 database/repositories/  chunks · notes · tariff · classification · review
-database/seeds/      canonical_v0_1.py        ✅ (ver deuda en §7)
+database/seeds/      canonical_v0_1.py        ✅
 schemas/             contratos Pydantic       ✅
-ingestion/snice/     LIGIE · NICO · notas     ✅
+ingestion/snice/     LIGIE · NICO · notas     ✅ los 97 capítulos
 ingestion/dof/       Anexo 22                 ✅
 ingestion/diputados/ Ley Aduanera             ✅
 ingestion/{anam,banxico,cbp_cross,datamexico,ebti,sat,vucem,wco}/   ❌ VACÍOS
-synthetic/           generador sintético      ❌ sólo __init__.py
-graph/               Knowledge Graph          ❌ sólo __init__.py
-tests/               47 archivos, 642 tests   ✅
+synthetic/           generador sintético      ⏸ en pausa · sólo __init__.py
+graph/               Knowledge Graph          ❌ sólo __init__.py · Neo4j con 0 nodos
+tests/               49 archivos, 691 tests   ✅
 .github/workflows/ci.yml                      ✅ 6 jobs
 ```
 
-### Base de datos — 29 tablas, corpus jurídico cargado
+### Base de datos — 29 tablas
 
-Alembic en `9877c9584a4c`. Conteos verificados el 9 de septiembre:
+Alembic en `5443e24b5a3f`. Conteos verificados el 14 de septiembre:
 
 ```
 regulatory     legal_sources 4 · legal_documents 4 · legal_rules 366 ·
-               legal_chunks 366 (366 vectorizados) · tariff_fractions 1,445 ·
-               nicos 2,171 · customs_offices 127 · units_of_measure 22 ·
-               pedimento_claves 66 · non_tariff_regulations 37 ·
-               regulatory_events 0
+               legal_chunks 366 (366 vectorizados · 366 enlazados a su norma) ·
+               tariff_fractions 8,136 · nicos 11,503 · customs_offices 127 ·
+               units_of_measure 22 · pedimento_claves 66 ·
+               non_tariff_regulations 37 · regulatory_events 0
 operational    clients · suppliers · products · invoices · invoice_items ·
                coves · pedimentos · pedimento_items · synthetic_scenarios
                — 1 fila cada una, del seed
-intelligence   classification_decisions 7 · classification_candidates 106 ·
-               evidence_records 63 · product_dnas 1 · product_attributes 4 ·
+intelligence   classification_decisions 9 · classification_candidates 142 ·
+               evidence_records 93 · product_dnas 1 · product_attributes 4 ·
                shadow_reviews 2 · risk_findings 1 · opportunity_findings 0 ·
                ground_truth_records 1
 raw            sin tablas: el crudo vive en MinIO
 ```
 
-Las 366 normas son `OFFICIAL`: 274 artículos de la Ley Aduanera y 92 notas de
-Sección y Capítulo de la LIGIE. Los 1,445 aranceles son los capítulos **84**
-(890) y **85** (555) — 2 de 97.
+Las 366 normas son `OFFICIAL`: 274 artículos de la Ley Aduanera (220 con
+`reform_note`) y 92 notas de Sección y Capítulo de la LIGIE. **La tarifa está
+completa**: 8,136 fracciones de los 97 capítulos, 8,094 con tasa IGI.
 
-### RAW en MinIO — cuatro documentos con su hash
+### RAW en MinIO — cinco documentos con su hash
 
 ```
 diputados/ley_aduanera_20251119.pdf
 dof/anexo22_20260115.pdf
-snice/ligie_unificada_20250728.pdf
 snice/fracciones_20260420.xlsx
+snice/ligie_unificada_20250728.pdf
+snice/nico_20240415.xlsx
 ```
 
 La regla 7 se cumple de punta a punta: nada de lo anterior se parseó sin que
@@ -269,13 +271,22 @@ herramientas de mano. Se quitó esa decisión de la capa determinista (PR #51).
 Una exclusión falsa descarta la partida correcta con toda la apariencia de
 rigor — es peor que no decidir.
 
+**Lección del 9 de septiembre.** La RGI 3 c) —«la última por orden de
+numeración»— resolvía un empate entre 8471 y 8528 eligiendo el monitor, lo
+marcaba `RESOLVED` y **no pedía revisión**, aunque su propio razonamiento decía
+que hacía falta. Todos los tests pasaban. Desde el #69 la regla sigue
+resolviendo —el código es el que prescribe— pero declara
+`requires_human_review` y la traza lo respeta. Una resolución limpia sigue sin
+pedir revisión.
+
 ### `core/product_dna/` · `core/classification/` ✅
 
 Product DNA v0.1 con extracción multimodal. El saneamiento **sólo degrada**:
 sin valor pasa a `MISSING`, sin localización baja a `INFERRED`, sin confianza
 cae a `MISSING`. Nunca inventa un valor plausible.
 
-El orquestador une DNA → RGI → Evidence y persiste la traza en `rgi_trace`.
+El orquestador une DNA → RGI → Evidence, persiste la traza en `rgi_trace` y,
+desde el #73, las normas que citó en `legal_rule_ids`.
 
 ### `core/shadow/` · `core/audit/` · `core/taxation/` · `core/opportunity/` ✅
 
@@ -284,39 +295,44 @@ declarado**, y sólo después compara. Money Finder es `Decimal` de punta a
 punta. Lo no verificable se declara `unverifiable` y va a `shadow_reviews`: un
 pedimento que nadie pudo verificar no está limpio, está sin verificar.
 
-### `rag/` — RAG jurídico (§27) ✅ vectorizado
+### `rag/` — RAG jurídico (§27) ✅ semántico
 
 ```
-types.py      LegalChunk — vigencia y data_origin POR CHUNK
+types.py      LegalChunk — vigencia, data_origin y legal_rule_id POR CHUNK
 chunking.py   trocea por artículo y fracción; lee «(Reformado … DOF …)»
 retrieval.py  recuperar() — filtro temporal y de procedencia
 evidencia.py  a_legal_refs() → LegalRef, el puente al contrato
+embedder.py   EmbedderDegradable — convierte la pregunta en vector
 memoria.py    MemoriaChunkStore, sólo para desarrollo
 ports.py      ChunkStore · Embedder
 ```
 
-El almacén real es `database/repositories/chunks.py` sobre pgvector.
-`POST /products/{id}/classify` ya fundamenta con el corpus.
+El almacén real es `database/repositories/chunks.py` sobre pgvector, y la regla
+5 se cumple en producción: para `2024-03-15` descarta los artículos reformados
+el 2025-11-19.
 
-Verificado contra la base compartida: para `2024-03-15` devuelve 8 artículos y
-descarta los reformados el 2025-11-19; para `2026-09-01` devuelve los nuevos.
-La regla 5 se cumple en producción, no sólo en tests.
+**La búsqueda es semántica y degrada, no tumba** (PR #68). Los 366 chunks
+tienen vector (`text-embedding-3-small`, 1536) y `classify` y el Copilot los
+consumen. Si el proveedor falla —429, timeout, sin llave— la petición no cae:
+sigue por término y vigencia, y lo declara en `modo_busqueda`. Verificado con
+un 429 simulado contra la base real.
 
-**Los 366 chunks están vectorizados** con `text-embedding-3-small` (1536,
-igual que la columna). Verificado: «mercancía que se deteriora si permanece
-almacenada mucho tiempo» devuelve los artículos de depósito ante la aduana (34,
-27, 25), que la búsqueda por término no encontraba.
-
-⚠️ **Y aun así, nadie los consume.** Ningún llamador pasa `embedder=`, así que
-`classify` y el Copilot siguen buscando por coincidencia de palabra. Falta el
-adaptador — ver §7.
+**Las citas son auditables** (PRs #70 y #73). Cada chunk apunta a su fila de
+`legal_rules` por la terna (documento, artículo, `valid_from`), y cada
+clasificación guarda en `legal_rule_ids` qué normas citó. Con eso el Sentinel
+dejó de ser `trazable: false`: hoy 1 de las 9 decisiones tiene citas — las 8
+anteriores al #73 no las guardaban.
 
 ### `apps/api/` ✅ 21 endpoints · `apps/web/` ✅ 10 de 10 pantallas
 
+La bandeja de revisión dice por qué está cada caso (PR #74), incluido el que la
+RGI 3 c) resolvió sin razón sustantiva. `GET /metrics/classification` declara
+la precisión como `null` mientras nadie revise, no como `0`.
+
 ⚠️ **El servicio systemd no recarga solo.** Entre el 8 y el 9 de septiembre
-sirvió código anterior al PR #38 durante casi un día: 12 endpoints en vivo
-contra 16 en `develop`, sin que nada lo delatara — `/health` respondía `ok`.
-Tras mergear cualquier PR que toque `apps/api/`: `make service-restart`.
+sirvió código anterior al PR #38 durante casi un día sin que nada lo delatara.
+Tras mergear cualquier PR que toque `apps/api/` o los modelos:
+`make service-restart`.
 
 ---
 
@@ -351,21 +367,22 @@ directa al `.env` del dev server.
 ### Scorecard del §44
 
 ```
-DATA           4 de 14   LIGIE ✅ (2 capítulos de 97) · NICO ✅ ·
+DATA           4 de 14   LIGIE ✅ (los 97 capítulos) · NICO ✅ ·
                          Ley Aduanera ✅ · Anexo 22 ✅
-                         RGCE ❌ · PROSEC ❌ · Regla 8a ❌ · NOM ❌ ·
-                         Cuotas ❌ · CBP ❌ · EBTI ❌ · Banxico ❌ ·
-                         ANAM/SAT/Data México ❌
+                         RGCE ⏳ reconocimiento hecho, carga pendiente
+                         PROSEC ❌ · Regla 8a ❌ · NOM ❌ · Cuotas ❌ ·
+                         CBP ❌ · EBTI ❌ · Banxico ❌ · ANAM/SAT/Data México ❌
 CORE           4 de 4    Product DNA ✅ · RGI ✅ · Classification ✅ ·
                          Evidence ✅
-SIMULATOR      0 de 8    synthetic/ tiene sólo __init__.py. El seed crea una
-                         fila de cada cosa; eso no es un generador.
+SIMULATOR      0 de 8    ⏸ EN PAUSA por decisión de Persona 1 (14-sep):
+                         se omiten los pedimentos, reales y sintéticos
 INTELLIGENCE   5 de 6    Shadow ✅ · Audit ✅ · Money ✅ · Opportunity ✅ ·
-                         Sentinel ✅ · Knowledge Graph ❌
-PRODUCT        2.5 de 3  Dashboard ✅ · Copilot ✅ · Demo AJR ⏳ guion escrito
+                         Sentinel ✅ trazable · Knowledge Graph ❌ (0 nodos)
+PRODUCT        2.5 de 3  Dashboard ✅ · Copilot ✅ · Demo AJR ⏳ sin fecha;
+                         secciones 3 y 4 del guion por re-verificar
 ```
 
-### El vertical slice del §42 — cerrado
+### El vertical slice del §42 — cerrado y sin medir
 
 ```
 ficha técnica → Product DNA → RGI → Classification → Evidence →
@@ -373,103 +390,102 @@ pedimento sintético → Shadow → divergencia → Money Finder
       ✅            ✅        ✅            ✅         ✅
 ```
 
-Está cerrado de punta a punta y **sin medir**. Es la distinción que importa:
-642 tests en verde prueban el motor contra los casos que escribimos nosotros,
-no contra verdad conocida.
+Está cerrado de punta a punta y **sin medir**. 691 tests en verde prueban el
+motor contra los casos que escribimos nosotros, no contra verdad conocida. Los
+dos fallos graves del 9 de septiembre —la RGI 3 c) y el reordenamiento que
+destruía el orden semántico— pasaban todos sus tests y sólo aparecieron
+ejecutando contra datos reales.
 
 ### Lo que de verdad falta
 
 | # | Hueco | Por qué importa |
 |---|---|---|
-| 1 | **Nadie ha medido el acierto** | El instrumento ya existe: `GET /metrics/classification` (PR #55). Lo que falta son los veredictos — 0 humanos, 7 casos en la bandeja sin tocar, 1 fila de Ground Truth. La métrica devuelve `null`, no `0`: la precisión es **desconocida**, no mala. |
-| 2 | **Los 366 vectores no los usa nadie** | Están calculados y el índice HNSW está creado, pero ningún llamador pasa `embedder=`: falta el adaptador que convierta la pregunta en vector. Pagamos la vectorización y seguimos buscando por coincidencia de palabra. |
-| 3 | **`legal_chunks` no apunta a `legal_rules`** | El Sentinel une por `legal_rule_ids` y el RAG cita chunks; no hay columna que los ligue, así que `trazable: false` es permanente. Decisión de Persona 1. |
-| 4 | **RGCE 2026** | La tercera pata del corpus, no iniciada. |
-| 5 | **95 capítulos de tarifa** | Hoy 84 y 85. |
+| 1 | **Nadie ha medido el acierto** | `fraction_accuracy` es `null`: 0 veredictos, 1 fila de Ground Truth. Con los pedimentos en pausa, la única medición que no depende de nosotros es `hs_accuracy` a 6 dígitos contra fallos de **CBP CROSS**: la descripción la escribió un tercero y la clasificación la decidió una aduana. |
+| 2 | **RGCE 2026** | Reconocimiento hecho (`docs/RECONOCIMIENTO_RGCE_2026.md`): ~550 reglas, parser nuevo, vigencias de excepción en los Transitorios Tercero y Cuarto. Faltan el parser y la carga. |
+| 3 | **Knowledge Graph** | Neo4j encendido desde el principio con 0 nodos. Es lo único que falta de INTELLIGENCE, y sigue sin decisión. |
+| 4 | **Las fuentes vacías** | `anam`, `banxico`, `cbp_cross`, `datamexico`, `ebti`, `sat`, `vucem`, `wco` y el Anexo 2.2.1 (fracción → NOM). Sin este último el Pedimento Espejo declara la NOM como no verificable en cada partida. |
 
 ### Deuda técnica conocida
 
-- `database/seeds/canonical_v0_1.py` escribe una evidencia `LEGAL_SOURCE` con
-  `data_origin = SYNTHETIC`, saltándose `builder.legal_source()` por el orden
-  del flush. El contrato la rechaza al leerla, pero un re-seed la recrea.
-- `GroundTruthRecord` está diseñado para anomalías inyectadas (§26):
-  `error_type`, `original_value`, `mutated_value`. **No sirve** para medir
-  acierto de clasificación. Esa vía son las filas `HUMAN_VALIDATED` que
-  comparten `product_dna_id` (ver §8, Persona 3).
-- Los respaldos viven en el mismo disco que la base.
+- **Doble veredicto.** `POST /review/{id}` sólo rechaza revisar una fila que ya
+  es `HUMAN_VALIDATED`; sobre una decisión de máquina ya revisada crea un
+  segundo veredicto, y `human_review_rate` puede pasar del 100 %.
+- **Tope de olas del Sentinel.** `TOPE_REFORMAS = 12` sin total. Con RGCE 2026
+  —una resolución anual que entra entera el mismo día— las olas viejas se
+  caerían sin aviso y un reemplazo anual se leería como reforma.
+- **Una fila del seed con `document_refs` vacío** en la compartida. El código
+  está arreglado (#67); la fila vieja sigue porque la escritura directa a la
+  base quedó bloqueada por permisos.
+- `GroundTruthRecord` está diseñado para anomalías inyectadas (§26) y **no
+  sirve** para medir acierto de clasificación; esa vía son las filas
+  `HUMAN_VALIDATED` que comparten `product_dna_id`.
+- **Respaldos:** 68 MB en el mismo disco que la base.
+- **Rama suelta** `feat/legal-chunks-legal-rule-id`: su commit ya está en
+  `develop`; se puede borrar.
 
 ---
 
 ## 8. Backlog por persona
 
-> Al 9 de septiembre: `develop` en `a47895f`, **0 PRs abiertos**, `main` en
-> `v0.4`. Los tres documentos de encargo —`TAREA_P2_CORPUS_JURIDICO.md` y
-> `TAREA_P3_RAG_INTEGRACION.md`— están cumplidos salvo lo que se lista abajo.
+> Al 14 de septiembre. **Sin actividad del 9 al 14**: cero commits de código y
+> la última escritura en la base es del 9-sep a las 17:07. Decisión de Persona
+> 1 del 14-sep: **se omiten los pedimentos por ahora**, reales y sintéticos.
 
 ### Persona 2 — Brandon (Data Engineer)
 
 | # | Tarea | Estado |
 |---|---|---|
-| 1 | ~~`reform_note` + backfill~~ | ✅ #58, #60 y #64 mergeados. `dce813047e49` aplicada; 220 normas con nota de reforma. |
-| 2 | Notas LIGIE → `legal_chunks` | pendiente, no estaba en su encargo |
-| 3 | RGCE 2026 | no iniciado, confirmar alcance |
-| 4 | Ground Truth de anomalías (§26) | pendiente |
-| 5 | Resto de la tarifa · Anexo 2.2.1 · las nueve fuentes | pendiente |
+| 1 | **RGCE 2026** — parser con tests, luego carga | 🟢 recomendado: corte en 3 piezas, sólo el cuerpo de reglas, y las 13 reglas del Transitorio Cuarto fuera hasta tener fuente de su vigencia |
+| 2 | Anexo 6 de las RGCE, PR aparte | después del cuerpo. Un criterio de clasificación, derogado |
+| 3 | **Reconocimiento de CBP CROSS** | 🟢 términos de uso, formato y rulings bajo el SA 2022. Sin cargar nada |
+| 4 | Generador sintético (§24) | ⏸ en pausa |
+| 5 | Banxico · Anexo 2.2.1 · resto de fuentes | después |
 
-**Ya mergeado, no rehacer:** el `valid_from` por artículo (`valid_from_override`,
-commit `421c592`) y el `notes_for()` acotado a `LegalDocument.kind == "TARIFF"`.
-La base compartida da 180 de 274 artículos vigentes en 2024 gracias al primero.
+**Ya hecho, no se rehace:** tarifa completa, `legal_chunks.legal_rule_id` por
+la terna (#70), backfill con commit por lote (#64), `reform_note` (#58).
 
 ### Persona 3 — Ulises (AI + Full Stack)
 
 | # | Tarea | Estado |
 |---|---|---|
-| 1 | ~~Métrica de precisión~~ | ✅ PR #55, en vivo. `null`, 0 revisadas de 7. |
-| 2 | ~~Vectorizar los chunks~~ | ✅ 366/366 |
-| 3 | Revisar el backfill de Brandon | ⏸ espera su PR — **revisarlo, no rehacerlo** |
-| 4 | ~~Sentinel y Copilot~~ | ✅ #62 y #65. Con esto, 10 de 10 pantallas |
-| 5 | Knowledge Graph sobre Neo4j | sin dueño |
+| 1 | **Sentinel antes de RGCE**: `total_olas`, agrupar por documento, no leer un reemplazo anual como reforma | 🔴 tiene que entrar antes de la carga de Brandon |
+| 2 | **Doble veredicto** en `POST /review/{id}` | 🟢 si necesita columna nueva, la aprueba Persona 1 |
+| 3 | **Harness de `hs_accuracy`** contra CBP CROSS | ⏸ espera el formato de Brandon. No persiste y no filtra la respuesta al motor |
+| 4 | Knowledge Graph | ⏸ espera decisión |
 
-**Sobre la 1.** Una revisión humana **no sobrescribe** la decisión de la
-máquina: crea una fila nueva `HUMAN_VALIDATED` que comparte `product_dna_id`
-(`apps/api/routers/review.py`). De ese par salen *fraction accuracy* y *human
-review rate*. Las dos vías se complementan: la de Brandon mide detección de
-anomalías, ésta mide acierto de clasificación.
-
-**Quién revisa.** No el equipo: un veredicto de quien construyó el sistema lo
-mide contra sus propias suposiciones. Los revisores calificados son los de
-AJR, y `docs/DEMO_AJR.md` cierra pidiéndoles diez pedimentos reales ya
-cerrados. Ese es el mismo bloqueo, visto desde la demo.
+**Ya hecho:** embeddings con degradación (#68), citas persistidas y Sentinel
+trazable (#73), bandeja con causas (#74), camino de entrada de AJR (#75, que
+queda como está).
 
 ### Persona 1 — Erick (Tech Lead)
 
 | # | Tarea | Estado |
 |---|---|---|
-| 1 | ~~`make service-restart`~~ | ✅ hecho, 21 endpoints en vivo |
-| 2 | ~~Llave de OpenAI~~ | ✅ puesta. 366/366 vectorizados en 2m27s. **Rótala: viajó por chat.** |
-| 3 | Contestar a Ulises quién revisa | 🔴 es su único bloqueo real |
-| 4 | Ratificar el uso de `HUMAN_VALIDATED` para medir acierto | toca el Canonical Model |
-| 5 | Aplicar `dce813047e49` a la compartida | cuando exista |
-| 6 | Sacar los respaldos de la laptop | 50 MB en el mismo disco que la base |
-| 7 | Arreglar el seed (`LEGAL_SOURCE` + `SYNTHETIC`) | ver §7 |
-| 8 | Decidir sobre RGI 3 c) y las reglas 2, 4 y 5 | pendiente |
+| 1 | Confirmar a Brandon el alcance de RGCE | recomendación escrita en su prompt |
+| 2 | `data_origin` de CBP CROSS | recomendado `PUBLIC` |
+| 3 | Rotar la llave de OpenAI | pendiente |
+| 4 | Destino de los respaldos | `carlos` o `yayo` |
+| 5 | Knowledge Graph: sí o no | pendiente |
+| 6 | Análisis de ANA frente a ADUANERO OS | define el discurso de la demo |
+| 7 | Fecha de la demo | sin fecha |
+
+**Cerrado desde el día 9:** RGI 3 c) decidida y arreglada (#69), llave de
+OpenAI puesta, `dce813047e49` y `5443e24b5a3f` aplicadas, AJR y ANA
+documentados (`docs/AJR_Y_ANA.md`).
 
 ---
 
 ## 9. La siguiente tarea
 
-**Medir.** Es lo único que el proyecto no puede responder hoy, y lo pregunta
-cualquiera en los primeros cinco minutos.
+**El ajuste del Sentinel, antes que nada** — Persona 3. No por ser lo más
+grande, sino porque es lo único con orden forzoso: si la carga de RGCE 2026
+entra primero, el Sentinel empieza a presentar ~535 normas de una resolución
+anual como una ola de reforma.
 
-Tiene dos mitades y ninguna es código difícil:
-
-1. **La métrica, aunque nazca vacía** — Persona 3, sin dependencias.
-2. **Los veredictos que la llenen** — de AJR, no del equipo.
-
-Todo lo demás del proyecto puede seguir avanzando en paralelo, pero el número
-honesto de «cuánto llevamos» no se mueve hasta que alguien calificado revise
-mercancía real. Hoy el motor está en ~85 **sin validar**: si el Ground Truth
-revelara 60% de acierto, no valdría 85.
+Después, **medir sin depender de nadie**: el reconocimiento de CBP CROSS
+(Persona 2) y el harness de `hs_accuracy` encima (Persona 3). Es la única cifra
+de acierto disponible con los pedimentos en pausa, y tiene que presentarse con
+su límite: mide los 6 dígitos del Sistema Armonizado, no la fracción mexicana.
 
 ## 10. Documentos del repositorio
 
@@ -483,7 +499,10 @@ revelara 60% de acierto, no valdría 85.
 | `docs/TAREA_P3_MODEL_PROVIDER.md` | especificación de ModelProvider y frontend |
 | `docs/PROMPT_P2.md` · `docs/PROMPT_P3.md` | prompts de arranque para los agentes |
 | `docs/ER_DIAGRAM.md` | diagrama Mermaid del modelo |
-| `docs/DEMO_AJR.md` | guion de la demo, verificado contra el sistema |
+| `docs/DEMO_AJR.md` | guion de la demo; secciones 3 y 4 por re-verificar |
+| `docs/AJR_Y_ANA.md` | quién es AJR y qué es ANA |
+| `docs/PETICION_AJR.md` | ⏸ en pausa — petición de diez pedimentos a AJR |
+| `docs/RECONOCIMIENTO_RGCE_2026.md` | reconocimiento de RGCE 2026, antes de cargar |
 | `docs/TAREA_P2_CORPUS_JURIDICO.md` | encargo del corpus a Persona 2 |
 | `docs/TAREA_P3_RAG_INTEGRACION.md` | encargo del RAG a Persona 3 |
 | `docs/adr/0001-puertos-y-bind-del-dev-server.md` | por qué 8080 y 5433 |
