@@ -9,8 +9,17 @@ forzarlo.
 
 Sale de un par de filas que ya existe por diseño. Cuando una persona revisa,
 la bandeja NO sobrescribe la decisión de la máquina: crea una fila
-`HUMAN_VALIDATED` que comparte `product_dna_id`. Se hizo así precisamente para
-poder compararlas, y esa comparación es la métrica.
+`HUMAN_VALIDATED` que apunta a ella por `reviews_decision_id`. Esa comparación
+es la métrica.
+
+EMPAREJAR POR PUNTERO, NO POR DNA Y TIEMPO
+
+Hasta el 14 de septiembre se emparejaba cada veredicto con «la última decisión
+de máquina del mismo DNA anterior al veredicto». En la compartida hay un DNA
+con nueve decisiones y tres fechas de operación: el veredicto sobre el caso de
+2024 se habría comparado contra la decisión de 2026, y dos veredictos sobre
+casos distintos contra la misma. Ahora cada veredicto se compara con la
+decisión a la que apunta, y nada más.
 
 Las dos vías se complementan: `ground_truth_records` mide si el Espejo detecta
 lo que se inyectó; esto mide si el motor clasifica como clasificaría una
@@ -107,7 +116,7 @@ def _compara(maquina: str | None, humano: str | None) -> bool | None:
 
 @router.get("/classification", summary="Precisión de la clasificación (§39)")
 def precision(session: SessionDep) -> PrecisionClasificacion:
-    """Compara cada veredicto humano con la decisión de máquina de su DNA."""
+    """Compara cada veredicto humano con la decisión de máquina que revisó."""
     humanos = session.scalars(
         sa.select(ClassificationDecision)
         .where(ClassificationDecision.data_origin == ORIGEN_HUMANO)
@@ -120,28 +129,25 @@ def precision(session: SessionDep) -> PrecisionClasificacion:
         .order_by(ClassificationDecision.created_at)
     ).all()
 
-    # La decisión de máquina más reciente ANTERIOR al veredicto: es la que la
-    # persona tenía delante cuando revisó. Emparejar con la última de todas
-    # compararía el veredicto contra una clasificación que no vio.
-    por_dna: dict[object, list[ClassificationDecision]] = {}
-    for d in maquina:
-        if d.product_dna_id is not None:
-            por_dna.setdefault(d.product_dna_id, []).append(d)
+    por_id = {d.id: d for d in maquina}
 
     hs = Acierto()
     fraccion = Acierto()
     nico = Acierto()
     confirmadas = corregidas = 0
+    revisadas: set[object] = set()
 
     for veredicto in humanos:
-        candidatas = [
-            d
-            for d in por_dna.get(veredicto.product_dna_id, [])
-            if d.created_at <= veredicto.created_at
-        ]
-        if not candidatas:
+        # La decisión que ESTE veredicto revisó. Si no apunta a ninguna decisión
+        # de máquina conocida no hay con qué comparar, y no se inventa un par.
+        original = (
+            por_id.get(veredicto.reviews_decision_id)
+            if veredicto.reviews_decision_id is not None
+            else None
+        )
+        if original is None:
             continue
-        original = candidatas[-1]
+        revisadas.add(original.id)
 
         for metrica, izq, der in (
             (hs, original.subheading, veredicto.subheading),
@@ -164,14 +170,18 @@ def precision(session: SessionDep) -> PrecisionClasificacion:
         metrica.porcentaje = _porcentaje(metrica.aciertos, metrica.comparados)
 
     pendientes = sum(1 for d in maquina if d.requires_human_review)
+    # Decisiones DISTINTAS que necesitaron a una persona: las que esperan y las
+    # ya revisadas. Por decisión y no por fila de veredicto, para que la tasa
+    # no pueda pasar del 100 %.
+    necesitaron = {d.id for d in maquina if d.requires_human_review} | revisadas
 
     return PrecisionClasificacion(
         hs_accuracy=hs,
         fraction_accuracy=fraccion,
         nico_accuracy=nico,
-        human_review_rate=_porcentaje(pendientes + len(humanos), len(maquina)),
+        human_review_rate=_porcentaje(len(necesitaron), len(maquina)),
         decisiones_maquina=len(maquina),
-        revisadas=len(humanos),
+        revisadas=len(revisadas),
         pendientes_de_revision=pendientes,
         confirmadas=confirmadas,
         corregidas=corregidas,

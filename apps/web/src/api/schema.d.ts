@@ -345,7 +345,7 @@ export interface paths {
         };
         /**
          * Precisión de la clasificación (§39)
-         * @description Compara cada veredicto humano con la decisión de máquina de su DNA.
+         * @description Compara cada veredicto humano con la decisión de máquina que revisó.
          */
         get: operations["precision_metrics_classification_get"];
         put?: never;
@@ -392,9 +392,9 @@ export interface paths {
          * Confirma o corrige una decisión
          * @description Registra el veredicto humano SIN borrar el de la máquina.
          *
-         *     Crea una decisión nueva marcada `HUMAN_VALIDATED` y saca la original de la
-         *     bandeja. Las dos comparten `product_dna_id`, que es lo que permite
-         *     emparejarlas para medir precisión (§39).
+         *     Crea una decisión nueva marcada `HUMAN_VALIDATED` que apunta a la original
+         *     por `reviews_decision_id`, y saca la original de la bandeja. Ese puntero es
+         *     lo que la métrica usa para emparejarlas (§39).
          */
         post: operations["revisar_review__decision_id__post"];
         delete?: never;
@@ -626,6 +626,8 @@ export interface components {
             product_id?: string | null;
             /** Product Dna Id */
             product_dna_id?: string | null;
+            /** Reviews Decision Id */
+            reviews_decision_id?: string | null;
             trade_flow: components["schemas"]["TradeFlow"];
             /**
              * Operation Date
@@ -732,6 +734,8 @@ export interface components {
             product_id?: string | null;
             /** Product Dna Id */
             product_dna_id?: string | null;
+            /** Reviews Decision Id */
+            reviews_decision_id?: string | null;
             trade_flow: components["schemas"]["TradeFlow"];
             /**
              * Operation Date
@@ -1590,6 +1594,8 @@ export interface components {
             product_id?: string | null;
             /** Product Dna Id */
             product_dna_id?: string | null;
+            /** Reviews Decision Id */
+            reviews_decision_id?: string | null;
             trade_flow: components["schemas"]["TradeFlow"];
             /**
              * Operation Date

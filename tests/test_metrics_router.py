@@ -33,6 +33,7 @@ def _decision(
     dna: uuid.UUID | None = None,
     minutos: int = 0,
     nico: str | None = None,
+    revisa: ClassificationDecision | None = None,
 ) -> ClassificationDecision:
     d = ClassificationDecision(
         product_dna_id=dna or DNA,
@@ -44,6 +45,7 @@ def _decision(
         nico_code=nico,
         data_origin=origen,
         requires_human_review=pendiente,
+        reviews_decision_id=revisa.id if revisa is not None else None,
     )
     d.id = uuid.uuid4()
     d.created_at = AHORA + timedelta(minutes=minutos)
@@ -113,13 +115,13 @@ def test_sin_decisiones_tampoco_inventa_una_tasa() -> None:
 # ── Con veredictos, mide ────────────────────────────────────────────────────
 
 
-def test_una_confirmacion_cuenta_como_acierto() -> None:
-    filas = [
-        _decision(fraccion="84713001", minutos=0),
-        _decision(fraccion="84713001", origen="HUMAN_VALIDATED", minutos=10),
-    ]
+def _veredicto(fraccion: str, revisa: ClassificationDecision, **kw: Any) -> ClassificationDecision:
+    return _decision(fraccion=fraccion, origen="HUMAN_VALIDATED", minutos=10, revisa=revisa, **kw)
 
-    with _cliente(filas) as c:
+
+def test_una_confirmacion_cuenta_como_acierto() -> None:
+    maquina = _decision(fraccion="84713001")
+    with _cliente([maquina, _veredicto("84713001", maquina)]) as c:
         m = c.get("/metrics/classification").json()
 
     assert m["fraction_accuracy"]["aciertos"] == 1
@@ -130,12 +132,8 @@ def test_una_confirmacion_cuenta_como_acierto() -> None:
 
 
 def test_una_correccion_cuenta_como_fallo() -> None:
-    filas = [
-        _decision(fraccion="84714902", minutos=0),
-        _decision(fraccion="84713001", origen="HUMAN_VALIDATED", minutos=10),
-    ]
-
-    with _cliente(filas) as c:
+    maquina = _decision(fraccion="84714902")
+    with _cliente([maquina, _veredicto("84713001", maquina)]) as c:
         m = c.get("/metrics/classification").json()
 
     assert m["fraction_accuracy"]["aciertos"] == 0
@@ -146,12 +144,8 @@ def test_una_correccion_cuenta_como_fallo() -> None:
 
 def test_acertar_la_subpartida_y_fallar_la_fraccion_se_distingue() -> None:
     """Es un error mexicano, no de fondo: la subpartida está armonizada."""
-    filas = [
-        _decision(fraccion="84713002", minutos=0),
-        _decision(fraccion="84713001", origen="HUMAN_VALIDATED", minutos=10),
-    ]
-
-    with _cliente(filas) as c:
+    maquina = _decision(fraccion="84713002")
+    with _cliente([maquina, _veredicto("84713001", maquina)]) as c:
         m = c.get("/metrics/classification").json()
 
     assert m["hs_accuracy"]["aciertos"] == 1  # 847130 coincide
@@ -163,42 +157,53 @@ def test_acertar_la_subpartida_y_fallar_la_fraccion_se_distingue() -> None:
 
 def test_sin_nico_declarado_no_se_compara() -> None:
     """Contarlo como fallo castigaría al motor por un dato que nadie dio."""
-    filas = [
-        _decision(fraccion="84713001", nico="00", minutos=0),
-        _decision(fraccion="84713001", origen="HUMAN_VALIDATED", minutos=10),
-    ]
-
-    with _cliente(filas) as c:
+    maquina = _decision(fraccion="84713001", nico="00")
+    with _cliente([maquina, _veredicto("84713001", maquina)]) as c:
         m = c.get("/metrics/classification").json()
 
     assert m["nico_accuracy"]["comparados"] == 0
     assert m["nico_accuracy"]["porcentaje"] is None
 
 
-def test_se_compara_contra_la_decision_que_la_persona_tenia_delante() -> None:
-    """Emparejar con la última de todas compararía contra algo que no vio."""
-    filas = [
-        _decision(fraccion="84714902", minutos=0),  # la revisada
-        _decision(fraccion="84713001", origen="HUMAN_VALIDATED", minutos=10),
-        _decision(fraccion="85176201", minutos=20),  # posterior al veredicto
-    ]
+def test_se_compara_contra_la_decision_que_reviso_no_contra_la_mas_reciente() -> None:
+    """EL QUE ANTES FALLABA.
+
+    Con la heurística de DNA + tiempo, el veredicto se emparejaba con la última
+    decisión del DNA anterior a él —aquí, la de 85176201— aunque la persona
+    hubiera revisado otra. Ahora manda el puntero.
+    """
+    revisada = _decision(fraccion="84714902", minutos=0)
+    otra_del_mismo_dna = _decision(fraccion="85176201", minutos=5)
+    filas = [revisada, otra_del_mismo_dna, _veredicto("84714902", revisada)]
 
     with _cliente(filas) as c:
         m = c.get("/metrics/classification").json()
 
-    # Se compara contra 84714902, no contra 85176201.
-    assert m["corregidas"] == 1
+    assert m["confirmadas"] == 1, "confirmó la que revisó, no corrigió la otra"
+    assert m["corregidas"] == 0
     assert m["fraction_accuracy"]["comparados"] == 1
 
 
-def test_un_veredicto_sin_decision_previa_no_se_cuenta() -> None:
+def test_un_veredicto_que_no_apunta_a_una_decision_conocida_no_se_cuenta() -> None:
     """Sin par no hay comparación posible, y no se inventa una."""
-    filas = [_decision(fraccion="84713001", origen="HUMAN_VALIDATED", minutos=10)]
+    huerfano = _decision(fraccion="84713001", origen="HUMAN_VALIDATED", minutos=10)
 
-    with _cliente(filas) as c:
+    with _cliente([huerfano]) as c:
         m = c.get("/metrics/classification").json()
 
     assert m["fraction_accuracy"]["comparados"] == 0
+    assert m["revisadas"] == 0
+
+
+def test_la_tasa_cuenta_decisiones_revisadas_no_filas_de_veredicto() -> None:
+    """De dos decisiones, una revisada: 50 %, se cuente como se cuente."""
+    revisada = _decision(fraccion="84713001")
+    limpia = _decision(fraccion="84713001", minutos=1)
+
+    with _cliente([revisada, limpia, _veredicto("84713001", revisada)]) as c:
+        m = c.get("/metrics/classification").json()
+
+    assert m["human_review_rate"] == "50.00"
     assert m["revisadas"] == 1
 
 

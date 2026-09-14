@@ -157,6 +157,18 @@ class ClassificationDecision(
     __table_args__ = (
         sa.Index("ix_classification_decisions_product", "product_id", "operation_date"),
         ai_call_completeness_check(),
+        # Un solo veredicto por decisión, garantizado por la base. Es la segunda
+        # capa detrás del 409 y del FOR UPDATE de `review.py`: si alguien se salta
+        # la aplicación, esto sigue impidiendo contar dos veces el mismo caso.
+        # Sin índice aparte: el UNIQUE ya crea el suyo.
+        sa.UniqueConstraint("reviews_decision_id"),
+        # Toda revisión dice qué revisó, y ninguna decisión de máquina apunta a
+        # nada. Persona 1, 14-sep: si aparece un HUMAN_VALIDATED legítimo que no
+        # sea una revisión, se discute antes de relajar esto.
+        sa.CheckConstraint(
+            "(data_origin = 'HUMAN_VALIDATED') = (reviews_decision_id IS NOT NULL)",
+            name="revision_dice_que_revisa",
+        ),
         {"schema": _SCHEMA},
     )
 
@@ -165,6 +177,16 @@ class ClassificationDecision(
     )
     product_dna_id: Mapped[uuid.UUID | None] = mapped_column(
         sa.ForeignKey(f"{_SCHEMA}.product_dnas.id", ondelete="SET NULL"), nullable=True
+    )
+    # Qué decisión de máquina revisa este veredicto. NULL en toda decisión de
+    # máquina; obligatorio en todo HUMAN_VALIDATED (CHECK de arriba). Antes la
+    # métrica emparejaba por DNA y tiempo, y con un DNA de tres fechas de
+    # operación comparaba el veredicto de 2024 contra la decisión de 2026
+    # (Persona 1, opción 1, 14-sep). RESTRICT: una decisión revisada no se
+    # borra, porque con ella se iría la mitad de la medición.
+    reviews_decision_id: Mapped[uuid.UUID | None] = mapped_column(
+        sa.ForeignKey(f"{_SCHEMA}.classification_decisions.id", ondelete="RESTRICT"),
+        nullable=True,
     )
     trade_flow: Mapped[str] = mapped_column(check_enum(TRADE_FLOW, "trade_flow"), nullable=False)
     operation_date: Mapped[date] = mapped_column(sa.Date, nullable=False)

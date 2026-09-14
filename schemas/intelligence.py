@@ -125,6 +125,8 @@ class ProductAttributeUpdate(CanonicalModel):
 class ClassificationDecisionBase(DataOriginFields, AIDecisionFields, SyntheticFields):
     product_id: uuid.UUID | None = None
     product_dna_id: uuid.UUID | None = None
+    reviews_decision_id: uuid.UUID | None = None
+    """Qué decisión revisa. Sólo en veredictos HUMAN_VALIDATED."""
     trade_flow: TradeFlow
     operation_date: date
     status: ClassificationStatus

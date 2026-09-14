@@ -18,22 +18,24 @@ que es lo que permite emparejarlas al evaluar.
 Es el mismo criterio que Persona 1 aplicó a `shadow_reviews`: una revisión es
 un evento, no un atributo.
 
-UN CASO SE REVISA UNA SOLA VEZ
+UN CASO SE REVISA UNA SOLA VEZ, Y EL VEREDICTO DICE QUÉ REVISÓ
 
-Antes, el único 409 impedía «revisar una revisión». Pero un segundo POST
-sobre una decisión de máquina que ya había sido revisada creaba OTRO veredicto
-HUMAN_VALIDATED: `human_review_rate` podía pasar del 100 % y la métrica contaba
-dos veces el mismo caso (Persona 1, 14-sep).
+Cada veredicto guarda `reviews_decision_id`: la decisión de máquina que
+revisa. Antes no lo guardaba y la métrica emparejaba por DNA y tiempo; con un
+DNA de tres fechas de operación, el veredicto sobre el caso de 2024 se
+comparaba contra la decisión de 2026 (Persona 1, opción 1, 14-sep).
 
-Sólo se revisa lo que está en la bandeja (`requires_human_review = true`), que
-es exactamente lo que la revisión apaga. Y la fila original se lee con
-`SELECT … FOR UPDATE`: dos POST simultáneos sobre el mismo caso se ordenan, y
-el segundo ya la encuentra fuera de la bandeja. Sin el bloqueo, los dos
-leerían «pendiente» antes de que ninguno escribiera.
+«Ya revisada» significa «existe un veredicto que apunta a esta decisión».
+Tres capas, de fuera hacia dentro:
 
-No hizo falta columna nueva: la señal ya existía. Lo que SÍ la necesitaría es
-otro hueco, distinto y declarado abajo en los tests: la métrica empareja cada
-veredicto con su decisión por DNA y tiempo, no por el caso que revisó.
+    1. la aplicación comprueba si ya hay veredicto → 409
+    2. la original se lee con SELECT … FOR UPDATE → dos POST simultáneos se
+       ordenan y el segundo ya ve el primero
+    3. UNIQUE sobre `reviews_decision_id` → si alguien se salta la aplicación,
+       decide la base, y su violación también se devuelve como 409
+
+Una decisión resuelta limpia, que nunca estuvo en la bandeja, SÍ puede
+revisarse: es lo que hace falta para muestrear lo que la bandeja deja pasar.
 
 LA BANDEJA DICE POR QUÉ ESTÁ CADA CASO
 
@@ -67,6 +69,7 @@ from database.models import ClassificationDecision, Product
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from schemas.intelligence import ClassificationDecisionRead
+from sqlalchemy.exc import IntegrityError
 
 from apps.api.db import SessionDep
 
@@ -102,6 +105,33 @@ CAUSAS: Final[dict[str, str]] = {
         "un punto de partida, no una conclusión."
     ),
 }
+
+
+#: La constraint que garantiza en la base un solo veredicto por decisión.
+UNICO_VEREDICTO: Final = "uq_classification_decisions_reviews_decision_id"
+
+
+def _ya_revisada(session: SessionDep, decision_id: uuid.UUID) -> bool:
+    """¿Hay un veredicto que apunte a esta decisión?"""
+    return (
+        session.scalar(
+            sa.select(ClassificationDecision.id)
+            .where(ClassificationDecision.reviews_decision_id == decision_id)
+            .limit(1)
+        )
+        is not None
+    )
+
+
+def _es_veredicto_duplicado(exc: IntegrityError) -> bool:
+    """¿La violación es la del UNIQUE de veredictos, y no otra?
+
+    Se mira el nombre de la constraint: disfrazar de 409 una violación
+    distinta —el CHECK, una FK— escondería un fallo real detrás de un «ya
+    estaba revisada».
+    """
+    diag = getattr(getattr(exc, "orig", None), "diag", None)
+    return getattr(diag, "constraint_name", None) == UNICO_VEREDICTO
 
 
 def _normalizar(rule_id: str) -> str:
@@ -227,9 +257,9 @@ def revisar(
 ) -> RevisionResponse:
     """Registra el veredicto humano SIN borrar el de la máquina.
 
-    Crea una decisión nueva marcada `HUMAN_VALIDATED` y saca la original de la
-    bandeja. Las dos comparten `product_dna_id`, que es lo que permite
-    emparejarlas para medir precisión (§39).
+    Crea una decisión nueva marcada `HUMAN_VALIDATED` que apunta a la original
+    por `reviews_decision_id`, y saca la original de la bandeja. Ese puntero es
+    lo que la métrica usa para emparejarlas (§39).
     """
     # FOR UPDATE: dos veredictos simultáneos sobre el mismo caso tienen que
     # ordenarse, o los dos verían la decisión pendiente y los dos escribirían.
@@ -243,13 +273,10 @@ def revisar(
             "esta fila ya es una revisión humana: no se revisa una revisión",
         )
 
-    if not original.requires_human_review:
-        # Ya se revisó, o nunca estuvo en la bandeja. En los dos casos un
-        # veredicto nuevo contaría dos veces el mismo caso en la métrica.
+    if _ya_revisada(session, original.id):
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            "esta decisión no está en la bandeja: ya tiene veredicto o nunca pidió "
-            "revisión. Un segundo veredicto la contaría dos veces en la métrica.",
+            "esta decisión ya tiene veredicto: un segundo la contaría dos veces en la métrica",
         )
 
     if peticion.veredicto == "CORRIGE" and not peticion.fraction_code:
@@ -263,6 +290,9 @@ def revisar(
     revision = ClassificationDecision(
         product_id=original.product_id,
         product_dna_id=original.product_dna_id,
+        # Qué revisa. Es lo que empareja el veredicto con SU decisión en la
+        # métrica, en vez de con la más reciente del mismo DNA.
+        reviews_decision_id=original.id,
         trade_flow=original.trade_flow,
         operation_date=original.operation_date,
         status="RESOLVED" if codigo else "HUMAN_REVIEW_REQUIRED",
@@ -288,7 +318,17 @@ def revisar(
     # La original se conserva intacta salvo por salir de la bandeja: es la
     # respuesta de la máquina y es la mitad de la métrica.
     original.requires_human_review = False
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        if _es_veredicto_duplicado(exc):
+            # Dos POST llegaron a escribir a la vez y el UNIQUE decidió.
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "esta decisión ya tiene veredicto: un segundo la contaría dos veces en la métrica",
+            ) from exc
+        raise
 
     return RevisionResponse(
         original_id=original.id,
