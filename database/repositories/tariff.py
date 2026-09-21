@@ -19,6 +19,8 @@ paso devolvería la fila incorrecta en silencio.
 
 from __future__ import annotations
 
+import operator
+from functools import reduce
 from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
@@ -63,16 +65,57 @@ def _vigentes(on_date: date) -> sa.ColumnElement[bool]:
     )
 
 
-def _coincide(terms: Sequence[str]) -> sa.ColumnElement[bool]:
-    """Coincidencia por texto sobre la descripción.
+def _casa(termino: str) -> sa.ColumnElement[bool]:
+    """¿La descripción contiene el término, ignorando acentos?
 
-    Búsqueda simple a propósito: la semántica la aporta el RAG cuando exista
-    (§27). Aquí basta con reducir 1 445 fracciones a un puñado de candidatos
-    que el motor pueda evaluar contra las notas legales.
+    `unaccent` a los DOS lados, y no sólo al término, porque el desajuste es
+    real y silencioso: un pedimento se escribe en mayúsculas y sin acentos
+    —«COMPUTADORAS PORTATILES»— y la tarifa sí los lleva —«portátiles»—. Con
+    `ILIKE` a secas eso no casa: comprobado contra la base, «portatiles»
+    devolvía 0 fracciones y «portátiles» 11; «algodon» 0 y «algodón» 74.
+
+    El efecto no era no encontrar nada: era encontrar lo que no toca. Las
+    palabras sin acento seguían casando, y la prosa larga del capítulo 98
+    —operaciones especiales, 411 caracteres de media frente a 60 del resto—
+    se llevaba los candidatos con términos genéricos. Unos cables eléctricos
+    acababan clasificados en 9806.
     """
-    if not terms:
+    return sa.func.unaccent(TariffFraction.description).ilike(sa.func.unaccent(f"%{termino}%"))
+
+
+def _terminos_utiles(terms: Sequence[str]) -> list[str]:
+    return [t for t in terms if t.strip()]
+
+
+def _coincide(terms: Sequence[str]) -> sa.ColumnElement[bool]:
+    """Filtro: la fracción casa con AL MENOS uno de los términos.
+
+    Búsqueda simple a propósito: la semántica la aporta el RAG (§27). Aquí
+    sólo se reduce el universo —8 136 fracciones de los 97 capítulos— a un
+    puñado de candidatos que el motor pueda evaluar contra las notas legales.
+    """
+    utiles = _terminos_utiles(terms)
+    if not utiles:
         return sa.true()
-    return sa.or_(*(TariffFraction.description.ilike(f"%{t}%") for t in terms if t.strip()))
+    return sa.or_(*(_casa(t) for t in utiles))
+
+
+def _coincidencias(terms: Sequence[str]) -> sa.ColumnElement[int]:
+    """Cuántos términos DISTINTOS casa la partida. Es el orden de pertinencia.
+
+    Se cuenta por término y no por fila: `max(...)` dentro de cada término
+    responde «esta partida contiene esta palabra en alguna de sus fracciones»,
+    y sumar esos máximos da cuántas palabras de la consulta cubre. Sumar filas
+    en vez de términos premiaría a la partida con más fracciones, que es otra
+    cosa.
+
+    Ordenar sólo por `specificity` —lo que se hacía antes— deja que una
+    partida que casa una palabra genérica adelante a la que casa todas.
+    """
+    utiles = _terminos_utiles(terms)
+    if not utiles:
+        return sa.literal(0)
+    return reduce(operator.add, (sa.func.max(sa.case((_casa(t), 1), else_=0)) for t in utiles))
 
 
 class TariffCatalogRepository:
@@ -92,11 +135,12 @@ class TariffCatalogRepository:
                 TariffFraction.heading,
                 sa.func.min(TariffFraction.description).label("description"),
                 sa.func.max(TariffFraction.specificity).label("specificity"),
+                _coincidencias(terms).label("coincidencias"),
                 _un_source_id(),
             )
             .where(_vigentes(on_date), _coincide(terms))
             .group_by(TariffFraction.heading)
-            .order_by(sa.desc("specificity"), TariffFraction.heading)
+            .order_by(sa.desc("coincidencias"), sa.desc("specificity"), TariffFraction.heading)
             .limit(MAX_CANDIDATOS)
         ).all()
 
