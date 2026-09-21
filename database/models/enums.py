@@ -56,6 +56,13 @@ ERROR_TYPE: Final = (
     "MISSING_INCREMENTABLE",
     "WRONG_IDENTIFIER",
     "INCONSISTENT_SKU_CLASSIFICATION",
+    # Ampliación de Persona 1 (21-sep-2026), corpus espejo V1: una UMC que no
+    # existe en el Anexo 22, una cantidad que no cuadra con su partida y una
+    # ficha sin la característica que permite clasificar. Migración
+    # 79d42f2e1bf2. El orden importa: los diez del §25 van primero.
+    "WRONG_UNIT",
+    "INCONSISTENT_QUANTITY",
+    "MISSING_TECHNICAL_FIELD",
 )
 
 # Tipo de documento jurídico normalizado.
