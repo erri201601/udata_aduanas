@@ -247,6 +247,15 @@ class PedimentoItem(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Synthe
     country_of_origin: Mapped[str | None] = mapped_column(sa.String(2), nullable=True)
     customs_value: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
     customs_value_currency: Mapped[str | None] = mapped_column(_CCY, nullable=True)
+    # El precio pagado y los incrementables van aparte del valor en aduana
+    # porque un pedimento imprime los tres, y la única forma de comprobar el
+    # tercero es rehacer la suma de los dos primeros (art. 65 de la Ley
+    # Aduanera). Con sólo `customs_value` no hay contra qué contrastarlo: el
+    # espejo acababa copiando el declarado como esperado.
+    price_paid: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    price_paid_currency: Mapped[str | None] = mapped_column(_CCY, nullable=True)
+    incrementables: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    incrementables_currency: Mapped[str | None] = mapped_column(_CCY, nullable=True)
     igi_amount: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
     igi_amount_currency: Mapped[str | None] = mapped_column(_CCY, nullable=True)
     vat_amount: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)

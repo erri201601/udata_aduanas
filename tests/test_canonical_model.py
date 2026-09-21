@@ -793,3 +793,60 @@ def test_la_base_rechaza_un_tipo_de_error_fuera_del_catalogo(
             )
         )
         pg_session.flush()
+
+
+# ── El valor en aduana se puede comprobar porque hay dos sumandos ────────────
+
+
+@pytest.mark.integration
+def test_la_partida_guarda_precio_pagado_e_incrementables(pg_session: Session) -> None:
+    """Migración 9f5c85042bf1, levantada por Persona 3 el 21-sep.
+
+    Con sólo `customs_value` el Pedimento Espejo no tenía contra qué
+    contrastarlo y acababa copiando el declarado como esperado, así que
+    `VALUE_MISMATCH` no podía dispararse nunca. Con los dos sumandos, la
+    comprobación es la resta del artículo 65 de la Ley Aduanera y no necesita
+    ninguna fuente externa.
+
+    Se afirma el tipo además del valor: el dinero es `Decimal` (regla 6), y un
+    `float` aquí reaparecería como un centavo de diferencia en una
+    comprobación que se compara contra cero.
+    """
+    from database.models import Client, Pedimento, PedimentoItem
+
+    cliente = Client(legal_name="Importadora de prueba", data_origin="SYNTHETIC")
+    pg_session.add(cliente)
+    pg_session.flush()
+
+    pedimento = Pedimento(
+        client_id=cliente.id,
+        pedimento_number="26 47 9999 9999999",
+        trade_flow="IMPORT",
+        operation_date=date(2026, 9, 21),
+        data_origin="SYNTHETIC",
+    )
+    pg_session.add(pedimento)
+    pg_session.flush()
+
+    pg_session.add(
+        PedimentoItem(
+            pedimento_id=pedimento.id,
+            line_number=1,
+            description="Tubería de acero al carbono",
+            quantity=Decimal("20"),
+            data_origin="SYNTHETIC",
+            price_paid=Decimal("62265.32"),
+            price_paid_currency="MXN",
+            incrementables=Decimal("3560.24"),
+            incrementables_currency="MXN",
+            customs_value=Decimal("65825.56"),
+            customs_value_currency="MXN",
+        )
+    )
+    pg_session.flush()
+    pg_session.expire_all()
+
+    fila = pg_session.query(PedimentoItem).filter_by(pedimento_id=pedimento.id).one()
+    assert isinstance(fila.price_paid, Decimal)
+    assert isinstance(fila.incrementables, Decimal)
+    assert fila.price_paid + fila.incrementables == fila.customs_value
