@@ -1,6 +1,6 @@
 # ADUANERO OS — Estado del proyecto y backlog
 
-**Actualizado:** 2026-09-14  
+**Actualizado:** 2026-09-21  
 **Mantiene:** Persona 1 (Erick)
 
 Documento de contexto. Sirve para poner al día a cualquiera —persona o agente—
@@ -95,6 +95,7 @@ base — copiarlos fuera sigue siendo manual.
 ```
 apps/api/            FastAPI, 21 endpoints    ✅ 12 routers
 apps/web/            React + TS + Vite        ✅ 10 de 10 del §32
+apps/evaluacion/     harness y validadores    ✅ hs_accuracy · corpus_espejo
 core/evidence/       Evidence Contract        ✅
 core/rgi_engine/     RGI Engine               ✅
 core/llm/            ModelProvider            ✅
@@ -103,12 +104,12 @@ core/product_dna/    motor de extracción      ✅
 core/classification/ orquestador              ✅ persiste las normas citadas
 core/taxation/       Money Finder             ✅
 core/audit/          Audit Engine             ✅
-core/shadow/         Pedimento Espejo         ✅
+core/shadow/         Pedimento Espejo         ✅ contrasta el país de origen
 core/opportunity/    Opportunity Finder       ✅
 core/review/         revisión humana          ✅
 rag/                 RAG jurídico (§27)       ✅ semántico, degrada a término
 database/models/     29 entidades SQLAlchemy  ✅
-database/migrations/ 11 migraciones aplicadas ✅
+database/migrations/ 13 migraciones aplicadas ✅
 database/repositories/  chunks · notes · tariff · classification · review
 database/seeds/      canonical_v0_1.py        ✅
 schemas/             contratos Pydantic       ✅
@@ -116,35 +117,35 @@ ingestion/snice/     LIGIE · NICO · notas     ✅ los 97 capítulos
 ingestion/dof/       Anexo 22                 ✅
 ingestion/diputados/ Ley Aduanera             ✅
 ingestion/{anam,banxico,cbp_cross,datamexico,ebti,sat,vucem,wco}/   ❌ VACÍOS
-synthetic/           generador sintético      ⏸ en pausa · sólo __init__.py
-graph/               Knowledge Graph          ❌ sólo __init__.py · Neo4j con 0 nodos
-tests/               49 archivos, 691 tests   ✅
+synthetic/           generador sintético      ❌ sólo __init__.py
+graph/               Knowledge Graph          ❌ sólo __init__.py · aprobado 21-sep
+tests/               55 archivos, 768 tests   ✅
 .github/workflows/ci.yml                      ✅ 6 jobs
 ```
 
 ### Base de datos — 29 tablas
 
-Alembic en `5443e24b5a3f`. Conteos verificados el 14 de septiembre:
+Alembic en `79d42f2e1bf2`. Conteos verificados el 21 de septiembre:
 
 ```
 regulatory     legal_sources 4 · legal_documents 4 · legal_rules 366 ·
-               legal_chunks 366 (366 vectorizados · 366 enlazados a su norma) ·
+               legal_chunks 366 (vectorizados y enlazados a su norma) ·
                tariff_fractions 8,136 · nicos 11,503 · customs_offices 127 ·
                units_of_measure 22 · pedimento_claves 66 ·
                non_tariff_regulations 37 · regulatory_events 0
-operational    clients · suppliers · products · invoices · invoice_items ·
-               coves · pedimentos · pedimento_items · synthetic_scenarios
-               — 1 fila cada una, del seed
-intelligence   classification_decisions 9 · classification_candidates 142 ·
-               evidence_records 93 · product_dnas 1 · product_attributes 4 ·
-               shadow_reviews 2 · risk_findings 1 · opportunity_findings 0 ·
-               ground_truth_records 1
+operational    pedimentos 1 · pedimento_items 1 · el resto, 1 fila
+               del seed. ESTE ES EL CUELLO DE BOTELLA: el corpus de 15
+               pedimentos y 180 partidas está validado y sin cargar.
+intelligence   classification_decisions 9 · candidates 142 ·
+               evidence_records 93 · shadow_reviews 2 ·
+               risk_findings 1 · ground_truth_records 1 ·
+               veredictos humanos 0
 raw            sin tablas: el crudo vive en MinIO
 ```
 
 Las 366 normas son `OFFICIAL`: 274 artículos de la Ley Aduanera (220 con
 `reform_note`) y 92 notas de Sección y Capítulo de la LIGIE. **La tarifa está
-completa**: 8,136 fracciones de los 97 capítulos, 8,094 con tasa IGI.
+completa**: 8,136 fracciones de los 97 capítulos.
 
 ### RAW en MinIO — cinco documentos con su hash
 
@@ -279,6 +280,18 @@ resolviendo —el código es el que prescribe— pero declara
 `requires_human_review` y la traza lo respeta. Una resolución limpia sigue sin
 pedir revisión.
 
+**Lección del 21 de septiembre.** Clasificando las descripciones de un
+pedimento real, el motor resolvió 4 de 9 y **ninguna** coincidió: unos cables
+eléctricos acabaron en 9806 —operaciones especiales— y «COMPUTADORAS
+PORTATILES» no encontró ni una candidata. La causa, medida contra la base:
+«portatiles» daba 0 fracciones y «portátiles» 11; «algodon» 0 y «algodón» 74.
+Un pedimento se escribe en mayúsculas y sin acentos; la tarifa los lleva. El
+prefiltro era un `ILIKE` sensible a acentos (#82). Ninguno de los 741 tests lo
+veía, porque las fixtures están escritas con acentos y con el vocabulario de
+la tarifa. Quedan dos causas vivas: el 26% de las fracciones sólo dice «Los
+demás» y el texto de la partida de 4 dígitos no está cargado en ninguna
+columna.
+
 ### `core/product_dna/` · `core/classification/` ✅
 
 Product DNA v0.1 con extracción multimodal. El saneamiento **sólo degrada**:
@@ -369,17 +382,18 @@ directa al `.env` del dev server.
 ```
 DATA           4 de 14   LIGIE ✅ (los 97 capítulos) · NICO ✅ ·
                          Ley Aduanera ✅ · Anexo 22 ✅
-                         RGCE ⏳ reconocimiento hecho, carga pendiente
+                         RGCE ⏳ parser escrito, sin PR desde el 14-sep
                          PROSEC ❌ · Regla 8a ❌ · NOM ❌ · Cuotas ❌ ·
                          CBP ❌ · EBTI ❌ · Banxico ❌ · ANAM/SAT/Data México ❌
 CORE           4 de 4    Product DNA ✅ · RGI ✅ · Classification ✅ ·
                          Evidence ✅
-SIMULATOR      0 de 8    ⏸ EN PAUSA por decisión de Persona 1 (14-sep):
-                         se omiten los pedimentos, reales y sintéticos
+SIMULATOR      0 de 8    ⏳ DESBLOQUEADO el 21-sep: hay corpus externo de 15
+                         pedimentos y 180 partidas, validado y sin cargar
 INTELLIGENCE   5 de 6    Shadow ✅ · Audit ✅ · Money ✅ · Opportunity ✅ ·
-                         Sentinel ✅ trazable · Knowledge Graph ❌ (0 nodos)
+                         Sentinel ✅ · Knowledge Graph ⏳ aprobado el 21-sep,
+                         sin empezar (Neo4j lleva encendido con 0 nodos)
 PRODUCT        2.5 de 3  Dashboard ✅ · Copilot ✅ · Demo AJR ⏳ sin fecha;
-                         secciones 3 y 4 del guion por re-verificar
+                         guion re-verificado contra el sistema el 21-sep
 ```
 
 ### El vertical slice del §42 — cerrado y sin medir
@@ -390,102 +404,114 @@ pedimento sintético → Shadow → divergencia → Money Finder
       ✅            ✅        ✅            ✅         ✅
 ```
 
-Está cerrado de punta a punta y **sin medir**. 691 tests en verde prueban el
-motor contra los casos que escribimos nosotros, no contra verdad conocida. Los
-dos fallos graves del 9 de septiembre —la RGI 3 c) y el reordenamiento que
-destruía el orden semántico— pasaban todos sus tests y sólo aparecieron
-ejecutando contra datos reales.
+Está cerrado de punta a punta y **sin medir**. 768 tests en verde prueban el
+motor contra los casos que escribimos nosotros, no contra verdad conocida.
+
+Van **tres** fallos graves que pasaban todos sus tests y sólo aparecieron
+ejecutando contra datos reales: la RGI 3 c) que resolvía sin pedir revisión, el
+reordenamiento que destruía el orden semántico, y el prefiltro sensible a
+acentos que no encontraba ninguna candidata para una descripción escrita como
+se escriben los pedimentos. Los tres son del mismo tipo: verde en el repo,
+equivocado en producción.
 
 ### Lo que de verdad falta
 
 | # | Hueco | Por qué importa |
 |---|---|---|
-| 1 | **Nadie ha medido el acierto** | `fraction_accuracy` es `null`: 0 veredictos, 1 fila de Ground Truth. Con los pedimentos en pausa, la única medición que no depende de nosotros es `hs_accuracy` a 6 dígitos contra fallos de **CBP CROSS**: la descripción la escribió un tercero y la clasificación la decidió una aduana. |
-| 2 | **RGCE 2026** | Reconocimiento hecho (`docs/RECONOCIMIENTO_RGCE_2026.md`): ~550 reglas, parser nuevo, vigencias de excepción en los Transitorios Tercero y Cuarto. Faltan el parser y la carga. |
-| 3 | **Knowledge Graph** | Neo4j encendido desde el principio con 0 nodos. Es lo único que falta de INTELLIGENCE, y sigue sin decisión. |
-| 4 | **Las fuentes vacías** | `anam`, `banxico`, `cbp_cross`, `datamexico`, `ebti`, `sat`, `vucem`, `wco` y el Anexo 2.2.1 (fracción → NOM). Sin este último el Pedimento Espejo declara la NOM como no verificable en cada partida. |
+| 1 | **El corpus sin cargar** | 15 pedimentos, 180 partidas, 60 anomalías sembradas, validado el 21-sep sin un solo defecto en ocho comprobaciones. Mientras no se cargue, la capa operativa sigue con 1 partida y no hay nada que medir. **Es el camino crítico.** |
+| 2 | **Nadie ha medido el acierto** | 0 veredictos humanos, 1 fila de Ground Truth. Ya no es por falta de datos: es por falta de carga. Con el corpus dentro salen precision, recall y F1 sobre 54 eventos medibles y 126 partidas limpias. |
+| 3 | **RGCE 2026** | El parser lleva desde el 14-sep en la máquina de Persona 2 sin PR. El Sentinel ya distingue una resolución anual de una reforma, así que no hay nada bloqueándolo. |
+| 4 | **El texto de partida y subpartida de la LIGIE** | El 26% de las 8 136 fracciones sólo dice «Los demás», y el texto de los niveles de 4 y 6 dígitos no está en ninguna columna. La RGI 1 clasifica por el texto de las partidas y no lo tenemos: es la causa de fondo de que el motor no encuentre candidatas. |
+| 5 | **Knowledge Graph** | Aprobado por Persona 1 el 21-sep. Es lo único que falta de INTELLIGENCE. |
+| 6 | **Las fuentes vacías** | `anam`, `banxico`, `cbp_cross`, `datamexico`, `ebti`, `sat`, `vucem`, `wco` y el Anexo 2.2.1 (fracción → NOM). Sin este último el Pedimento Espejo declara la NOM como no verificable en cada partida. |
 
 ### Deuda técnica conocida
 
-- **Doble veredicto.** `POST /review/{id}` sólo rechaza revisar una fila que ya
-  es `HUMAN_VALIDATED`; sobre una decisión de máquina ya revisada crea un
-  segundo veredicto, y `human_review_rate` puede pasar del 100 %.
-- **Tope de olas del Sentinel.** `TOPE_REFORMAS = 12` sin total. Con RGCE 2026
-  —una resolución anual que entra entera el mismo día— las olas viejas se
-  caerían sin aviso y un reemplazo anual se leería como reforma.
+- **Seis anomalías del corpus son indetectables por construcción.** Las de
+  `CANTIDAD_UMC_INCONSISTENTE`: el precio unitario del PDF se calculó con la
+  cantidad ya alterada, así que no hay inconsistencia aritmética, y los kg por
+  unidad caen dentro de la dispersión de sus propias partidas limpias. Se
+  cargan con `expected_detection = false` y quedan fuera del recall. El techo
+  honesto es 54 de 60.
+- **`invoice_items.country_of_origin` es una trampa.** El corpus no trae
+  facturas; llenarla con el país esperado metería la respuesta en las tablas
+  operativas. Se deja en NULL: la expectativa sale de `supplier.country`, que
+  sí está impreso en el documento.
+- **La RGI 3 c) sigue desempatando por orden de numeración** entre candidatas
+  con la misma `specificity`, lo que favorece los capítulos altos. Sale
+  marcado para revisión humana desde el #69, pero el código que enseña sigue
+  siendo el equivocado.
 - **Una fila del seed con `document_refs` vacío** en la compartida. El código
   está arreglado (#67); la fila vieja sigue porque la escritura directa a la
   base quedó bloqueada por permisos.
 - `GroundTruthRecord` está diseñado para anomalías inyectadas (§26) y **no
   sirve** para medir acierto de clasificación; esa vía son las filas
   `HUMAN_VALIDATED` que comparten `product_dna_id`.
-- **Respaldos:** 68 MB en el mismo disco que la base.
-- **Rama suelta** `feat/legal-chunks-legal-rule-id`: su commit ya está en
-  `develop`; se puede borrar.
+- **Respaldos:** 93 MB en el mismo disco que la base.
+- **La llave de OpenAI** viajó por un chat el 9-sep y sigue sin rotarse.
+
+**Cerrado desde el 14-sep:** el doble veredicto (#79), el tope de olas del
+Sentinel (#78), el emparejamiento de la métrica por DNA y tiempo (#81) y la
+rama suelta de `legal-chunks-legal-rule-id`.
 
 ---
 
 ## 8. Backlog por persona
 
-> Al 14 de septiembre. **Sin actividad del 9 al 14**: cero commits de código y
-> la última escritura en la base es del 9-sep a las 17:07. Decisión de Persona
-> 1 del 14-sep: **se omiten los pedimentos por ahora**, reales y sintéticos.
+> Al 21 de septiembre. Cinco PRs mergeados hoy (#82 a #86), 0 abiertos,
+> `develop` en `3798c1d`. Decisión de Persona 1 del 21-sep: **el Knowledge
+> Graph se hace.**
 
 ### Persona 2 — Brandon (Data Engineer)
 
 | # | Tarea | Estado |
 |---|---|---|
-| 1 | **RGCE 2026** — parser con tests, luego carga | 🟢 recomendado: corte en 3 piezas, sólo el cuerpo de reglas, y las 13 reglas del Transitorio Cuarto fuera hasta tener fuente de su vigencia |
-| 2 | Anexo 6 de las RGCE, PR aparte | después del cuerpo. Un criterio de clasificación, derogado |
-| 3 | **Reconocimiento de CBP CROSS** | 🟢 términos de uso, formato y rulings bajo el SA 2022. Sin cargar nada |
-| 4 | Generador sintético (§24) | ⏸ en pausa |
-| 5 | Banxico · Anexo 2.2.1 · resto de fuentes | después |
-
-**Ya hecho, no se rehace:** tarifa completa, `legal_chunks.legal_rule_id` por
-la terna (#70), backfill con commit por lote (#64), `reform_note` (#58).
+| 1 | **El cargador del corpus** | 🔴 camino crítico. RAW a MinIO con hash, 180 partidas a operacional con sólo lo OBSERVADO, 60 eventos a `ground_truth_records`. Nada lo bloquea: la migración del enum está aplicada |
+| 2 | **La cadena del proveedor** | 🔴 parte del mismo cargador. Sin `suppliers`, `invoices` e `invoice_item_id` ligado, la comprobación de país no corre sobre ninguno de los 15 pedimentos |
+| 3 | **Abrir el PR del parser de RGCE** | 🔴 lleva desde el 14-sep sin PR |
+| 4 | Texto de partida y subpartida de la LIGIE | después de la carga |
+| 5 | Reconocimiento de CBP CROSS · Anexo 2.2.1 | después |
 
 ### Persona 3 — Ulises (AI + Full Stack)
 
 | # | Tarea | Estado |
 |---|---|---|
-| 1 | **Sentinel antes de RGCE**: `total_olas`, agrupar por documento, no leer un reemplazo anual como reforma | 🔴 tiene que entrar antes de la carga de Brandon |
-| 2 | **Doble veredicto** en `POST /review/{id}` | 🟢 si necesita columna nueva, la aprueba Persona 1 |
-| 3 | **Harness de `hs_accuracy`** contra CBP CROSS | ⏸ espera el formato de Brandon. No persiste y no filtra la respuesta al motor |
-| 4 | Knowledge Graph | ⏸ espera decisión |
+| 1 | **Métrica de detección (§26)** | ⏸ espera la carga. TP, FP, FN, TN, precision, recall y F1, con los tres límites declarados |
+| 2 | **Knowledge Graph** | 🟢 aprobado el 21-sep, puede arrancar ya |
+| 3 | Harness de `hs_accuracy` contra CBP CROSS | ⏸ baja prioridad: el corpus mide sin depender de nadie |
 
-**Ya hecho:** embeddings con degradación (#68), citas persistidas y Sentinel
-trazable (#73), bandeja con causas (#74), camino de entrada de AJR (#75, que
-queda como está).
+**Ya hecho:** Sentinel con `total_olas` (#78), doble veredicto (#79), harness
+de sólo lectura (#80), `reviews_decision_id` (#81), país de origen (#85).
 
 ### Persona 1 — Erick (Tech Lead)
 
 | # | Tarea | Estado |
 |---|---|---|
-| 1 | Confirmar a Brandon el alcance de RGCE | recomendación escrita en su prompt |
-| 2 | `data_origin` de CBP CROSS | recomendado `PUBLIC` |
-| 3 | Rotar la llave de OpenAI | pendiente |
-| 4 | Destino de los respaldos | `carlos` o `yayo` |
-| 5 | Knowledge Graph: sí o no | pendiente |
-| 6 | Análisis de ANA frente a ADUANERO OS | define el discurso de la demo |
-| 7 | Fecha de la demo | sin fecha |
+| 1 | **Verificar la carga de Brandon** antes de dar luz verde a Ulises | cuando llegue |
+| 2 | Rotar la llave de OpenAI | 🔴 pendiente desde el 9-sep |
+| 3 | Sacar los respaldos del disco de la base | pendiente |
+| 4 | Fecha de la demo | sin fecha |
+| 5 | Análisis de ANA frente a ADUANERO OS | define el discurso de la demo |
 
-**Cerrado desde el día 9:** RGI 3 c) decidida y arreglada (#69), llave de
-OpenAI puesta, `dce813047e49` y `5443e24b5a3f` aplicadas, AJR y ANA
-documentados (`docs/AJR_Y_ANA.md`).
+**Cerrado hoy:** enum ampliado y aplicado (#83), validador de corpus (#84),
+guion de la demo re-verificado (#86), Knowledge Graph decidido.
 
 ---
 
 ## 9. La siguiente tarea
 
-**El ajuste del Sentinel, antes que nada** — Persona 3. No por ser lo más
-grande, sino porque es lo único con orden forzoso: si la carga de RGCE 2026
-entra primero, el Sentinel empieza a presentar ~535 normas de una resolución
-anual como una ola de reforma.
+**Cargar el corpus.** Todo lo demás está listo a su alrededor: el enum acepta
+los diez tipos, el validador confirma que el corpus no tiene defectos, la
+comprobación de país existe y la métrica está diseñada. Falta meter 180
+partidas a la base.
 
-Después, **medir sin depender de nadie**: el reconocimiento de CBP CROSS
-(Persona 2) y el harness de `hs_accuracy` encima (Persona 3). Es la única cifra
-de acierto disponible con los pedimentos en pausa, y tiene que presentarse con
-su límite: mide los 6 dígitos del Sistema Armonizado, no la fracción mexicana.
+El día que esté cargado, el proyecto podrá decir por primera vez una frase que
+hoy no puede: *«el Pedimento Espejo detecta el X% de las anomalías con un Y%
+de falsos positivos, medido sobre 180 partidas»*. Sin AJR, sin CBP CROSS y sin
+gastar un peso en modelo.
+
+La segunda, en paralelo y sin dependencias: el Knowledge Graph, que ya está
+aprobado y es lo único que le falta a INTELLIGENCE.
 
 ## 10. Documentos del repositorio
 
