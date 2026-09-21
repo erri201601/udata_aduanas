@@ -6,6 +6,8 @@ cuando no debe: entre divisas distintas, sin tasas, y sin espejo.
 
 from __future__ import annotations
 
+import uuid
+from datetime import date
 from decimal import Decimal
 
 from core.review import LineInput, review_pedimento
@@ -148,3 +150,91 @@ def test_una_simulacion_en_una_partida_contamina_el_informe() -> None:
 
     assert review_pedimento([real, sintetica]).is_simulation
     assert not review_pedimento([real]).is_simulation
+
+
+# ── De dónde sale el país esperado (Persona 1, 21-sep) ──────────────────────
+
+
+class _SesionConProveedor:
+    """Sólo responde la consulta del país del proveedor."""
+
+    def __init__(self, pais: str | None) -> None:
+        self.pais = pais
+        self.consultas: list[str] = []
+
+    def scalar(self, sentencia: object) -> object:
+        self.consultas.append(str(sentencia))
+        return self.pais
+
+
+def _partida(**kw: object) -> object:
+    from database.models import PedimentoItem
+
+    campos: dict[str, object] = {
+        "line_number": 1,
+        "description": "Tubo de acero",
+        "declared_fraction_code": "73051291",
+        "quantity": Decimal("10"),
+        "country_of_origin": "BR",
+        "data_origin": "SYNTHETIC",
+        "invoice_item_id": uuid.uuid4(),
+        "product_id": None,
+    }
+    campos.update(kw)
+    return PedimentoItem(**campos)  # type: ignore[arg-type]
+
+
+def test_el_pais_se_busca_por_la_cadena_de_la_factura() -> None:
+    """`Pedimento` no guarda proveedor: se llega por la factura."""
+    from apps.api.routers.pedimentos import _pais_del_proveedor
+
+    sesion = _SesionConProveedor("CN")
+    pais = _pais_del_proveedor(sesion, _partida())  # type: ignore[arg-type]
+
+    assert pais == "CN"
+    sql = sesion.consultas[0]
+    assert "suppliers" in sql and "invoices" in sql and "invoice_items" in sql
+
+
+def test_sin_factura_ligada_no_se_consulta_ni_se_supone() -> None:
+    from apps.api.routers.pedimentos import _pais_del_proveedor
+
+    sesion = _SesionConProveedor("CN")
+    pais = _pais_del_proveedor(sesion, _partida(invoice_item_id=None))  # type: ignore[arg-type]
+
+    assert pais is None
+    assert sesion.consultas == [], "ni siquiera se preguntó"
+
+
+def test_una_partida_sin_producto_igual_se_le_comprueba_el_pais() -> None:
+    """Sin producto no se puede clasificar, pero el origen SÍ se contrasta."""
+    from apps.api.routers.pedimentos import _construir_espejo
+    from core.shadow.types import ORIGEN_DEL_PROVEEDOR
+
+    esperado = _construir_espejo(
+        _SesionConProveedor("CN"),  # type: ignore[arg-type]
+        _partida(product_id=None),  # type: ignore[arg-type]
+        date(2026, 3, 15),
+        None,  # type: ignore[arg-type]
+        None,  # type: ignore[arg-type]
+    )
+
+    assert esperado is not None
+    assert esperado.country_of_origin == "CN"
+    assert esperado.origin_source == ORIGEN_DEL_PROVEEDOR
+    assert esperado.is_resolved is False, "no se clasificó nada"
+
+
+def test_sin_producto_y_sin_proveedor_no_hay_espejo() -> None:
+    from apps.api.routers.pedimentos import _construir_espejo
+
+    assert (
+        _construir_espejo(
+            _SesionConProveedor(None),  # type: ignore[arg-type]
+            _partida(product_id=None, invoice_item_id=None),  # type: ignore[arg-type]
+            date(2026, 3, 15),
+            None,  # type: ignore[arg-type]
+            None,  # type: ignore[arg-type]
+        )
+        is None
+    )

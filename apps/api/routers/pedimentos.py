@@ -7,6 +7,18 @@ producto. La única fila de `risk_findings` la había escrito el seed, y
 `opportunity_findings` estaba vacía. Se podía enseñar que el sistema clasifica;
 no que encuentra dinero (Persona 1, 2026-09-08).
 
+EL PAÍS DE ORIGEN SE CONTRASTA CONTRA EL PROVEEDOR
+
+No hace falta fuente externa: el documento ya dice de dónde es el proveedor, y
+una partida cuyo país difiere del suyo merece una mirada. NO es un error —un
+pedimento con orígenes mixtos es legítimo— y por eso viaja con
+`origin_source = SUPPLIER`, que hace que el Espejo lo emita como revisión
+humana con el motivo escrito, no como acusación (Persona 1, 21-sep).
+
+Si la partida no está ligada a una factura no hay proveedor que consultar, y
+entonces no se compara: la partida declara que el origen no se pudo contrastar
+en vez de darse por limpia.
+
 DE DÓNDE SALEN LAS TASAS
 
 El IGI sale del catálogo, por fracción y por fecha de operación: es lo propio
@@ -34,8 +46,9 @@ import sqlalchemy as sa
 from core.classification import classify_product
 from core.review import LineInput, PedimentoReview, review_pedimento
 from core.shadow import DeclaredItem, ExpectedItem
+from core.shadow.types import ORIGEN_DEL_PROVEEDOR
 from core.taxation import Money, TaxRates
-from database.models import Pedimento, PedimentoItem
+from database.models import Invoice, InvoiceItem, Pedimento, PedimentoItem, Supplier
 from database.repositories import save_review
 from database.repositories.notes import LegalNotesRepository
 from database.repositories.tariff import TariffCatalogRepository
@@ -188,6 +201,24 @@ def _declarada(partida: PedimentoItem) -> DeclaredItem:
     )
 
 
+def _pais_del_proveedor(session: SessionDep, partida: PedimentoItem) -> str | None:
+    """País del proveedor de la factura de esta partida. `None` si no consta.
+
+    `Pedimento` no guarda proveedor: se llega por la factura
+    (`partida → invoice_item → invoice → supplier`). Sin ese enlace no hay
+    contra qué contrastar, y se devuelve `None` en vez de suponer.
+    """
+    if partida.invoice_item_id is None:
+        return None
+    return session.scalar(
+        sa.select(Supplier.country)
+        .select_from(InvoiceItem)
+        .join(Invoice, Invoice.id == InvoiceItem.invoice_id)
+        .join(Supplier, Supplier.id == Invoice.supplier_id)
+        .where(InvoiceItem.id == partida.invoice_item_id)
+    )
+
+
 def _construir_espejo(
     session: SessionDep,
     partida: PedimentoItem,
@@ -201,12 +232,25 @@ def _construir_espejo(
     DNA no hay expectativa, y la partida se reporta como no verificable. Un
     `ExpectedItem` vacío la haría pasar por limpia.
     """
-    if partida.product_id is None:
-        return None
+    pais_proveedor = _pais_del_proveedor(session, partida)
 
-    borrador = cargar_borrador(session, partida.product_id)
-    if borrador is None:
-        return None
+    if (
+        partida.product_id is None
+        or (borrador := cargar_borrador(session, partida.product_id)) is None
+    ):
+        # Sin producto ligado no se puede clasificar, pero el país SÍ se puede
+        # contrastar. Se devuelve una expectativa que sólo habla de origen en
+        # vez de dejar la partida sin mirar.
+        if pais_proveedor is None:
+            return None
+        return ExpectedItem(
+            line_number=partida.line_number,
+            is_resolved=False,
+            country_of_origin=pais_proveedor,
+            origin_source=ORIGEN_DEL_PROVEEDOR,
+            required_nom_codes=None,
+            required_identifiers=None,
+        )
 
     outcome = classify_product(
         borrador,
@@ -225,7 +269,8 @@ def _construir_espejo(
         # usarse para acusar a nadie.
         is_resolved=outcome.code is not None,
         confidence=outcome.trace.confidence,
-        country_of_origin=None,
+        country_of_origin=pais_proveedor,
+        origin_source=ORIGEN_DEL_PROVEEDOR if pais_proveedor else None,
         customs_value=partida.customs_value,
         customs_value_currency=partida.customs_value_currency,
         # `None`, no `()`: no existe la correlación fracción → NOM ni el

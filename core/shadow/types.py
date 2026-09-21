@@ -12,7 +12,7 @@ Por eso `ExpectedItem` se construye desde el Product DNA y la clasificación, y
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Any
+from typing import Any, Final
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -40,6 +40,11 @@ class DeclaredItem(BaseModel):
     sku: str | None = None
 
 
+#: `ExpectedItem.origin_source` cuando el país esperado se dedujo del proveedor
+#: del documento y no de una fuente firme como el certificado de origen.
+ORIGEN_DEL_PROVEEDOR: Final = "SUPPLIER"
+
+
 class ExpectedItem(BaseModel):
     """Lo que el sistema esperaría ver, construido sin mirar lo declarado."""
 
@@ -49,6 +54,17 @@ class ExpectedItem(BaseModel):
     fraction_code: str | None = None
     nico_code: str | None = None
     country_of_origin: str | None = None
+    origin_source: str | None = None
+    """De dónde sale el país esperado. `None` = de una fuente firme.
+
+    `ORIGEN_DEL_PROVEEDOR` significa que se dedujo del proveedor del documento,
+    y eso cambia cómo se presenta la divergencia: un pedimento con orígenes
+    mixtos es LEGÍTIMO en la vida real —una fábrica en China puede enviar
+    piezas fabricadas en Brasil—, así que declarar un origen distinto al del
+    proveedor no es un error, es algo que una persona tiene que confirmar
+    contra el certificado de origen. Tratarlo como error duro llenaría de
+    falsos positivos en cuanto lleguen pedimentos reales (Persona 1, 21-sep).
+    """
     customs_value: Decimal | None = None
     customs_value_currency: str | None = None
     required_nom_codes: tuple[str, ...] | None = None
