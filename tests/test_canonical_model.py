@@ -752,3 +752,44 @@ def test_pedimento_clave_label_y_supuestos_null_por_omision(pg_session: Session)
     fila = pg_session.query(PedimentoClave).filter_by(code="ZZ").one()
     assert fila.label is None
     assert fila.supuestos_de_aplicacion is None
+
+
+# ── §25 ampliado: los tres tipos del corpus espejo ───────────────────────────
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("tipo", ["WRONG_UNIT", "INCONSISTENT_QUANTITY", "MISSING_TECHNICAL_FIELD"])
+def test_la_base_acepta_los_tipos_de_error_del_corpus_espejo(
+    pg_session: Session,
+    tipo: str,
+) -> None:
+    """Ampliación aprobada por Persona 1 el 21-sep (migración 79d42f2e1bf2).
+
+    Va contra PostgreSQL y no contra el enum de Python a propósito: el CHECK
+    vive en la base. Una lista ampliada en el código con la migración sin
+    aplicar da exactamente el mismo verde en los tests y un INSERT que
+    revienta el día de la carga.
+    """
+    pg_session.execute(
+        sa.text(
+            "insert into intelligence.ground_truth_records (error_type, data_origin) "
+            "values (:tipo, 'SYNTHETIC')"
+        ),
+        {"tipo": tipo},
+    )
+    pg_session.flush()
+
+
+@pytest.mark.integration
+def test_la_base_rechaza_un_tipo_de_error_fuera_del_catalogo(
+    pg_session: Session,
+) -> None:
+    """Ampliar la lista no es abrirla: el vocabulario sigue siendo cerrado."""
+    with pytest.raises(sa.exc.IntegrityError, match="ck_ground_truth_records_error_type"):
+        pg_session.execute(
+            sa.text(
+                "insert into intelligence.ground_truth_records (error_type, data_origin) "
+                "values ('CANTIDAD_UMC_INCONSISTENTE', 'SYNTHETIC')"
+            )
+        )
+        pg_session.flush()

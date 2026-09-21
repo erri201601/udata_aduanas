@@ -83,6 +83,15 @@ class ErrorType(StrEnum):
     WRONG_IDENTIFIER = "WRONG_IDENTIFIER"
     INCONSISTENT_SKU_CLASSIFICATION = "INCONSISTENT_SKU_CLASSIFICATION"
 
+    # Ampliación aprobada por Persona 1 el 21-sep-2026, al validar el corpus
+    # espejo V1. El §25 dice «implementar inicialmente», no «sólo estos».
+    # Los tres son cosas que los diez originales no sabían nombrar: una clave
+    # de unidad inexistente, una cantidad incoherente y una ficha técnica sin
+    # la característica que permite clasificar.
+    WRONG_UNIT = "WRONG_UNIT"
+    INCONSISTENT_QUANTITY = "INCONSISTENT_QUANTITY"
+    MISSING_TECHNICAL_FIELD = "MISSING_TECHNICAL_FIELD"
+
 
 class LegalDocumentKind(StrEnum):
     """Tipo de documento jurídico normalizado."""
