@@ -19,7 +19,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from core.shadow.divergences import DivergenceType
-from core.shadow.types import Divergence, ShadowComparison, default_severity
+from core.shadow.types import ORIGEN_DEL_PROVEEDOR, Divergence, ShadowComparison, default_severity
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -100,17 +100,35 @@ def compare_item(declared: DeclaredItem, expected: ExpectedItem) -> list[Diverge
 
     # ── Origen ───────────────────────────────────────────────────────────────
     if expected.country_of_origin and declared.country_of_origin != expected.country_of_origin:
-        emitir(
-            DivergenceType.ORIGIN_MISMATCH,
-            "country_of_origin",
-            declared.country_of_origin,
-            expected.country_of_origin,
-            (
-                f"El producto es de origen {expected.country_of_origin} y se declaró "
-                f"{declared.country_of_origin or 'ninguno'}. Puede cambiar la "
-                f"preferencia arancelaria aplicable."
-            ),
-        )
+        if expected.origin_source == ORIGEN_DEL_PROVEEDOR:
+            # NO es una acusación: un pedimento con orígenes mixtos es legítimo.
+            # Se emite para que una persona lo confirme, con el motivo escrito.
+            emitir(
+                DivergenceType.ORIGIN_MISMATCH,
+                "country_of_origin",
+                declared.country_of_origin,
+                expected.country_of_origin,
+                (
+                    f"La partida declara origen {declared.country_of_origin or 'ninguno'} "
+                    f"y el proveedor del documento es de {expected.country_of_origin}. "
+                    "Un pedimento con orígenes mixtos es legítimo, así que esto NO "
+                    "afirma que lo declarado esté mal: pide que una persona lo "
+                    "confirme contra el certificado de origen."
+                ),
+                "MEDIUM",
+            )
+        else:
+            emitir(
+                DivergenceType.ORIGIN_MISMATCH,
+                "country_of_origin",
+                declared.country_of_origin,
+                expected.country_of_origin,
+                (
+                    f"El producto es de origen {expected.country_of_origin} y se declaró "
+                    f"{declared.country_of_origin or 'ninguno'}. Puede cambiar la "
+                    f"preferencia arancelaria aplicable."
+                ),
+            )
 
     # ── NOM ──────────────────────────────────────────────────────────────────
     # `None` es «no sé qué NOM exige esta fracción», no «no exige ninguna».
@@ -180,6 +198,11 @@ def _lagunas(expected: ExpectedItem) -> list[str]:
     distinguirlas (§36).
     """
     razones: list[str] = []
+    if expected.country_of_origin is None:
+        razones.append(
+            "no consta el país del proveedor: la partida no está ligada a una factura, "
+            "así que el origen declarado no se pudo contrastar con nada"
+        )
     if expected.required_nom_codes is None:
         razones.append(
             "no se conoce qué NOM exige la fracción "

@@ -285,3 +285,57 @@ def test_una_laguna_no_impide_detectar_lo_que_si_es_comprobable() -> None:
 
     assert [x for x in r.divergences if x.kind is DivergenceType.FRACTION_MISMATCH]
     assert not r.is_complete
+
+
+# ── El país contra el proveedor (Persona 1, 21-sep) ─────────────────────────
+
+
+def test_el_origen_del_proveedor_pide_revision_no_acusa() -> None:
+    """EL TEST QUE IMPORTA.
+
+    Un pedimento con orígenes mixtos es legítimo. Si esto saliera como error
+    duro, en cuanto lleguen pedimentos reales nos llenamos de falsos
+    positivos.
+    """
+    from core.shadow.types import ORIGEN_DEL_PROVEEDOR
+
+    r = compare(
+        [declarado(country_of_origin="BR")],
+        [esperado(country_of_origin="CN", origin_source=ORIGEN_DEL_PROVEEDOR)],
+    )
+
+    d = next(x for x in r.divergences if x.kind is DivergenceType.ORIGIN_MISMATCH)
+    assert d.severity == "MEDIUM", "no es una acusación"
+    assert d.requires_human_review is True
+    assert "orígenes mixtos es legítimo" in d.reasoning
+    assert "certificado de origen" in d.reasoning
+    assert d.declared_value == "BR"
+    assert d.expected_value == "CN"
+
+
+def test_una_fuente_firme_sigue_siendo_hallazgo_duro() -> None:
+    """Lo que cambia es de dónde sale la expectativa, no el tipo de divergencia."""
+    r = compare([declarado(country_of_origin="BR")], [esperado(country_of_origin="CN")])
+
+    d = next(x for x in r.divergences if x.kind is DivergenceType.ORIGIN_MISMATCH)
+    assert d.severity == "HIGH"
+    assert "preferencia arancelaria" in d.reasoning
+
+
+def test_el_mismo_pais_que_el_proveedor_no_produce_nada() -> None:
+    from core.shadow.types import ORIGEN_DEL_PROVEEDOR
+
+    r = compare(
+        [declarado(country_of_origin="CN")],
+        [esperado(country_of_origin="CN", origin_source=ORIGEN_DEL_PROVEEDOR)],
+    )
+
+    assert not [x for x in r.divergences if x.kind is DivergenceType.ORIGIN_MISMATCH]
+
+
+def test_sin_pais_del_proveedor_la_partida_lo_declara() -> None:
+    """No se da por limpia: se dice que no se pudo contrastar."""
+    r = compare([declarado(country_of_origin="BR")], [esperado(country_of_origin=None)])
+
+    assert not [x for x in r.divergences if x.kind is DivergenceType.ORIGIN_MISMATCH]
+    assert any("país del proveedor" in motivo for motivo in r.unverifiable)
