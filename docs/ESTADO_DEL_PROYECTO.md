@@ -525,9 +525,10 @@ aprobado y es lo único que le falta a INTELLIGENCE.
 | `docs/TAREA_P3_MODEL_PROVIDER.md` | especificación de ModelProvider y frontend |
 | `docs/PROMPT_P2.md` · `docs/PROMPT_P3.md` | prompts de arranque para los agentes |
 | `docs/ER_DIAGRAM.md` | diagrama Mermaid del modelo |
-| `docs/DEMO_AJR.md` | guion de la demo; secciones 3 y 4 por re-verificar |
+| `docs/DEMO_AJR.md` | guion de la demo, verificado contra el sistema el 21-sep |
 | `docs/AJR_Y_ANA.md` | quién es AJR y qué es ANA |
 | `docs/PETICION_AJR.md` | ⏸ en pausa — petición de diez pedimentos a AJR |
+| `apps/evaluacion/corpus_espejo.py` | valida un corpus antes de cargarlo |
 | `docs/RECONOCIMIENTO_RGCE_2026.md` | reconocimiento de RGCE 2026, antes de cargar |
 | `docs/TAREA_P2_CORPUS_JURIDICO.md` | encargo del corpus a Persona 2 |
 | `docs/TAREA_P3_RAG_INTEGRACION.md` | encargo del RAG a Persona 3 |
