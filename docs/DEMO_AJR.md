@@ -3,12 +3,11 @@
 > Estado verificado el 8 de septiembre de 2026. Todo lo que aparece aquí lo
 > corrí antes de escribirlo. Nada es aspiracional.
 >
-> **Actualización 14-sep-2026.** Se corrigieron las cifras de la sección 2 y se
-> pausó la petición de la sección 7. **Las secciones 3 y 4 no se han vuelto a
-> correr** desde dos cambios que pueden alterar lo que se ve en vivo: la tarifa
-> completa (97 capítulos) y el arreglo de la RGI 3 c) del PR #69, que marca
-> para revisión humana lo desempatado por numeración. Vuelve a correrlas antes
-> de entrar. Quién es AJR y qué es ANA: `docs/AJR_Y_ANA.md`.
+> **Actualización 21-sep-2026.** Las secciones 3 y 4 se volvieron a correr
+> contra el sistema en vivo, con la tarifa completa, el arreglo de la RGI 3 c)
+> (#69) y el de acentos en la búsqueda de candidatas (#82). La traza de abajo
+> es la que sale hoy, copiada de la ejecución. La sección 7 sigue en pausa.
+> Quién es AJR y qué es ANA: `docs/AJR_Y_ANA.md`.
 
 ## La decisión de fondo
 
@@ -70,20 +69,32 @@ Toma la ficha de un producto y clasifícalo delante de ellos.
 Lo que sale no es un código: es una **traza, regla por regla**:
 
 ```
-RGI 1    8 partidas comprenden la mercancía (8471, 8528, 8413, 8424…)
-RGI 2    No se presenta incompleta, sin terminar ni desmontada
-RGI 3a   8471 y 8528 son igual de específicas; la RGI 3 a) no las distingue
-RGI 3b   El carácter esencial exige un juicio material sobre la mercancía
-RGI 3c   Ninguna regla anterior distinguió entre las candidatas
-RGI 6    Varias subpartidas comprenden la mercancía
+RGI 1    10 partidas comprenden la mercancía (8471, 8528, 7321, 8413, 8424,
+         8504, 8515, 8519, 8527, 7318). La RGI 1 no la resuelve.
+RGI 2    No se presenta incompleta, sin terminar ni desmontada, y no consta
+         que sea una mezcla o asociación de materias.
+RGI 3a   Las partidas 8471 y 8528 son igual de específicas; la RGI 3 a) no
+         las distingue.
+RGI 3b   Determinar el carácter esencial exige un juicio material sobre la
+         mercancía y no hay intérprete disponible.
+RGI 3c   Ninguna regla anterior distinguió. Se aplica la última por orden de
+         numeración: 8528. Confianza 0.45, marcada para revisión humana.
+RGI 6    Nueve subpartidas de 8528 comprenden la mercancía y ninguna es más
+         específica. Falta: «desempate de subpartida por un clasificador».
 ```
 
-Detente en RGI 2. **La regla no está implementada y aun así se evalúa**: el
-sistema comprueba si sus condiciones se cumplen y lo dice. No se la salta en
-silencio.
+Detente en dos sitios.
 
-> «Fíjense en que les está diciendo qué descartó y por qué. Eso es lo que un
-> revisor del SAT les va a preguntar.»
+**La RGI 2.** La regla no está implementada y aun así se evalúa: el sistema
+comprueba si sus condiciones se cumplen y lo dice. No se la salta en silencio.
+
+**Las candidatas de la RGI 1.** Ahí aparecen 7321 —esparcidores de flama—,
+8413 —extintores portátiles—, 8515 —cautines— y hasta 7318, tornillos de menos
+de ¼ de pulgada. Enséñalo en vez de esconderlo:
+
+> «Ninguna de esas está ahí por error: todas dicen "portátil" o "pulgada" en
+> su texto legal. El sistema está leyendo la nomenclatura, no adivinando con
+> un modelo. Y fíjense en cuáles puso primero: las dos que importan.»
 
 ---
 
@@ -91,8 +102,25 @@ silencio.
 
 Aquí está la demo. No lo pases rápido; es el punto entero.
 
-El sistema llega a `HUMAN_REVIEW_REQUIRED` y explica exactamente por qué: **no
-puede separar 8471 de 8528 sin interpretar las notas del capítulo.**
+El sistema termina en `HUMAN_REVIEW_REQUIRED` **sin dar fracción**. Y el porqué
+es mejor de lo que parece, porque se frena en dos tiempos:
+
+1. **La RGI 3 c) sí desempata.** Elige 8528 —«la última por orden de
+   numeración»— porque eso es lo que prescribe la regla. Pero no se lo queda:
+   confianza 0.45 y marcada para revisión humana. Resolvió por la letra, no
+   porque alguien entendiera la mercancía.
+2. **La RGI 6 ya no puede.** Nueve subpartidas de 8528 comprenden la
+   mercancía y ninguna es más específica. Ahí se detiene, y dice qué le
+   falta: un desempate de subpartida por un clasificador.
+
+> «No les dio 8528 con un 94% y a correr. Desempató por la letra de la regla,
+> lo dijo, y se paró en el punto exacto donde ya no podía seguir sin
+> inventar.»
+
+Y aquí está el detalle que vale la demo entera: **hasta hace dos semanas esto
+devolvía 8528 como si fuera una respuesta.** La regla se aplicaba bien y el
+resultado salía limpio, sin avisar de que el desempate había sido por
+numeración.
 
 Y ahora enséñales la nota real, la del Capítulo 84:
 
@@ -141,11 +169,20 @@ que ya está ahí, que es el sesgo de cualquier revisor humano.
 El resultado de hoy:
 
 ```
-Sin hallazgos en lo revisable, pero 3 puntos quedaron sin comprobar.
+Sin hallazgos en lo revisable, pero 4 puntos quedaron sin comprobar.
 ```
 
-Y los tres, nombrados: la clasificación no llegó a ser defendible; no se conoce
-qué NOM exige la fracción; no se conocen los identificadores del Anexo 22.
+Y los cuatro, nombrados uno por uno —léelos tal cual, que están escritos para
+que los entienda quien firma—:
+
+- la clasificación no llegó a ser defendible, así que no se puede afirmar que
+  lo declarado sea incorrecto;
+- no consta el país del proveedor: la partida no está ligada a una factura,
+  así que el origen declarado no se pudo contrastar con nada;
+- no se conoce qué NOM exige la fracción esperada: falta el Anexo 2.2.1 del
+  Acuerdo de la SE;
+- no se conocen los identificadores que exige la operación: falta el Apéndice
+  8 del Anexo 22.
 
 > «Un pedimento que nadie verificó no está limpio: está sin verificar. Si el
 > sistema los mezclara, alguien presentaría ante la autoridad un pedimento sin
