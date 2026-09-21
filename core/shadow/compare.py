@@ -98,6 +98,26 @@ def compare_item(declared: DeclaredItem, expected: ExpectedItem) -> list[Diverge
             f"El NICO esperado para {expected.fraction_code} es {expected.nico_code}.",
         )
 
+    # Lo único que el catálogo puede afirmar solo: que el NICO declarado NO
+    # existe en su fracción. No hace falta saber cuál es el correcto para saber
+    # que éste no lo es.
+    elif (
+        expected.valid_nico_codes
+        and declared.nico_code
+        and declared.nico_code not in expected.valid_nico_codes
+    ):
+        vigentes = ", ".join(expected.valid_nico_codes) or "ninguno"
+        emitir(
+            DivergenceType.NICO_MISMATCH,
+            "nico_code",
+            declared.nico_code,
+            None,
+            (
+                f"El NICO {declared.nico_code} no existe en la fracción "
+                f"{declared.fraction_code}. Los vigentes son: {vigentes}."
+            ),
+        )
+
     # ── Origen ───────────────────────────────────────────────────────────────
     if expected.country_of_origin and declared.country_of_origin != expected.country_of_origin:
         if expected.origin_source == ORIGEN_DEL_PROVEEDOR:
@@ -189,7 +209,22 @@ def compare_item(declared: DeclaredItem, expected: ExpectedItem) -> list[Diverge
     return hallazgos
 
 
-def _lagunas(expected: ExpectedItem) -> list[str]:
+def _depende_de_clasificar(divergencia: Divergence, expected: ExpectedItem) -> bool:
+    """¿Este hallazgo se apoya en una clasificación que no se sostuvo?
+
+    La fracción, siempre. El NICO, sólo cuando la expectativa dice CUÁL debería
+    ser —eso sale de clasificar—. El otro hallazgo de NICO, «el declarado no
+    existe en su fracción», sale del catálogo y de lo DECLARADO: no clasifica
+    nada y por tanto no se cae con la clasificación (Persona 1, 21-sep).
+    """
+    if divergencia.kind is DivergenceType.FRACTION_MISMATCH:
+        return True
+    if divergencia.kind is DivergenceType.NICO_MISMATCH:
+        return expected.nico_code is not None
+    return False
+
+
+def _lagunas(expected: ExpectedItem, declared: DeclaredItem | None = None) -> list[str]:
     """Lo que no se pudo comprobar de esta partida, y por qué.
 
     Separado de `compare_item` porque no son hallazgos: son huecos. Una NOM que
@@ -198,6 +233,30 @@ def _lagunas(expected: ExpectedItem) -> list[str]:
     distinguirlas (§36).
     """
     razones: list[str] = []
+    if expected.customs_value is None:
+        razones.append(
+            "no consta el precio pagado ni los incrementables de la partida, "
+            "así que el valor en aduana declarado no se pudo contrastar"
+        )
+    if expected.nico_code is None and declared is not None and declared.nico_code:
+        # Sólo cuando NO hay una expectativa firme de cuál es el NICO: ahí lo
+        # único que se puede decir sale del catálogo, y no siempre alcanza.
+        if expected.valid_nico_codes is None:
+            razones.append(
+                f"no se pudo comprobar el NICO {declared.nico_code}: la fracción declarada "
+                "no está vigente en la tarifa, así que el catálogo no dice nada de ella"
+            )
+        elif not expected.valid_nico_codes:
+            razones.append(
+                f"no se pudo comprobar el NICO {declared.nico_code}: la fracción declarada "
+                "no tiene NICO cargados, y eso es un hueco del catálogo, no del pedimento"
+            )
+        elif declared.nico_code in expected.valid_nico_codes:
+            razones.append(
+                f"el NICO {declared.nico_code} existe en la fracción declarada; saber si es "
+                "el que corresponde a la mercancía exige la ficha técnica, que no está cargada"
+            )
+
     if expected.country_of_origin is None:
         razones.append(
             "no consta el país del proveedor: la partida no está ligada a una factura, "
@@ -252,16 +311,12 @@ def compare(
             )
             # Aun así se comparan los campos que NO dependen de clasificar:
             # el origen y las NOM ya declaradas siguen siendo comprobables.
-            divergencias.extend(
-                x
-                for x in compare_item(d, e)
-                if x.kind not in (DivergenceType.FRACTION_MISMATCH, DivergenceType.NICO_MISMATCH)
-            )
-            no_verificables.extend(f"línea {d.line_number}: {r}" for r in _lagunas(e))
+            divergencias.extend(x for x in compare_item(d, e) if not _depende_de_clasificar(x, e))
+            no_verificables.extend(f"línea {d.line_number}: {r}" for r in _lagunas(e, d))
             continue
 
         divergencias.extend(compare_item(d, e))
-        no_verificables.extend(f"línea {d.line_number}: {r}" for r in _lagunas(e))
+        no_verificables.extend(f"línea {d.line_number}: {r}" for r in _lagunas(e, d))
 
     # ── Consistencia histórica del SKU ───────────────────────────────────────
     if sku_history:

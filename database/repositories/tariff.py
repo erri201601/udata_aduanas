@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING
 import sqlalchemy as sa
 from core.rgi_engine.context import TariffCandidate
 
-from database.models import TariffFraction
+from database.models import Nico, TariffFraction
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -204,6 +204,43 @@ class TariffCatalogRepository:
             )
             for f in filas
         ]
+
+    def nicos(self, *, on_date: date, fraction_code: str) -> tuple[str, ...] | None:
+        """Los NICO vigentes de una fracción, ordenados.
+
+        Vive aquí y no en el router porque es catálogo: el día que otro motor
+        necesite saber qué NICO existen, tiene que encontrarlo en el catálogo
+        (Persona 1, 21-sep).
+
+        TRES RESPUESTAS DISTINTAS, Y LA DIFERENCIA IMPORTA
+
+        - `None`: la fracción no está vigente en esa fecha. No se puede afirmar
+          nada sobre su NICO, y decir «no existe» sería culpar al pedimento de
+          un hueco del catálogo.
+        - `()`: la fracción existe y no tiene NICO cargados. Tampoco permite
+          acusar: es un hueco nuestro.
+        - Con códigos: eso sí permite decir si el declarado está entre ellos.
+        """
+        existe = self._session.scalar(
+            sa.select(TariffFraction.id)
+            .where(_vigentes(on_date), TariffFraction.code == fraction_code)
+            .limit(1)
+        )
+        if existe is None:
+            return None
+
+        filas = self._session.scalars(
+            sa.select(Nico.code)
+            .join(TariffFraction, TariffFraction.id == Nico.tariff_fraction_id)
+            .where(
+                _vigentes(on_date),
+                TariffFraction.code == fraction_code,
+                Nico.valid_from <= on_date,
+                sa.or_(Nico.valid_to.is_(None), Nico.valid_to >= on_date),
+            )
+            .order_by(Nico.code)
+        ).all()
+        return tuple(filas)
 
     def igi_rate(self, *, on_date: date, fraction_code: str) -> Decimal | None:
         """La tasa de IGI de una fracción, vigente en la fecha de la operación.

@@ -339,3 +339,94 @@ def test_sin_pais_del_proveedor_la_partida_lo_declara() -> None:
 
     assert not [x for x in r.divergences if x.kind is DivergenceType.ORIGIN_MISMATCH]
     assert any("país del proveedor" in motivo for motivo in r.unverifiable)
+
+
+# ── NICO contra el catálogo y valor contra la propia partida (21-sep) ───────
+
+
+def test_un_nico_que_no_existe_en_la_fraccion_es_hallazgo() -> None:
+    """Lo único que el catálogo puede afirmar solo.
+
+    No hace falta saber cuál es el NICO correcto para saber que éste no lo es.
+    """
+    r = compare(
+        [declarado(fraction_code="73241001", nico_code="99")],
+        [esperado(fraction_code="73241001", nico_code=None, valid_nico_codes=("00",))],
+    )
+
+    d = next(x for x in r.divergences if x.kind is DivergenceType.NICO_MISMATCH)
+    assert d.declared_value == "99"
+    assert d.expected_value is None, "no se inventa cuál era el correcto"
+    assert "no existe en la fracción 73241001" in d.reasoning
+    assert "Los vigentes son: 00" in d.reasoning
+
+
+def test_un_nico_que_sí_existe_no_se_acusa_y_se_declara_el_hueco() -> None:
+    """Que exista NO significa que sea el correcto: eso exige ficha técnica."""
+    r = compare(
+        [declarado(fraction_code="73051291", nico_code="99")],
+        [esperado(fraction_code="73051291", nico_code=None, valid_nico_codes=("00", "99"))],
+    )
+
+    assert not [x for x in r.divergences if x.kind is DivergenceType.NICO_MISMATCH]
+    assert any("exige la ficha técnica" in m for m in r.unverifiable)
+
+
+def test_si_la_fraccion_no_esta_vigente_no_se_acusa_al_nico() -> None:
+    """Decir «no existe» sería culpar al pedimento de un hueco del catálogo."""
+    r = compare([declarado(nico_code="99")], [esperado(nico_code=None, valid_nico_codes=None)])
+
+    assert not [x for x in r.divergences if x.kind is DivergenceType.NICO_MISMATCH]
+    assert any("no está vigente en la tarifa" in m for m in r.unverifiable)
+
+
+def test_una_fraccion_sin_nico_cargados_tampoco_permite_acusar() -> None:
+    r = compare([declarado(nico_code="99")], [esperado(nico_code=None, valid_nico_codes=())])
+
+    assert not [x for x in r.divergences if x.kind is DivergenceType.NICO_MISMATCH]
+    assert any("hueco del catálogo, no del pedimento" in m for m in r.unverifiable)
+
+
+def test_una_partida_que_se_contradice_a_si_misma_se_delata() -> None:
+    """El valor impreso no cuadra con precio pagado más incrementables.
+
+    Es detección a nivel de partida: no mira el encabezado ni el DTA.
+    """
+    r = compare(
+        [declarado(customs_value=Decimal("196032.83"))],
+        [esperado(customs_value=Decimal("181511.88"))],
+    )
+
+    d = next(x for x in r.divergences if x.kind is DivergenceType.VALUE_MISMATCH)
+    assert d.declared_value == "196032.83"
+    assert d.expected_value == "181511.88"
+
+
+def test_sin_precio_pagado_el_valor_no_se_da_por_bueno() -> None:
+    r = compare([declarado()], [esperado(customs_value=None)])
+
+    assert not [x for x in r.divergences if x.kind is DivergenceType.VALUE_MISMATCH]
+    assert any("precio pagado" in m for m in r.unverifiable)
+
+
+def test_el_nico_inexistente_se_reporta_aunque_no_se_pudiera_clasificar() -> None:
+    """No se apoya en la clasificación: sale del catálogo y de lo declarado.
+
+    Antes se descartaba junto con la fracción cuando el motor no llegaba a una
+    clasificación defendible, que es justo el caso de las partidas sin producto
+    ligado.
+    """
+    r = compare(
+        [declarado(fraction_code="73241001", nico_code="99")],
+        [
+            esperado(
+                is_resolved=False,
+                fraction_code=None,
+                nico_code=None,
+                valid_nico_codes=("00",),
+            )
+        ],
+    )
+
+    d = next(x for x in r.divergences if x.kind is DivergenceType.NICO_MISMATCH)
+    assert "no existe en la fracción 73241001" in d.reasoning
