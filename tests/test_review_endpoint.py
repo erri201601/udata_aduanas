@@ -60,13 +60,17 @@ def test_una_partida_sin_nom_declaradas_no_falla() -> None:
 # ── Sin espejo no hay comparación ────────────────────────────────────────────
 
 
-def test_sin_producto_ligado_no_se_construye_espejo() -> None:
-    """Un `ExpectedItem` vacío haría pasar la partida por limpia."""
-    espejo = _construir_espejo(
-        MagicMock(), _partida(product_id=None), FECHA, MagicMock(), MagicMock()
-    )
+def test_sin_producto_ligado_se_comprueba_lo_que_no_exige_clasificar() -> None:
+    """Antes la partida quedaba sin mirar. Clasificar necesita producto; el
+    país, el NICO y la aritmética del valor, no (Persona 1, 21-sep)."""
+    catalogo = MagicMock()
+    catalogo.nicos.return_value = ("00",)
+    espejo = _construir_espejo(MagicMock(), _partida(product_id=None), FECHA, catalogo, MagicMock())
 
-    assert espejo is None
+    assert espejo is not None
+    assert espejo.is_resolved is False, "no se clasificó nada"
+    assert espejo.fraction_code is None
+    assert espejo.valid_nico_codes == ("00",)
 
 
 # ── Las tasas: la regla es no inventarlas ────────────────────────────────────

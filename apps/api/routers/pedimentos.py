@@ -7,6 +7,19 @@ producto. La única fila de `risk_findings` la había escrito el seed, y
 `opportunity_findings` estaba vacía. Se podía enseñar que el sistema clasifica;
 no que encuentra dinero (Persona 1, 2026-09-08).
 
+LO QUE SE PUEDE COMPROBAR SIN CLASIFICAR
+
+Tres cosas salen del propio documento y no necesitan que el motor llegue a una
+fracción. Se agrupan en `_espejo_documental` porque comparten eso:
+
+  · el país, contra el proveedor de la factura;
+  · el NICO, contra el catálogo: si el declarado NO EXISTE en su fracción, eso
+    el catálogo lo sabe solo. Si existe, saber si es el que corresponde a la
+    mercancía exige ficha técnica, y se declara como hueco;
+  · el valor en aduana, contra la aritmética de la propia partida: precio
+    pagado más incrementables. Una partida que se contradice a sí misma se
+    delata sin mirar el encabezado ni el DTA (Persona 1, 21-sep).
+
 EL PAÍS DE ORIGEN SE CONTRASTA CONTRA EL PROVEEDOR
 
 No hace falta fuente externa: el documento ya dice de dónde es el proveedor, y
@@ -41,6 +54,7 @@ from __future__ import annotations
 import uuid
 from datetime import date
 from decimal import Decimal
+from typing import Any, Final
 
 import sqlalchemy as sa
 from core.classification import classify_product
@@ -59,6 +73,10 @@ from apps.api.db import SessionDep
 from apps.api.dna import cargar_borrador, terminos
 
 router = APIRouter(prefix="/pedimentos", tags=["pedimentos"])
+
+#: Lo que se puede comprobar sin haber clasificado. Si nada de esto consta, la
+#: partida no tiene espejo y se reporta como no verificable.
+_COMPROBABLE_SIN_CLASIFICAR: Final = ("country_of_origin", "valid_nico_codes", "customs_value")
 
 
 class ReviewRequest(BaseModel):
@@ -219,6 +237,44 @@ def _pais_del_proveedor(session: SessionDep, partida: PedimentoItem) -> str | No
     )
 
 
+def _valor_esperado(partida: PedimentoItem) -> tuple[Decimal | None, str | None]:
+    """Valor en aduana según la propia partida: precio pagado + incrementables.
+
+    `None` si falta cualquiera de los dos, o si vienen en divisas distintas:
+    sumar importes de monedas distintas daría una cifra falsa. Un faltante NO
+    se sustituye por cero — cero es una afirmación, y aquí no consta.
+    """
+    if partida.price_paid is None or partida.incrementables is None:
+        return None, None
+    monedas = {partida.price_paid_currency, partida.incrementables_currency} - {None}
+    if len(monedas) > 1:
+        return None, None
+    moneda = partida.price_paid_currency or partida.customs_value_currency
+    return partida.price_paid + partida.incrementables, moneda
+
+
+def _espejo_documental(
+    session: SessionDep,
+    partida: PedimentoItem,
+    fecha: date,
+    catalogo: TariffCatalogRepository,
+) -> dict[str, Any]:
+    """Lo que se puede esperar SIN clasificar. Sale del documento, no del motor."""
+    pais = _pais_del_proveedor(session, partida)
+    valor, moneda = _valor_esperado(partida)
+    return {
+        "country_of_origin": pais,
+        "origin_source": ORIGEN_DEL_PROVEEDOR if pais else None,
+        "valid_nico_codes": (
+            catalogo.nicos(on_date=fecha, fraction_code=partida.declared_fraction_code)
+            if partida.declared_fraction_code
+            else None
+        ),
+        "customs_value": valor,
+        "customs_value_currency": moneda,
+    }
+
+
 def _construir_espejo(
     session: SessionDep,
     partida: PedimentoItem,
@@ -232,24 +288,23 @@ def _construir_espejo(
     DNA no hay expectativa, y la partida se reporta como no verificable. Un
     `ExpectedItem` vacío la haría pasar por limpia.
     """
-    pais_proveedor = _pais_del_proveedor(session, partida)
+    documental = _espejo_documental(session, partida, fecha, catalogo)
 
     if (
         partida.product_id is None
         or (borrador := cargar_borrador(session, partida.product_id)) is None
     ):
-        # Sin producto ligado no se puede clasificar, pero el país SÍ se puede
-        # contrastar. Se devuelve una expectativa que sólo habla de origen en
-        # vez de dejar la partida sin mirar.
-        if pais_proveedor is None:
+        # Sin producto ligado no se puede clasificar, pero el país, el NICO y la
+        # aritmética del valor SÍ se pueden contrastar. Se devuelve lo que se
+        # puede comprobar en vez de dejar la partida sin mirar.
+        if not any(documental[campo] is not None for campo in _COMPROBABLE_SIN_CLASIFICAR):
             return None
         return ExpectedItem(
             line_number=partida.line_number,
             is_resolved=False,
-            country_of_origin=pais_proveedor,
-            origin_source=ORIGEN_DEL_PROVEEDOR,
             required_nom_codes=None,
             required_identifiers=None,
+            **documental,
         )
 
     outcome = classify_product(
@@ -269,14 +324,11 @@ def _construir_espejo(
         # usarse para acusar a nadie.
         is_resolved=outcome.code is not None,
         confidence=outcome.trace.confidence,
-        country_of_origin=pais_proveedor,
-        origin_source=ORIGEN_DEL_PROVEEDOR if pais_proveedor else None,
-        customs_value=partida.customs_value,
-        customs_value_currency=partida.customs_value_currency,
         # `None`, no `()`: no existe la correlación fracción → NOM ni el
         # Apéndice 8. Decir «no exige ninguna» sería afirmar sin fuente.
         required_nom_codes=None,
         required_identifiers=None,
+        **documental,
     )
 
 

@@ -184,6 +184,16 @@ def _partida(**kw: object) -> object:
     return PedimentoItem(**campos)  # type: ignore[arg-type]
 
 
+class _CatalogoFalso:
+    def __init__(self, nicos: tuple[str, ...]) -> None:
+        self._nicos = nicos
+        self.consultas: list[str] = []
+
+    def nicos(self, *, on_date: object, fraction_code: str) -> tuple[str, ...]:
+        self.consultas.append(fraction_code)
+        return self._nicos
+
+
 def test_el_pais_se_busca_por_la_cadena_de_la_factura() -> None:
     """`Pedimento` no guarda proveedor: se llega por la factura."""
     from apps.api.routers.pedimentos import _pais_del_proveedor
@@ -215,7 +225,7 @@ def test_una_partida_sin_producto_igual_se_le_comprueba_el_pais() -> None:
         _SesionConProveedor("CN"),  # type: ignore[arg-type]
         _partida(product_id=None),  # type: ignore[arg-type]
         date(2026, 3, 15),
-        None,  # type: ignore[arg-type]
+        _CatalogoFalso(("00",)),  # type: ignore[arg-type]
         None,  # type: ignore[arg-type]
     )
 
@@ -231,10 +241,92 @@ def test_sin_producto_y_sin_proveedor_no_hay_espejo() -> None:
     assert (
         _construir_espejo(
             _SesionConProveedor(None),  # type: ignore[arg-type]
-            _partida(product_id=None, invoice_item_id=None),  # type: ignore[arg-type]
+            _partida(  # type: ignore[arg-type]
+                product_id=None,
+                invoice_item_id=None,
+                declared_fraction_code=None,
+                price_paid=None,
+                incrementables=None,
+            ),
             date(2026, 3, 15),
-            None,  # type: ignore[arg-type]
+            _CatalogoFalso(("00",)),  # type: ignore[arg-type]
             None,  # type: ignore[arg-type]
         )
         is None
     )
+
+
+# ── El espejo documental: NICO y valor (Persona 1, 21-sep) ─────────────────
+
+
+def test_el_valor_esperado_es_precio_pagado_mas_incrementables() -> None:
+    from apps.api.routers.pedimentos import _valor_esperado
+
+    valor, moneda = _valor_esperado(
+        _partida(
+            price_paid=Decimal("170000.00"),
+            incrementables=Decimal("11511.88"),
+            price_paid_currency="MXN",
+            incrementables_currency="MXN",
+        )  # type: ignore[arg-type]
+    )
+
+    assert valor == Decimal("181511.88")
+    assert moneda == "MXN"
+
+
+def test_sin_incrementables_no_se_supone_cero() -> None:
+    """Cero es una afirmación. Aquí no consta."""
+    from apps.api.routers.pedimentos import _valor_esperado
+
+    valor, _ = _valor_esperado(
+        _partida(price_paid=Decimal("170000.00"), incrementables=None)  # type: ignore[arg-type]
+    )
+
+    assert valor is None
+
+
+def test_no_se_suman_divisas_distintas() -> None:
+    from apps.api.routers.pedimentos import _valor_esperado
+
+    valor, _ = _valor_esperado(
+        _partida(
+            price_paid=Decimal("10000.00"),
+            incrementables=Decimal("500.00"),
+            price_paid_currency="USD",
+            incrementables_currency="MXN",
+        )  # type: ignore[arg-type]
+    )
+
+    assert valor is None
+
+
+def test_el_espejo_documental_consulta_los_nico_de_la_fraccion_declarada() -> None:
+    from apps.api.routers.pedimentos import _espejo_documental
+
+    catalogo = _CatalogoFalso(("00", "01"))
+    documental = _espejo_documental(
+        _SesionConProveedor("CN"),  # type: ignore[arg-type]
+        _partida(declared_fraction_code="73051291"),  # type: ignore[arg-type]
+        date(2026, 3, 15),
+        catalogo,  # type: ignore[arg-type]
+    )
+
+    assert catalogo.consultas == ["73051291"], "se consulta la DECLARADA, no una esperada"
+    assert documental["valid_nico_codes"] == ("00", "01")
+    assert documental["country_of_origin"] == "CN"
+
+
+def test_sin_fraccion_declarada_no_se_consulta_el_catalogo() -> None:
+    from apps.api.routers.pedimentos import _espejo_documental
+
+    catalogo = _CatalogoFalso(("00",))
+    documental = _espejo_documental(
+        _SesionConProveedor(None),  # type: ignore[arg-type]
+        _partida(declared_fraction_code=None),  # type: ignore[arg-type]
+        date(2026, 3, 15),
+        catalogo,  # type: ignore[arg-type]
+    )
+
+    assert catalogo.consultas == []
+    assert documental["valid_nico_codes"] is None, "no se sabe, no es «ninguno»"

@@ -67,6 +67,16 @@ class ExpectedItem(BaseModel):
     """
     customs_value: Decimal | None = None
     customs_value_currency: str | None = None
+    valid_nico_codes: tuple[str, ...] | None = None
+    """Los NICO que existen en la fracción DECLARADA. `None` = no se consultó.
+
+    Sirve para lo único que el catálogo puede decir por sí solo: si el NICO
+    declarado existe o no. Que exista NO significa que sea el correcto para la
+    mercancía —eso exige la ficha técnica— y por eso son dos cosas separadas:
+    la primera es un hallazgo, la segunda un hueco declarado (Persona 1,
+    21-sep).
+    """
+
     required_nom_codes: tuple[str, ...] | None = None
     """Las NOM que la fracción exige. `None` significa QUE NO SE SABE.
 
