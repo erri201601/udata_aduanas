@@ -256,9 +256,7 @@ class TariffCatalogRepository:
                 .where(
                     UnitOfMeasure.code == code,
                     UnitOfMeasure.valid_from <= on_date,
-                    sa.or_(
-                        UnitOfMeasure.valid_to.is_(None), UnitOfMeasure.valid_to >= on_date
-                    ),
+                    sa.or_(UnitOfMeasure.valid_to.is_(None), UnitOfMeasure.valid_to >= on_date),
                 )
                 .limit(1)
             )
@@ -272,9 +270,7 @@ class TariffCatalogRepository:
                 sa.select(UnitOfMeasure.id)
                 .where(
                     UnitOfMeasure.valid_from <= on_date,
-                    sa.or_(
-                        UnitOfMeasure.valid_to.is_(None), UnitOfMeasure.valid_to >= on_date
-                    ),
+                    sa.or_(UnitOfMeasure.valid_to.is_(None), UnitOfMeasure.valid_to >= on_date),
                 )
                 .limit(1)
             )
