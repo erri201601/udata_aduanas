@@ -3,6 +3,11 @@
 > Estado verificado el 8 de septiembre de 2026. Todo lo que aparece aquí lo
 > corrí antes de escribirlo. Nada es aspiracional.
 >
+> **Actualización 22-sep-2026.** La sección 6 se rehízo con el corpus de 15
+> pedimentos cargado, y trae por primera vez una cifra medida contra casos con
+> respuesta conocida. Todo lo de abajo se corrió contra el sistema en vivo ese
+> día.
+>
 > **Actualización 21-sep-2026.** Las secciones 3 y 4 se volvieron a correr
 > contra el sistema en vivo, con la tarifa completa, el arreglo de la RGI 3 c)
 > (#69) y el de acentos en la búsqueda de candidatas (#82). La traza de abajo
@@ -166,27 +171,57 @@ Corre la revisión de un pedimento. Construye lo que *debería* declararse **sin
 mirar lo declarado**, y sólo después compara — para no caer en justificar lo
 que ya está ahí, que es el sesgo de cualquier revisor humano.
 
-El resultado de hoy:
+Toma el `26 47 9999 600001`, de doce partidas. Esto es lo que sale, verificado
+el 22 de septiembre:
 
 ```
-Sin hallazgos en lo revisable, pero 4 puntos quedaron sin comprobar.
+línea  2   IGI_RATE_MISMATCH  CRITICAL  declaró   6,917.52   debía   9,684.52
+línea  2   VAT_MISMATCH       HIGH      declaró   5,569.43   debía   6,012.15
+línea  3   UNIT_MISMATCH      MEDIUM    unidad 99: no existe en el Anexo 22
+línea 11   VAT_MISMATCH       HIGH      declaró  12,363.27   debía  12,449.28
+línea 12   VALUE_MISMATCH     CRITICAL  declaró 196,032.83   debía 181,511.88
+línea 12   IGI_RATE_MISMATCH  CRITICAL  declaró  63,529.16   debía  68,611.49
+línea 12   VAT_MISMATCH       HIGH      declaró  39,438.90   debía  42,594.01
 ```
 
-Y los cuatro, nombrados uno por uno —léelos tal cual, que están escritos para
-que los entienda quien firma—:
+Detente en la línea 12. El valor en aduana declarado **no es el precio pagado
+más los incrementables**: sobran 14,520.95 pesos. Y como el IGI y el IVA se
+calculan sobre ese valor, el sistema señala los tres efectos de la misma
+causa.
 
-- la clasificación no llegó a ser defendible, así que no se puede afirmar que
-  lo declarado sea incorrecto;
-- no consta el país del proveedor: la partida no está ligada a una factura,
-  así que el origen declarado no se pudo contrastar con nada;
-- no se conoce qué NOM exige la fracción esperada: falta el Anexo 2.2.1 del
-  Acuerdo de la SE;
-- no se conocen los identificadores que exige la operación: falta el Apéndice
-  8 del Anexo 22.
+> «No le está diciendo que hay un error. Le está diciendo en qué línea, en qué
+> campo, cuánto declaró y cuánto debía declarar.»
+
+Y lo que el sistema sigue diciendo de lo que **no** pudo revisar, que importa
+tanto como lo que encontró: qué NOM exige la fracción (falta el Anexo 2.2.1)
+y qué identificadores exige la operación (falta el Apéndice 8 del Anexo 22).
 
 > «Un pedimento que nadie verificó no está limpio: está sin verificar. Si el
 > sistema los mezclara, alguien presentaría ante la autoridad un pedimento sin
 > revisar creyendo que pasó el filtro.»
+
+### La medición — esto es lo nuevo, y es lo que nadie más le va a enseñar
+
+No es un pedimento: son quince, con 180 partidas y **60 anomalías sembradas
+que el sistema no sabía dónde estaban**.
+
+```
+encontró 39 de las 54 detectables      recall 72 % (±12)
+cero falsos positivos en 126 limpias   precisión 100 %
+
+siete de los diez tipos, al 100 %:
+   origen · unidad · tasa de IGI · base de IVA · importe de IVA
+   valor en aduana · NICO contra catálogo
+```
+
+Y la parte que no se esconde: de las 15 que no encontró, **seis** son
+clasificación de fracción —sabemos exactamente por qué falla— y **nueve** son
+comprobaciones que todavía no existen. **Ninguna es un detector que se haya
+equivocado.**
+
+> «El día que le demos un número, va a ser éste: medido contra casos con
+> respuesta conocida, con su margen, y diciendo qué parte todavía no
+> sabemos hacer.»
 
 ---
 
@@ -224,10 +259,15 @@ comparando contra la fracción que ellos ya declararon.
 ## Preguntas que van a hacer
 
 **«¿Y esto qué tan seguido acierta?»**
-La respuesta honesta: *todavía no lo medimos, y por eso no se lo voy a decir.*
-Estamos construyendo el conjunto de casos con resultado conocido para poder
-darle un número con respaldo. Cualquiera que le dé un porcentaje hoy se lo está
-inventando.
+Ahora sí hay número, y va con su margen. Sembramos 60 anomalías en 15
+pedimentos —180 partidas— sin que el sistema supiera cuáles: encontró 39 de
+las 54 detectables, con **cero falsos positivos en 126 partidas limpias**.
+Recall 72 % ±12, precisión 100 %.
+
+Ojo con la pregunta que viene detrás: *«¿y el 28 % que falla?»*. No falla:
+seis son clasificación de fracción, que sabemos por qué no resuelve, y nueve
+son comprobaciones que aún no hemos construido. Ninguna es un detector que se
+haya equivocado, y eso es una distinción que conviene hacer en voz alta.
 
 **«¿Usa inteligencia artificial?»**
 Para leer fichas técnicas y extraer atributos, sí. **Para decidir la fracción y
