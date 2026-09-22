@@ -10,6 +10,7 @@ filas en la base de otro).
 Uso:
     python -m ingestion.sintetico.cli --target local
     python -m ingestion.sintetico.cli --target shared
+    python -m ingestion.sintetico.cli --target local --reset   # borra y recarga (§24)
 """
 
 from __future__ import annotations
@@ -62,6 +63,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         choices=["local", "shared"],
         help="'shared' lee el MinIO/la base del equipo — decisión explícita.",
     )
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Borra la carga anterior de este escenario antes de recargar (§24).",
+    )
     return parser.parse_args(argv)
 
 
@@ -89,6 +95,10 @@ def main(argv: list[str] | None = None) -> int:
 
     engine = create_engine(database_url)
     with Session(engine) as session:
+        if args.reset:
+            n_borrados = load.delete_scenario_data(session)
+            session.commit()
+            print(f"--reset ({args.target}): {n_borrados} pedimentos anteriores borrados.")
         reporte = load.load_corpus(session, corpus)
         session.commit()
 
