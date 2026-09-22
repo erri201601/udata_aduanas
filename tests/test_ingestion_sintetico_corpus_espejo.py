@@ -66,7 +66,7 @@ def test_parse_corpus_partida_evaluable_false_conserva_spec_recortado() -> None:
 
     assert recortada.classification_evaluable is False
     assert "espesor_pared_mm" not in recortada.technical_spec
-    referencia = corpus.reference_specs[recortada.product_id]
+    referencia = corpus.product_specs[recortada.product_id].spec
     assert "espesor_pared_mm" in referencia
     faltantes = set(referencia) - set(recortada.technical_spec)
     assert faltantes == {"espesor_pared_mm"}
