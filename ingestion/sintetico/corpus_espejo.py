@@ -122,13 +122,27 @@ class ParsedPedimento:
 
 
 @dataclass(frozen=True)
+class ParsedProductSpec:
+    """La ficha de CATÁLOGO de un producto (`product_specs` del JSON) — UNA
+    por `product_id`, compartida por todas las partidas que lo declaran,
+    en el mismo pedimento o en otro distinto (hallazgo de Persona 1,
+    22-sep-2026: sin esto, `INCONSISTENT_SKU_CLASSIFICATION` no puede
+    existir, porque necesita el MISMO producto comparado entre pedimentos)."""
+
+    id: str
+    name: str
+    description: str
+    #: La ficha técnica COMPLETA de catálogo. Sirve para saber QUÉ
+    #: característica falta en las partidas con `classification_evaluable=false`
+    #: — nunca para rellenar el spec recortado de una partida.
+    spec: dict[str, Any]
+
+
+@dataclass(frozen=True)
 class ParsedCorpus:
     pedimentos: list[ParsedPedimento]
-    #: `product_id` -> ficha técnica de referencia (`spec`), del nivel
-    #: superior del JSON. Sirve para saber QUÉ característica falta en las
-    #: 21 partidas con `classification_evaluable=false` — nunca para
-    #: rellenar el spec recortado de una partida.
-    reference_specs: dict[str, dict[str, Any]]
+    #: `product_id` -> su ficha de catálogo.
+    product_specs: dict[str, ParsedProductSpec]
 
 
 def _parse_anomaly(raw: dict[str, Any]) -> ParsedAnomaly:
@@ -189,5 +203,13 @@ def parse_corpus(raw: dict[str, Any]) -> ParsedCorpus:
     produce datos incorrectos en silencio (regla 7 CLAUDE.md).
     """
     pedimentos = [_parse_pedimento(doc) for _, doc in sorted(raw["ground_truth"].items())]
-    reference_specs = {pid: dict(spec["spec"]) for pid, spec in raw["product_specs"].items()}
-    return ParsedCorpus(pedimentos=pedimentos, reference_specs=reference_specs)
+    product_specs = {
+        pid: ParsedProductSpec(
+            id=spec["id"],
+            name=spec["name"],
+            description=spec["description"],
+            spec=dict(spec["spec"]),
+        )
+        for pid, spec in raw["product_specs"].items()
+    }
+    return ParsedCorpus(pedimentos=pedimentos, product_specs=product_specs)

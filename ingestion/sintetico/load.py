@@ -22,15 +22,29 @@ se salta TODO lo de ese documento (cliente, proveedor, factura, partidas,
 ground truth) — nunca una mezcla de "ya estaba" y "se repite". Correr el
 cargador dos veces no duplica nada porque la segunda vez no crea nada.
 
-FICHA TÉCNICA POR PARTIDA, NO POR PRODUCTO
+UN PRODUCT POR FICHA DE CATÁLOGO, UNA ProductDna POR PARTIDA
+(corrección de Persona 1, 22-sep-2026 — la primera versión de este módulo
+creaba un `Product` distinto por cada partida y lo tenía mal)
 
-Cada partida instancia su propio `Product` + `ProductDna` + `ProductAttribute`
-(nunca comparte uno entre partidas, aunque dos partidas usen el mismo
-`product_id` del corpus): las 21 partidas con `classification_evaluable=false`
-necesitan un DNA recortado sin afectar a las demás. Las características que
-`technical_spec` omite respecto de `reference_specs[product_id]` quedan como
-`ProductAttribute` con `status=MISSING` — así el motor de RGI las ve vacías y
-puede decir `SIN_VERIFICAR`, en vez de que el cargador decida por él.
+El corpus define 12 productos de catálogo (`P001`..`P012`) que se repiten
+entre pedimentos distintos. `Product` es UNO por `product_id`
+(`client_id`/`supplier_id` en NULL: no pertenece a un importador ni a un
+proveedor en particular). Compartirlo es lo que hace posible
+`INCONSISTENT_SKU_CLASSIFICATION` — "el mismo SKU clasificado distinto en
+dos pedimentos" no puede existir si cada partida tiene su propio producto
+aislado.
+
+`ProductDna` sí es una versión NUEVA por partida (nunca compartida): cada
+declaración trae su propia ficha, completa o recortada, y las 21 con
+`classification_evaluable=false` necesitan la suya sin afectar a las demás
+versiones del mismo producto. Las características que `technical_spec`
+omite respecto de la ficha de catálogo (`product_specs[product_id].spec`)
+quedan como `ProductAttribute` con `status=MISSING` — así el motor de RGI
+las ve vacías y puede decir `SIN_VERIFICAR`, en vez de que el cargador
+decida por él. `summary` es la descripción COMERCIAL de esa partida
+(`commercial_description`), no `classification_reason` — ese fue el otro
+bug real: un resumen de producto no es el motivo por el que se puede o no
+clasificar.
 """
 
 from __future__ import annotations
@@ -59,7 +73,12 @@ if TYPE_CHECKING:
 
     from sqlalchemy.orm import Session
 
-    from ingestion.sintetico.corpus_espejo import ParsedCorpus, ParsedPartida, ParsedPedimento
+    from ingestion.sintetico.corpus_espejo import (
+        ParsedCorpus,
+        ParsedPartida,
+        ParsedPedimento,
+        ParsedProductSpec,
+    )
 
 DATA_ORIGIN = "SYNTHETIC"
 SCENARIO_SLUG = "corpus_espejo_v1"
@@ -243,15 +262,40 @@ def _create_product_con_dna(
     *,
     client: Client,
     supplier: Supplier,
-    reference_spec: dict[str, object],
+    spec: ParsedProductSpec,
     scenario: SyntheticScenario,
     document_id: str,
 ) -> Product:
-    """Un `Product`+`ProductDna` POR PARTIDA — nunca compartido (ver docstring del módulo)."""
+    """Un `Product`+`ProductDna` POR PARTIDA.
+
+    NO se comparte un solo `Product` por `product_id` de catálogo, aunque
+    varias partidas (en el mismo pedimento o en otro) declaren la misma
+    mercancía — decisión de Persona 1, 22-sep-2026, revirtiendo un intento
+    anterior de compartirlo. La razón no es de estilo: `ProductDna` cuelga
+    de `product_id` y `apps/api/dna.py` resuelve la ficha vigente con
+    `where(product_id=..., is_current=True).order_by(version.desc())`. Con
+    un `Product` compartido, cada partida crea una versión nueva y todas
+    quedan con `is_current=True` (nada las cierra) — el Espejo devuelve LA
+    ÚLTIMA cargada para CUALQUIER partida de ese producto. Las ~15 partidas
+    de un mismo producto terminarían compartiendo una sola ficha, y las 21
+    con `classification_evaluable=false` recibirían la ficha completa de
+    otra partida según el orden de carga — exactamente lo que el corpus
+    existe para impedir que pase desapercibido.
+
+    (Para compartir el `Product` de verdad haría falta que el Espejo
+    resolviera la ficha vigente POR PARTIDA, no por producto — cambio de
+    contrato que no toca esta tarea.)
+
+    La identidad de catálogo (qué partidas son la misma mercancía) no se
+    pierde: `Product.model` guarda el `product_id` del corpus (`P001`..
+    `P012`), aunque cada partida tenga su propio `Product`+`sku`.
+    """
+    faltantes = sorted(set(spec.spec) - set(parte.technical_spec))
     product = Product(
         client_id=client.id,
         supplier_id=supplier.id,
         sku=f"{document_id}-{parte.sec}",
+        model=spec.id,
         commercial_name=parte.commercial_description[:200],
         description=parte.commercial_description,
         data_origin=DATA_ORIGIN,
@@ -261,13 +305,15 @@ def _create_product_con_dna(
     session.add(product)
     session.flush()
 
-    faltantes = sorted(set(reference_spec) - set(parte.technical_spec))
     dna = ProductDna(
         product_id=product.id,
         version=1,
         is_current=True,
         input_kinds=["TEXT"],
-        summary=parte.classification_reason,
+        # Descripción COMERCIAL de esta partida, no `classification_reason`
+        # (el motivo de por qué se puede o no clasificar no es un resumen
+        # de producto) — corrección de Persona 1, 22-sep-2026.
+        summary=parte.commercial_description,
         missing_information=faltantes,
         data_origin=DATA_ORIGIN,
         synthetic_scenario_id=scenario.id,
@@ -407,7 +453,7 @@ def load_pedimento(
     ped: ParsedPedimento,
     *,
     scenario: SyntheticScenario,
-    reference_specs: dict[str, dict[str, object]],
+    product_specs: dict[str, ParsedProductSpec],
 ) -> tuple[Pedimento | None, int, int]:
     """Carga un pedimento completo. Devuelve `(pedimento_o_None, n_partidas, n_ground_truth)`.
 
@@ -450,12 +496,13 @@ def load_pedimento(
         invoice_item = _create_invoice_item(
             session, parte, invoice=invoice, scenario=scenario, exchange_rate=ped.exchange_rate
         )
+        spec = product_specs[parte.product_id]
         product = _create_product_con_dna(
             session,
             parte,
             client=client,
             supplier=supplier,
-            reference_spec=reference_specs.get(parte.product_id, {}),
+            spec=spec,
             scenario=scenario,
             document_id=ped.document_id,
         )
@@ -489,7 +536,7 @@ def load_corpus(session: Session, corpus: ParsedCorpus, *, seed: int = 20260921)
 
     for ped in corpus.pedimentos:
         pedimento, n_partidas, n_gt = load_pedimento(
-            session, ped, scenario=scenario, reference_specs=corpus.reference_specs
+            session, ped, scenario=scenario, product_specs=corpus.product_specs
         )
         if pedimento is None:
             pedimentos_saltados += 1
@@ -515,3 +562,51 @@ def load_corpus(session: Session, corpus: ParsedCorpus, *, seed: int = 20260921)
         ground_truth_creados=ground_truth_creados,
         ground_truth_expected_true=gt_true,
     )
+
+
+def delete_scenario_data(session: Session, *, slug: str = SCENARIO_SLUG) -> int:
+    """Borra TODO lo que carga este módulo para un escenario, sin dejar restos (§24).
+
+    Necesario para corregir una carga hecha con una versión anterior del
+    cargador (p. ej. el bug real del 22-sep-2026: `Product` por partida en
+    vez de por ficha de catálogo) sin arrastrar filas huérfanas. Respeta el
+    orden de dependencias — hijos antes que padres — porque varias FK son
+    `RESTRICT`, no `CASCADE`. No borra `SyntheticScenario`: `load_corpus()`
+    la reutiliza en la siguiente carga (`get_or_create_scenario`).
+
+    Devuelve cuántos `Pedimento` se borraron. `0` si el escenario no existe
+    o ya estaba vacío — no es un error, es un cargador que corre sobre una
+    base limpia.
+    """
+    scenario = session.query(SyntheticScenario).filter_by(slug=slug).one_or_none()
+    if scenario is None:
+        return 0
+    sid = scenario.id
+
+    session.query(GroundTruthRecord).filter_by(synthetic_scenario_id=sid).delete()
+    n_pedimentos = session.query(Pedimento).filter_by(synthetic_scenario_id=sid).count()
+    session.query(PedimentoItem).filter_by(synthetic_scenario_id=sid).delete()
+    session.query(Pedimento).filter_by(synthetic_scenario_id=sid).delete()
+
+    dna_ids = [
+        row.id
+        for row in session.query(ProductDna.id)
+        .join(Product, Product.id == ProductDna.product_id)
+        .filter(Product.synthetic_scenario_id == sid)
+    ]
+    if dna_ids:
+        session.query(ProductAttribute).filter(ProductAttribute.product_dna_id.in_(dna_ids)).delete(
+            synchronize_session=False
+        )
+        session.query(ProductDna).filter(ProductDna.id.in_(dna_ids)).delete(
+            synchronize_session=False
+        )
+    session.query(Product).filter_by(synthetic_scenario_id=sid).delete()
+
+    session.query(InvoiceItem).filter_by(synthetic_scenario_id=sid).delete()
+    session.query(Invoice).filter_by(synthetic_scenario_id=sid).delete()
+    session.query(Supplier).filter_by(synthetic_scenario_id=sid).delete()
+    session.query(Client).filter_by(synthetic_scenario_id=sid).delete()
+
+    session.flush()
+    return n_pedimentos
