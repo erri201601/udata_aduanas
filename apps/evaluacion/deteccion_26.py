@@ -17,8 +17,6 @@ una evaluación que ensucie la base deja de medir lo que dice medir.
 
 from __future__ import annotations
 
-import uuid
-from datetime import date
 from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
@@ -37,6 +35,9 @@ from database.repositories.tariff import TariffCatalogRepository
 from apps.evaluacion.hs_accuracy import SesionSoloLectura
 
 if TYPE_CHECKING:
+    import uuid
+    from datetime import date
+
     from sqlalchemy.orm import Session
 
 log = structlog.stdlib.get_logger("apps.evaluacion.deteccion")
