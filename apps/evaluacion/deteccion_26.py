@@ -3,6 +3,21 @@
 `core.evaluation.deteccion` no conoce la base: aquí se leen los eventos
 sembrados, los hallazgos del motor y las partidas, y se le entregan.
 
+LOS SUBTIPOS SALEN DEL DATO, NO DE UNA LISTA A MANO
+
+El corpus colapsa cuatro anomalías distintas en WRONG_VALUE y las separa por
+`expected_field`: valor en aduana, tasa de IGI, base de IVA e importe de IVA.
+Sólo la primera tiene detector construido. Aquí se traducen a subtipos para
+que el reporte no presente como una sola capacidad lo que son cuatro.
+
+«NO PUDO» SE LEE DE LA REVISIÓN, NO SE SUPONE
+
+Cuando el motor no logra sostener una clasificación, la revisión del Espejo lo
+deja escrito en `unverifiable`: «línea N: la clasificación no llegó a ser
+defendible». De ahí sale que un fallo de FRACCIÓN sea «el detector existe y no
+pudo» en vez de «no cazó». Suponerlo habría sido escribir la excusa del motor
+en la métrica que lo mide.
+
 EL SUBTIPO DEL NICO LO DECIDE EL CATÁLOGO, NO UNA LISTA A MANO
 
 De los casos de NICO, unos los caza el catálogo —el declarado no existe en su
@@ -17,19 +32,27 @@ una evaluación que ensucie la base deja de medir lo que dice medir.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import re
+from typing import TYPE_CHECKING, Final
 
 import sqlalchemy as sa
 import structlog
 from core.evaluation.deteccion import (
     NICO_EXIGE_FICHA,
     NICO_LO_CAZA_EL_CATALOGO,
+    SUBTIPO_POR_CAMPO,
     Evento,
     Hallazgo,
     Reporte,
     evaluar,
 )
-from database.models import GroundTruthRecord, Pedimento, PedimentoItem, RiskFinding
+from database.models import (
+    GroundTruthRecord,
+    Pedimento,
+    PedimentoItem,
+    RiskFinding,
+    ShadowReview,
+)
 from database.repositories.tariff import TariffCatalogRepository
 
 from apps.evaluacion.hs_accuracy import SesionSoloLectura
@@ -62,16 +85,73 @@ def _subtipo_nico(session: Session, partida: PedimentoItem, operacion: date | No
     return NICO_EXIGE_FICHA
 
 
-def recolectar(session: Session) -> tuple[list[Evento], list[Hallazgo], list[str]]:
-    """Lee de la base lo que la métrica necesita. Nada más."""
-    partidas = {fila.id: fila for fila in session.scalars(sa.select(PedimentoItem)).all()}
-    fechas: dict[uuid.UUID, date] = {
-        fila.id: fila.operation_date
-        for fila in session.execute(sa.select(Pedimento.id, Pedimento.operation_date)).all()
+_SIN_CLASIFICACION: Final = "la clasificación no llegó a ser defendible"
+_LINEA: Final = re.compile(r"^\s*línea\s+(\d+)\s*:\s*(.+)$", re.IGNORECASE | re.DOTALL)
+
+
+def _lineas_sin_clasificacion(session: Session) -> set[uuid.UUID]:
+    """Partidas cuya revisión dice que la clasificación no se sostuvo.
+
+    Se mira la revisión MÁS RECIENTE de cada pedimento: una auditoría vieja no
+    describe el estado de hoy.
+    """
+    ultima: dict[uuid.UUID, ShadowReview] = {}
+    for revision in session.scalars(
+        sa.select(ShadowReview).order_by(ShadowReview.created_at)
+    ).all():
+        ultima[revision.pedimento_id] = revision
+
+    por_linea = {
+        (fila.pedimento_id, fila.line_number): fila.id
+        for fila in session.execute(
+            sa.select(PedimentoItem.pedimento_id, PedimentoItem.line_number, PedimentoItem.id)
+        ).all()
     }
 
+    sin_clasificar: set[uuid.UUID] = set()
+    for pedimento_id, revision in ultima.items():
+        for motivo in revision.unverifiable or []:
+            coincidencia = _LINEA.match(motivo)
+            if coincidencia is None or _SIN_CLASIFICACION not in coincidencia.group(2):
+                continue
+            partida = por_linea.get((pedimento_id, int(coincidencia.group(1))))
+            if partida is not None:
+                sin_clasificar.add(partida)
+    return sin_clasificar
+
+
+def recolectar(
+    session: Session, *, escenario: uuid.UUID | None = None
+) -> tuple[list[Evento], list[Hallazgo], list[str]]:
+    """Lee de la base lo que la métrica necesita. Nada más.
+
+    `escenario` acota a un corpus, y acota LAS TRES COSAS: eventos, partidas y
+    hallazgos. Acotar sólo los eventos dejaría las partidas de otro escenario
+    contadas como limpias y sus hallazgos como falsos positivos — el número que
+    más importa, estropeado por un artefacto de la consulta.
+    """
+    consulta_partidas = sa.select(PedimentoItem)
+    consulta_pedimentos = sa.select(Pedimento.id, Pedimento.operation_date)
+    if escenario is not None:
+        del_escenario = sa.select(Pedimento.id).where(Pedimento.synthetic_scenario_id == escenario)
+        consulta_partidas = consulta_partidas.where(PedimentoItem.pedimento_id.in_(del_escenario))
+        consulta_pedimentos = consulta_pedimentos.where(
+            Pedimento.synthetic_scenario_id == escenario
+        )
+
+    partidas = {fila.id: fila for fila in session.scalars(consulta_partidas).all()}
+    fechas: dict[uuid.UUID, date] = {
+        fila.id: fila.operation_date for fila in session.execute(consulta_pedimentos).all()
+    }
+
+    sin_clasificar = _lineas_sin_clasificacion(session)
+
+    consulta = sa.select(GroundTruthRecord)
+    if escenario is not None:
+        consulta = consulta.where(GroundTruthRecord.synthetic_scenario_id == escenario)
+
     eventos: list[Evento] = []
-    for gt in session.scalars(sa.select(GroundTruthRecord)).all():
+    for gt in session.scalars(consulta).all():
         if gt.pedimento_item_id is None:
             # Sin partida no se puede emparejar con ningún hallazgo. Se omite
             # y se nota: un evento que no apunta a nada no mide nada.
@@ -81,28 +161,34 @@ def recolectar(session: Session) -> tuple[list[Evento], list[Hallazgo], list[str
         subtipo = None
         if gt.error_type == "WRONG_NICO" and partida is not None:
             subtipo = _subtipo_nico(session, partida, fechas.get(partida.pedimento_id))
+        elif gt.error_type == "WRONG_VALUE":
+            subtipo = SUBTIPO_POR_CAMPO.get(gt.expected_field or "")
         eventos.append(
             Evento(
                 partida_id=str(gt.pedimento_item_id),
                 error_type=gt.error_type,
                 detectable=gt.expected_detection,
                 subtipo=subtipo,
+                pudo_intentarlo=gt.pedimento_item_id not in sin_clasificar,
             )
         )
 
+    # Sólo los hallazgos de las partidas del corpus: uno de otro escenario
+    # entraría como falso positivo sin serlo.
     hallazgos = [
         Hallazgo(partida_id=str(f.pedimento_item_id), finding_type=f.finding_type)
         for f in session.scalars(
             sa.select(RiskFinding).where(RiskFinding.pedimento_item_id.isnot(None))
         ).all()
+        if f.pedimento_item_id in partidas
     ]
     return eventos, hallazgos, [str(i) for i in partidas]
 
 
-def medir(session: Session) -> Reporte:
+def medir(session: Session, *, escenario: uuid.UUID | None = None) -> Reporte:
     """La métrica, sobre una sesión que no puede escribir."""
     solo_lectura = SesionSoloLectura(session)
-    eventos, hallazgos, partidas = recolectar(solo_lectura)  # type: ignore[arg-type]
+    eventos, hallazgos, partidas = recolectar(solo_lectura, escenario=escenario)  # type: ignore[arg-type]
     reporte = evaluar(eventos, hallazgos, partidas=partidas)
     log.info(
         "deteccion.medida",
@@ -122,8 +208,13 @@ def informe(r: Reporte) -> str:
         f"  indetectables por construcción: {r.excluidos_por_indetectables} (fuera del recall)",
     ]
     if r.excluidos_sin_detector:
-        detalle = ", ".join(f"{k}={v}" for k, v in sorted(r.excluidos_sin_detector.items()))
-        lineas.append(f"  sin detector construido todavía: {detalle}")
+        lineas.append("  SIN DETECTOR CONSTRUIDO (no es fallo del motor: es código que falta)")
+        for tipo, n in sorted(r.excluidos_sin_detector.items()):
+            lineas.append(f"    {tipo:<32} {n}")
+    if r.fn_por_causa:
+        lineas.append("  POR QUÉ NO SE DETECTÓ")
+        for causa, n in sorted(r.fn_por_causa.items()):
+            lineas.append(f"    {causa:<32} {n}")
 
     a = r.agregado
     lineas += [

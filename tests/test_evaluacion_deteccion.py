@@ -58,17 +58,61 @@ def test_lo_indetectable_sale_del_recall_y_se_dice() -> None:
     assert r.agregado.recall == Decimal("100.00"), "el recall no carga con lo imposible"
 
 
-def test_un_tipo_sin_detector_no_cuenta_como_fallo_del_motor() -> None:
-    """No haberlo construido no es fallar. El reporte lo nombra aparte."""
-    r = evaluar(
-        [Evento("p000", "WRONG_UNIT", detectable=True)],
-        [],
-        partidas=_partidas(1),
+def test_un_tipo_sin_detector_cuenta_pero_con_su_causa_escrita() -> None:
+    """EL TEST QUE IMPORTA (Persona 1, 22-sep).
+
+    No haberlo construido no es fallar, pero tampoco se saca del denominador:
+    un recall que escondiera lo no construido presentaría como bueno un
+    sistema al que le falta medio detector. Cuenta, y dice por qué.
+    """
+    from core.evaluation.deteccion import SIN_DETECTOR_CONSTRUIDO
+
+    r = evaluar([Evento("p000", "WRONG_UNIT", detectable=True)], [], partidas=_partidas(1))
+
+    assert r.eventos_medibles == 1
+    assert r.agregado.recall == Decimal("0.00")
+    assert r.excluidos_sin_detector == {"WRONG_UNIT": 1}
+    assert r.fn_por_causa == {SIN_DETECTOR_CONSTRUIDO: 1}
+
+
+def test_los_tres_porques_de_un_falso_negativo_se_separan() -> None:
+    """Se ven iguales en la tabla y no son lo mismo."""
+    from core.evaluation.deteccion import (
+        NO_LO_CAZO,
+        NO_PUDO_DETERMINARLO,
+        SIN_DETECTOR_CONSTRUIDO,
     )
 
-    assert r.eventos_medibles == 0
-    assert r.excluidos_sin_detector == {"WRONG_UNIT": 1}
-    assert r.agregado.recall is None, "sin nada medible es desconocido, no cero"
+    r = evaluar(
+        [
+            Evento("p000", "WRONG_UNIT", detectable=True),
+            Evento("p001", "WRONG_FRACTION", detectable=True, pudo_intentarlo=False),
+            Evento("p002", "WRONG_ORIGIN", detectable=True),
+        ],
+        [],
+        partidas=_partidas(3),
+    )
+
+    assert r.fn_por_causa == {
+        SIN_DETECTOR_CONSTRUIDO: 1,
+        NO_PUDO_DETERMINARLO: 1,
+        NO_LO_CAZO: 1,
+    }
+
+
+def test_los_cuatro_sabores_de_valor_no_se_presentan_como_uno() -> None:
+    """El corpus colapsa cuatro anomalías en WRONG_VALUE. Sólo una tiene detector."""
+    from core.evaluation.deteccion import SUBTIPO_POR_CAMPO
+
+    eventos = [
+        Evento("p000", "WRONG_VALUE", detectable=True, subtipo=SUBTIPO_POR_CAMPO["customs_value"]),
+        Evento("p001", "WRONG_VALUE", detectable=True, subtipo=SUBTIPO_POR_CAMPO["igi_rate"]),
+    ]
+    r = evaluar(eventos, [Hallazgo("p000", "VALUE_MISMATCH")], partidas=_partidas(2))
+
+    assert r.por_tipo["WRONG_VALUE/valor en aduana"].recall == Decimal("100.00")
+    assert r.por_tipo["WRONG_VALUE/tasa de IGI"].recall == Decimal("0.00")
+    assert "WRONG_VALUE" not in r.por_tipo
 
 
 def test_el_nico_se_reporta_en_dos_filas() -> None:
