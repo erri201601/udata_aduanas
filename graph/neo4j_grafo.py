@@ -44,6 +44,15 @@ class Neo4jGrafo:
         with self._driver.session(database=self._database) as sesion:
             return list(sesion.run(consulta, **parametros))
 
+    def consultar(self, cypher: str, **parametros: Any) -> list[dict[str, Any]]:
+        """Corre una consulta de LECTURA y devuelve filas planas.
+
+        Existe para `graph.preguntas`, que arma la Cypher sin conocer el
+        driver. Aquí no se valida ningún identificador porque no se interpola
+        nada: la consulta llega entera y los valores van como parámetros.
+        """
+        return [dict(fila) for fila in self._correr(cypher, **parametros)]
+
     def merge_nodos(
         self, etiqueta: str, filas: Sequence[Mapping[str, Any]], *, clave: str = "id"
     ) -> int:

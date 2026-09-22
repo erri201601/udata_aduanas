@@ -60,7 +60,9 @@ DOS DESVÍOS CONSCIENTES DEL §28
 1. El §28 dibuja `SKU --APPEARS_IN--> PEDIMENTO`. En nuestro modelo el SKU es
    una columna de `products`, no una entidad, y lo que de verdad aparece en un
    pedimento es la PARTIDA. Por eso va
-   `(Pedimento)-[:HAS_ITEM]->(PedimentoItem)-[:DECLARES]->(TariffFraction)`.
+   `(Pedimento)-[:HAS_ITEM]->(PedimentoItem)-[:DECLARES]->(TariffFraction)`,
+   y `(PedimentoItem)-[:OF_PRODUCT]->(Product)` cierra el camino: en qué
+   operaciones apareció un producto se pregunta por ahí.
 
 2. El §28 dibuja `PRODUCT --CLASSIFIED_AS--> FRACTION`. Esa arista afirmaría
    un hecho sin decir quién lo decidió ni cuándo. Aquí la clasificación pasa
@@ -316,11 +318,22 @@ def _relaciones(session: Session) -> list[tuple[str, str, str, list[tuple[str, s
         )
     )
 
-    suministra = (
+    # Un producto se liga a su proveedor por DOS caminos, y hacen falta los dos.
+    # El directo —la línea de factura dice qué producto es— está casi vacío en
+    # el corpus de hoy: `invoice_items.product_id` sólo trae 1 de 181. El otro
+    # pasa por la partida, que sí lo trae en las 181, y es el mismo camino que
+    # el Espejo usa para saber de dónde viene la mercancía. Con sólo el
+    # primero, el grafo tenía UNA arista SUPPLIED_BY y las dos mitades
+    # —pedimentos por un lado, decisiones y productos por el otro— no se
+    # tocaban: ninguna pregunta podía cruzarlas.
+    suministra = sa.union(
         sa.select(InvoiceItem.product_id, Invoice.supplier_id)
         .join(Invoice, Invoice.id == InvoiceItem.invoice_id)
-        .where(InvoiceItem.product_id.isnot(None))
-        .distinct()
+        .where(InvoiceItem.product_id.isnot(None), Invoice.supplier_id.isnot(None)),
+        sa.select(PedimentoItem.product_id, Invoice.supplier_id)
+        .join(InvoiceItem, InvoiceItem.id == PedimentoItem.invoice_item_id)
+        .join(Invoice, Invoice.id == InvoiceItem.invoice_id)
+        .where(PedimentoItem.product_id.isnot(None), Invoice.supplier_id.isnot(None)),
     )
 
     return [
@@ -378,6 +391,22 @@ def _relaciones(session: Session) -> list[tuple[str, str, str, list[tuple[str, s
             _pares(session, sa.select(PedimentoItem.pedimento_id, PedimentoItem.id)),
         ),
         ("DECLARES", "PedimentoItem", "TariffFraction", _pares(session, declara)),
+        # Sin esto el grafo son dos grafos: uno de pedimentos y otro de
+        # decisiones sobre productos, sin un solo camino entre ellos. Es la
+        # arista que permite preguntar en qué operaciones apareció un producto
+        # —lo que el §28 quería decir con `SKU --APPEARS_IN--> PEDIMENTO`, con
+        # la partida en lugar del SKU, que es lo que de verdad se declara.
+        (
+            "OF_PRODUCT",
+            "PedimentoItem",
+            "Product",
+            _pares(
+                session,
+                sa.select(PedimentoItem.id, PedimentoItem.product_id).where(
+                    PedimentoItem.product_id.isnot(None)
+                ),
+            ),
+        ),
     ]
 
 
