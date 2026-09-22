@@ -58,3 +58,33 @@ def test_los_secretos_no_se_filtran_en_repr() -> None:
     assert "no-debe-aparecer" not in repr(settings)
     assert "no-debe-aparecer" not in str(settings)
     assert settings.postgres_password.get_secret_value() == "no-debe-aparecer"
+
+
+def test_la_base_del_equipo_sale_del_entorno_no_del_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """La contraseña de la base compartida no vive en `.env` ni en el código."""
+    from apps.api.config import url_de_postgres
+
+    monkeypatch.setenv("ADUANERO_SHARED_URL", "postgresql+psycopg://u:p@100.86.182.104:5433/a")
+
+    assert url_de_postgres("shared").endswith("@100.86.182.104:5433/a")
+
+
+def test_sin_la_variable_no_se_inventa_un_destino(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Callar aquí mediría la base equivocada creyendo medir la del equipo."""
+    from apps.api.config import UrlCompartidaAusenteError, url_de_postgres
+
+    monkeypatch.delenv("ADUANERO_SHARED_URL", raising=False)
+
+    with pytest.raises(UrlCompartidaAusenteError, match="canal seguro"):
+        url_de_postgres("shared")
+
+
+def test_local_es_la_de_esta_maquina(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Y no se contamina con la compartida aunque esté definida."""
+    from apps.api.config import get_settings, url_de_postgres
+
+    monkeypatch.setenv("ADUANERO_SHARED_URL", "postgresql+psycopg://u:p@otra:5433/a")
+
+    assert url_de_postgres("local") == get_settings().sqlalchemy_url
