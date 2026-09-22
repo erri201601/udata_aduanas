@@ -1241,3 +1241,7 @@ code {
    Confundirlas es el error que esta sección existe para evitar. */
 .reforma--entrada { border-style: dashed; }
 .reforma__tipo { font-size: 0.75rem; color: var(--tenue); }
+
+/* El tipo de divergencia, en palabras. El nombre técnico va en el `title`:
+   quien audita necesita poder citarlo, pero no leerlo primero. */
+.divergencia__tipo { font-size: 0.78rem; color: var(--tenue); }

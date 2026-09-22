@@ -18,6 +18,7 @@
 
 import { useState } from 'react'
 
+import { detalleDe, etiquetaDe } from '../components/divergencias'
 import { SyntheticBanner } from '../components/DataOriginBadge'
 import {
   SEVERIDADES,
@@ -173,7 +174,9 @@ export function Findings() {
                   >
                     <div className="hallazgo__cabecera">
                       <SeverityBadge severity={h.severity as Severity} />
-                      <code className="hallazgo__tipo">{h.finding_type}</code>
+                      <span className="hallazgo__tipo" title={detalleDe(h.finding_type)}>
+                        {etiquetaDe(h.finding_type)}
+                      </span>
                       {h.is_simulation && <span className="sim">simulación</span>}
                     </div>
 

@@ -503,3 +503,19 @@ def test_sin_tasa_en_el_catalogo_el_igi_no_se_da_por_bueno() -> None:
     assert not [x for x in r.divergences if x.kind is DivergenceType.IGI_RATE_MISMATCH]
     assert any("no se pudo comprobar el IGI" in m for m in r.unverifiable)
     assert any("no se pudo comprobar el IVA" in m for m in r.unverifiable)
+
+
+def test_toda_divergencia_tiene_etiqueta_en_la_interfaz() -> None:
+    """La pantalla no puede quedarse callada sobre un hallazgo que el motor emite.
+
+    Cruza el vocabulario del §18 con las etiquetas del frontend: si alguien
+    añade un tipo y no lo nombra allí, la pantalla mostraría la constante en
+    crudo a un agente aduanal. Se comprueba desde aquí porque el frontend no
+    tiene runner de tests.
+    """
+    import pathlib
+
+    etiquetas = pathlib.Path("apps/web/src/components/divergencias.ts").read_text()
+
+    for tipo in DivergenceType:
+        assert f"{tipo.value}: {{" in etiquetas, f"falta la etiqueta de {tipo.value}"
