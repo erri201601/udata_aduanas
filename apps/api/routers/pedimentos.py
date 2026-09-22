@@ -19,6 +19,15 @@ fracción. Se agrupan en `_espejo_documental` porque comparten eso:
   · el valor en aduana, contra la aritmética de la propia partida: precio
     pagado más incrementables. Una partida que se contradice a sí misma se
     delata sin mirar el encabezado ni el DTA (Persona 1, 21-sep).
+  · el IGI, contra la tarifa de la fracción DECLARADA. Aunque esa fracción
+    estuviera equivocada, el importe tiene que cuadrar con la tasa de la que
+    se declaró.
+  · el IVA, contra su base: valor en aduana + IGI + DTA, con las tasas que
+    pasa quien audita.
+  · la unidad, contra el Apéndice 7 del Anexo 22.
+
+Ninguna de las cuatro necesita que el motor clasifique, y por eso se miden
+aunque la clasificación no se sostenga (Persona 1, 22-sep).
 
 EL PAÍS DE ORIGEN SE CONTRASTA CONTRA EL PROVEEDOR
 
@@ -73,6 +82,9 @@ from apps.api.db import SessionDep
 from apps.api.dna import cargar_borrador, terminos
 
 router = APIRouter(prefix="/pedimentos", tags=["pedimentos"])
+
+#: El pedimento redondea a centavos y el cálculo de aquí también.
+_CENTAVOS: Final = Decimal("0.01")
 
 #: Lo que se puede comprobar sin haber clasificado. Si nada de esto consta, la
 #: partida no tiene espejo y se reporta como no verificable.
@@ -162,7 +174,7 @@ def revisar(
     sin_espejo = 0
 
     for partida in partidas:
-        esperada = _construir_espejo(session, partida, fecha, catalogo, notas)
+        esperada = _construir_espejo(session, partida, fecha, catalogo, notas, peticion)
         if esperada is None:
             sin_espejo += 1
 
@@ -216,6 +228,9 @@ def _declarada(partida: PedimentoItem) -> DeclaredItem:
         customs_value_currency=partida.customs_value_currency,
         applied_nom_codes=tuple(partida.applied_nom_codes or ()),
         identifiers=dict(partida.identifiers or {}),
+        unit=partida.commercial_unit,
+        igi_amount=partida.igi_amount,
+        vat_amount=partida.vat_amount,
     )
 
 
@@ -253,16 +268,66 @@ def _valor_esperado(partida: PedimentoItem) -> tuple[Decimal | None, str | None]
     return partida.price_paid + partida.incrementables, moneda
 
 
+def _dta(valor: Decimal, peticion: ReviewRequest) -> Decimal | None:
+    """El DTA de la partida con las tasas de la operación. `None` si no se pasaron.
+
+    La tasa la pasa quien audita: codificarla aquí sería fundamento jurídico
+    inventado y quedaría congelada el día que cambie en el DOF.
+    """
+    if peticion.dta_rate is not None:
+        return valor * peticion.dta_rate
+    return peticion.dta_fixed
+
+
+def _fiscal_esperado(
+    partida: PedimentoItem, fecha: date, catalogo: TariffCatalogRepository, peticion: ReviewRequest
+) -> tuple[Decimal | None, Decimal | None]:
+    """IGI e IVA que deberían haberse declarado. `None` cuando no se puede saber.
+
+    El IGI sale de la tarifa de la fracción DECLARADA: no hace falta clasificar
+    para exigir que el importe cuadre con la tasa de la que se declaró. El IVA
+    sale de su base —valor en aduana + IGI + DTA— con las tasas de la
+    operación. Si falta cualquiera de las piezas se devuelve `None` y la
+    partida lo declara, en vez de compararse contra un número supuesto.
+    """
+    if partida.customs_value is None or not partida.declared_fraction_code:
+        return None, None
+
+    tasa = catalogo.igi_rate(on_date=fecha, fraction_code=partida.declared_fraction_code)
+    if tasa is None:
+        return None, None
+    igi = (partida.customs_value * tasa).quantize(_CENTAVOS)
+
+    dta = _dta(partida.customs_value, peticion)
+    if dta is None or peticion.iva_rate is None:
+        return igi, None
+    base = partida.customs_value + igi + dta.quantize(_CENTAVOS)
+    return igi, (base * peticion.iva_rate).quantize(_CENTAVOS)
+
+
 def _espejo_documental(
     session: SessionDep,
     partida: PedimentoItem,
     fecha: date,
     catalogo: TariffCatalogRepository,
+    peticion: ReviewRequest,
 ) -> dict[str, Any]:
     """Lo que se puede esperar SIN clasificar. Sale del documento, no del motor."""
     pais = _pais_del_proveedor(session, partida)
     valor, moneda = _valor_esperado(partida)
+    igi, iva = _fiscal_esperado(partida, fecha, catalogo, peticion)
+    # `None` y `False` dicen cosas distintas: sin catálogo cargado no se puede
+    # afirmar que una unidad no exista, y acusar ahí sería culpar al pedimento
+    # de un hueco nuestro.
+    unidad_conocida = (
+        catalogo.unidad_existe(on_date=fecha, code=partida.commercial_unit)
+        if partida.commercial_unit and catalogo.hay_unidades(on_date=fecha)
+        else None
+    )
     return {
+        "igi_amount": igi,
+        "vat_amount": iva,
+        "declared_unit_is_known": unidad_conocida,
         "country_of_origin": pais,
         "origin_source": ORIGEN_DEL_PROVEEDOR if pais else None,
         "valid_nico_codes": (
@@ -281,6 +346,7 @@ def _construir_espejo(
     fecha: date,
     catalogo: TariffCatalogRepository,
     notas: LegalNotesRepository,
+    peticion: ReviewRequest,
 ) -> ExpectedItem | None:
     """Clasifica el producto de la partida SIN mirar lo declarado (§36).
 
@@ -288,7 +354,7 @@ def _construir_espejo(
     DNA no hay expectativa, y la partida se reporta como no verificable. Un
     `ExpectedItem` vacío la haría pasar por limpia.
     """
-    documental = _espejo_documental(session, partida, fecha, catalogo)
+    documental = _espejo_documental(session, partida, fecha, catalogo, peticion)
 
     if (
         partida.product_id is None

@@ -10,6 +10,7 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
+from apps.api.routers.pedimentos import ReviewRequest
 from core.review import LineInput, review_pedimento
 from core.shadow import DeclaredItem, DivergenceType, ExpectedItem
 from core.taxation import Money, TaxRates
@@ -227,6 +228,7 @@ def test_una_partida_sin_producto_igual_se_le_comprueba_el_pais() -> None:
         date(2026, 3, 15),
         _CatalogoFalso(("00",)),  # type: ignore[arg-type]
         None,  # type: ignore[arg-type]
+        ReviewRequest(),
     )
 
     assert esperado is not None
@@ -251,6 +253,7 @@ def test_sin_producto_y_sin_proveedor_no_hay_espejo() -> None:
             date(2026, 3, 15),
             _CatalogoFalso(("00",)),  # type: ignore[arg-type]
             None,  # type: ignore[arg-type]
+            ReviewRequest(),
         )
         is None
     )
@@ -310,6 +313,7 @@ def test_el_espejo_documental_consulta_los_nico_de_la_fraccion_declarada() -> No
         _partida(declared_fraction_code="73051291"),  # type: ignore[arg-type]
         date(2026, 3, 15),
         catalogo,  # type: ignore[arg-type]
+        ReviewRequest(),
     )
 
     assert catalogo.consultas == ["73051291"], "se consulta la DECLARADA, no una esperada"
@@ -326,6 +330,7 @@ def test_sin_fraccion_declarada_no_se_consulta_el_catalogo() -> None:
         _partida(declared_fraction_code=None),  # type: ignore[arg-type]
         date(2026, 3, 15),
         catalogo,  # type: ignore[arg-type]
+        ReviewRequest(),
     )
 
     assert catalogo.consultas == []

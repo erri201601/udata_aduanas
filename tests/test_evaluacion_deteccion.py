@@ -67,11 +67,13 @@ def test_un_tipo_sin_detector_cuenta_pero_con_su_causa_escrita() -> None:
     """
     from core.evaluation.deteccion import SIN_DETECTOR_CONSTRUIDO
 
-    r = evaluar([Evento("p000", "WRONG_UNIT", detectable=True)], [], partidas=_partidas(1))
+    r = evaluar(
+        [Evento("p000", "MISSING_TECHNICAL_FIELD", detectable=True)], [], partidas=_partidas(1)
+    )
 
     assert r.eventos_medibles == 1
     assert r.agregado.recall == Decimal("0.00")
-    assert r.excluidos_sin_detector == {"WRONG_UNIT": 1}
+    assert r.excluidos_sin_detector == {"MISSING_TECHNICAL_FIELD": 1}
     assert r.fn_por_causa == {SIN_DETECTOR_CONSTRUIDO: 1}
 
 
@@ -85,7 +87,7 @@ def test_los_tres_porques_de_un_falso_negativo_se_separan() -> None:
 
     r = evaluar(
         [
-            Evento("p000", "WRONG_UNIT", detectable=True),
+            Evento("p000", "MISSING_TECHNICAL_FIELD", detectable=True),
             Evento("p001", "WRONG_FRACTION", detectable=True, pudo_intentarlo=False),
             Evento("p002", "WRONG_ORIGIN", detectable=True),
         ],
@@ -212,3 +214,22 @@ def test_no_se_empareja_por_nombre_de_campo() -> None:
     )
 
     assert r.agregado.tp == 1
+
+
+def test_la_cobertura_por_partida_se_reporta_aparte_de_la_deteccion_por_tipo() -> None:
+    """Señalar la partida y diagnosticar la anomalía son cosas distintas.
+
+    Una fracción equivocada puede quedar señalada porque su IGI no cuadra con
+    la tasa de la fracción declarada. No la diagnostica —el tipo no coincide—
+    pero a quien audita le sirve que la partida salga marcada.
+    """
+    r = evaluar(
+        [Evento("p000", "WRONG_FRACTION", detectable=True)],
+        [Hallazgo("p000", "IGI_RATE_MISMATCH")],
+        partidas=_partidas(5),
+    )
+
+    assert r.agregado.tp == 0, "no se diagnosticó la fracción"
+    assert r.partidas_senaladas == 1, "pero la partida quedó marcada"
+    assert r.cobertura_por_partida == Decimal("100.00")
+    assert r.hallazgos_fuera_de_su_anomalia == 1

@@ -39,6 +39,11 @@ class DeclaredItem(BaseModel):
     identifiers: dict[str, Any] = Field(default_factory=dict)
     sku: str | None = None
 
+    unit: str | None = None
+    """Unidad de medida comercial declarada (clave del Apéndice 7, Anexo 22)."""
+    igi_amount: Decimal | None = None
+    vat_amount: Decimal | None = None
+
 
 #: `ExpectedItem.origin_source` cuando el país esperado se dedujo del proveedor
 #: del documento y no de una fuente firme como el certificado de origen.
@@ -67,6 +72,23 @@ class ExpectedItem(BaseModel):
     """
     customs_value: Decimal | None = None
     customs_value_currency: str | None = None
+    igi_amount: Decimal | None = None
+    """IGI que sale de aplicar la tarifa a la fracción DECLARADA.
+
+    Se calcula sin clasificar: aunque la fracción estuviera mal, el importe
+    tiene que cuadrar con la tasa de la que se declaró. `None` = no se pudo
+    consultar la tasa, y entonces no se compara.
+    """
+
+    vat_amount: Decimal | None = None
+    """IVA que sale de su base: valor en aduana + IGI + DTA.
+
+    Las tasas las pasa quien llama; el motor no las inventa (§8.1).
+    """
+
+    declared_unit_is_known: bool | None = None
+    """¿La unidad declarada existe en el Apéndice 7? `None` = no se consultó."""
+
     valid_nico_codes: tuple[str, ...] | None = None
     """Los NICO que existen en la fracción DECLARADA. `None` = no se consultó.
 

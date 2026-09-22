@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING
 import sqlalchemy as sa
 from core.rgi_engine.context import TariffCandidate
 
-from database.models import Nico, TariffFraction
+from database.models import Nico, TariffFraction, UnitOfMeasure
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -241,6 +241,41 @@ class TariffCatalogRepository:
             .order_by(Nico.code)
         ).all()
         return tuple(filas)
+
+    def unidad_existe(self, *, on_date: date, code: str) -> bool:
+        """¿La unidad declarada está en el Apéndice 7 del Anexo 22, ese día?
+
+        Aquí y no en el router por lo mismo que los NICO: es catálogo. Devuelve
+        `False` sólo cuando el catálogo está cargado y la clave no aparece —
+        quien llama decide qué hacer si el catálogo estuviera vacío, y para eso
+        existe `hay_unidades`.
+        """
+        return (
+            self._session.scalar(
+                sa.select(UnitOfMeasure.id)
+                .where(
+                    UnitOfMeasure.code == code,
+                    UnitOfMeasure.valid_from <= on_date,
+                    sa.or_(UnitOfMeasure.valid_to.is_(None), UnitOfMeasure.valid_to >= on_date),
+                )
+                .limit(1)
+            )
+            is not None
+        )
+
+    def hay_unidades(self, *, on_date: date) -> bool:
+        """¿Hay catálogo de unidades cargado? Sin él no se puede acusar a nadie."""
+        return (
+            self._session.scalar(
+                sa.select(UnitOfMeasure.id)
+                .where(
+                    UnitOfMeasure.valid_from <= on_date,
+                    sa.or_(UnitOfMeasure.valid_to.is_(None), UnitOfMeasure.valid_to >= on_date),
+                )
+                .limit(1)
+            )
+            is not None
+        )
 
     def igi_rate(self, *, on_date: date, fraction_code: str) -> Decimal | None:
         """La tasa de IGI de una fracción, vigente en la fecha de la operación.
