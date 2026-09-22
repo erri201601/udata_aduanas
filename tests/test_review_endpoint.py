@@ -65,7 +65,13 @@ def test_sin_producto_ligado_se_comprueba_lo_que_no_exige_clasificar() -> None:
     país, el NICO y la aritmética del valor, no (Persona 1, 21-sep)."""
     catalogo = MagicMock()
     catalogo.nicos.return_value = ("00",)
-    espejo = _construir_espejo(MagicMock(), _partida(product_id=None), FECHA, catalogo, MagicMock())
+    # Sin tasa ni catálogo de unidades: lo fiscal y la unidad quedan sin
+    # comprobar, que es lo que este test mira — el país y el NICO sí.
+    catalogo.igi_rate.return_value = None
+    catalogo.hay_unidades.return_value = False
+    espejo = _construir_espejo(
+        MagicMock(), _partida(product_id=None), FECHA, catalogo, MagicMock(), ReviewRequest()
+    )
 
     assert espejo is not None
     assert espejo.is_resolved is False, "no se clasificó nada"

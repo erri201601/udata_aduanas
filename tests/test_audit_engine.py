@@ -31,6 +31,9 @@ def comparacion(**kw: object):  # type: ignore[no-untyped-def]
         "customs_value": Decimal("100000.00"),
         "customs_value_currency": "MXN",
         "applied_nom_codes": ("NOM-019-SCFI",),
+        "unit": "6",
+        "igi_amount": Decimal("15000.00"),
+        "vat_amount": Decimal("18528.00"),
     }
     esp: dict[str, object] = {
         "line_number": 1,
@@ -46,6 +49,12 @@ def comparacion(**kw: object):  # type: ignore[no-untyped-def]
         "required_identifiers": (),
         "is_resolved": True,
         "confidence": Decimal("0.92"),
+        # Igual que los identificadores: explícito «se comprobó y cuadra», para
+        # que un pedimento limpio se pueda afirmar limpio.
+        "igi_amount": Decimal("15000.00"),
+        "vat_amount": Decimal("18528.00"),
+        "declared_unit_is_known": True,
+        "valid_nico_codes": ("00",),
     }
     dec.update(kw.get("declarado", {}))  # type: ignore[arg-type]
     esp.update(kw.get("esperado", {}))  # type: ignore[arg-type]

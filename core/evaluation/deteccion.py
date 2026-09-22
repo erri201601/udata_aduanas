@@ -76,6 +76,7 @@ DETECTOR_POR_ERROR: Final[Mapping[str, str]] = {
     "WRONG_VALUE": "VALUE_MISMATCH",
     "MISSING_NOM": "MISSING_NOM",
     "WRONG_IDENTIFIER": "IDENTIFIER_MISMATCH",
+    "WRONG_UNIT": "UNIT_MISMATCH",
     "INCONSISTENT_SKU_CLASSIFICATION": "INCONSISTENT_SKU_CLASSIFICATION",
 }
 
@@ -84,7 +85,6 @@ DETECTOR_POR_ERROR: Final[Mapping[str, str]] = {
 SIN_DETECTOR: Final[frozenset[str]] = frozenset(
     {
         "INCONSISTENT_QUANTITY",
-        "WRONG_UNIT",
         "MISSING_TECHNICAL_FIELD",
         "MISSED_PROSEC",
         "MISSED_PREFERENCE",
@@ -111,15 +111,20 @@ SUBTIPO_POR_CAMPO: Final[Mapping[str, str]] = {
     "iva_amount": "WRONG_VALUE/importe de IVA",
 }
 
+#: Qué hallazgo corresponde a cada subtipo, cuando el del tipo no alcanza. Los
+#: cuatro sabores de WRONG_VALUE los caza gente distinta: el valor en aduana lo
+#: delata la aritmética de la partida, la tasa de IGI la tarifa, y la base y el
+#: importe de IVA salen los dos desviados del mismo cálculo — desde el pedimento
+#: no se distingue cuál se alteró, y el motor no lo afirma.
+DETECTOR_POR_SUBTIPO: Final[Mapping[str, str]] = {
+    "WRONG_VALUE/valor en aduana": "VALUE_MISMATCH",
+    "WRONG_VALUE/tasa de IGI": "IGI_RATE_MISMATCH",
+    "WRONG_VALUE/base de IVA": "VAT_MISMATCH",
+    "WRONG_VALUE/importe de IVA": "VAT_MISMATCH",
+}
+
 #: Subtipos sin detector construido. Se cuentan aparte de los que sí lo tienen.
-SUBTIPOS_SIN_DETECTOR: Final[frozenset[str]] = frozenset(
-    {
-        "WRONG_VALUE/tasa de IGI",
-        "WRONG_VALUE/base de IVA",
-        "WRONG_VALUE/importe de IVA",
-        NICO_EXIGE_FICHA,
-    }
-)
+SUBTIPOS_SIN_DETECTOR: Final[frozenset[str]] = frozenset({NICO_EXIGE_FICHA})
 
 #: Por qué no se detectó. Tres cosas distintas que se ven iguales en un FN.
 SIN_DETECTOR_CONSTRUIDO: Final = "el detector no existe"
@@ -159,11 +164,20 @@ class Evento:
         return self.subtipo or self.error_type
 
     @property
+    def detector(self) -> str | None:
+        """Qué hallazgo tendría que haber salido. `None` si nadie lo comprueba."""
+        subtipo = self.subtipo
+        if subtipo is not None:
+            if subtipo in SUBTIPOS_SIN_DETECTOR:
+                return None
+            if subtipo in DETECTOR_POR_SUBTIPO:
+                return DETECTOR_POR_SUBTIPO[subtipo]
+        return DETECTOR_POR_ERROR.get(self.error_type)
+
+    @property
     def tiene_detector(self) -> bool:
         """¿Existe la comprobación, aunque no la haya cazado?"""
-        if self.subtipo in SUBTIPOS_SIN_DETECTOR:
-            return False
-        return self.error_type in DETECTOR_POR_ERROR
+        return self.detector is not None
 
     def causa_del_fallo(self) -> str:
         if not self.tiene_detector:
@@ -234,7 +248,26 @@ class Reporte:
     falsos_positivos_de_revision: int = 0
     """De los FP, cuántos son el hallazgo de origen, que pide revisión."""
     hallazgos_fuera_de_su_anomalia: int = 0
-    """En partidas con anomalía, hallazgos de un tipo que nadie sembró."""
+    """En partidas con anomalía, hallazgos de un tipo que nadie sembró.
+
+    No es ruido: suele ser una cascada real. Una partida con el valor en aduana
+    alterado también desvía su IGI y su IVA, y una con la fracción equivocada
+    delata que el IGI impreso no corresponde a la tasa de la declarada.
+    """
+
+    partidas_con_anomalia: int = 0
+    partidas_senaladas: int = 0
+    """De ellas, cuántas recibieron AL MENOS un hallazgo, del tipo que sea.
+
+    Detectar por tipo y señalar la partida son cosas distintas, y las dos
+    importan: a quien audita le sirve que la partida salga marcada aunque el
+    motivo que la marcó no sea el que la ensució.
+    """
+
+    @property
+    def cobertura_por_partida(self) -> Decimal | None:
+        """Qué proporción de partidas sucias quedó señalada por algo."""
+        return _ratio(self.partidas_senaladas, self.partidas_con_anomalia)
 
     @property
     def tasa_falsos_positivos(self) -> Decimal | None:
@@ -289,12 +322,8 @@ def evaluar(
     causas: dict[str, int] = defaultdict(int)
     tp_total = fn_total = 0
     for evento in medibles:
-        esperado = DETECTOR_POR_ERROR.get(evento.error_type)
-        detectado = (
-            evento.tiene_detector
-            and esperado is not None
-            and (evento.partida_id, esperado) in emitidos
-        )
+        esperado = evento.detector
+        detectado = esperado is not None and (evento.partida_id, esperado) in emitidos
         if not detectado:
             causas[evento.causa_del_fallo()] += 1
         actual = por_tipo.get(evento.etiqueta, Conteo())
@@ -316,8 +345,8 @@ def evaluar(
 
     esperados_por_partida: dict[str, set[str]] = defaultdict(set)
     for e in eventos:
-        if e.error_type in DETECTOR_POR_ERROR:
-            esperados_por_partida[e.partida_id].add(DETECTOR_POR_ERROR[e.error_type])
+        if e.detector is not None:
+            esperados_por_partida[e.partida_id].add(e.detector)
     fuera = sum(
         1
         for h in hallazgos
@@ -325,8 +354,12 @@ def evaluar(
         and h.finding_type not in esperados_por_partida[h.partida_id]
     )
 
+    senaladas = {h.partida_id for h in hallazgos} & con_anomalia
+
     return Reporte(
         agregado=Conteo(tp=tp_total, fp=fp_total, fn=fn_total, tn=tn_total),
+        partidas_con_anomalia=len(con_anomalia),
+        partidas_senaladas=len(senaladas),
         por_tipo=por_tipo,
         eventos_totales=len(eventos),
         eventos_medibles=len(medibles),

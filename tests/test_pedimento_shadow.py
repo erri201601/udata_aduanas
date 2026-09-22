@@ -27,6 +27,9 @@ def declarado(**kw: object) -> DeclaredItem:
         "customs_value_currency": "MXN",
         "applied_nom_codes": ("NOM-019-SCFI",),
         "sku": "LAP-14-8GB",
+        "unit": "6",
+        "igi_amount": Decimal("15000.00"),
+        "vat_amount": Decimal("18528.00"),
     }
     base.update(kw)
     return DeclaredItem(**base)  # type: ignore[arg-type]
@@ -47,6 +50,11 @@ def esperado(**kw: object) -> ExpectedItem:
         "required_identifiers": (),
         "confidence": Decimal("0.92"),
         "is_resolved": True,
+        # Explícito: se comprobó y cuadra. Sin esto la partida sería «no
+        # verificable» y ningún test podría afirmar que un pedimento está limpio.
+        "igi_amount": Decimal("15000.00"),
+        "vat_amount": Decimal("18528.00"),
+        "declared_unit_is_known": True,
         "sku": "LAP-14-8GB",
     }
     base.update(kw)
@@ -430,3 +438,68 @@ def test_el_nico_inexistente_se_reporta_aunque_no_se_pudiera_clasificar() -> Non
 
     d = next(x for x in r.divergences if x.kind is DivergenceType.NICO_MISMATCH)
     assert "no existe en la fracción 73241001" in d.reasoning
+
+
+# ── Las tres comprobaciones deterministas (Persona 1, 22-sep) ──────────────
+
+
+def test_el_igi_se_comprueba_contra_la_tarifa_de_la_fraccion_declarada() -> None:
+    """No hace falta clasificar: aunque la fracción esté mal, el importe tiene
+    que cuadrar con la tasa de la que se declaró."""
+    r = compare(
+        [declarado(igi_amount=Decimal("6917.52"))],
+        [esperado(igi_amount=Decimal("9684.52"))],
+    )
+
+    d = next(x for x in r.divergences if x.kind is DivergenceType.IGI_RATE_MISMATCH)
+    assert d.severity == "CRITICAL", "cambia lo que se paga"
+    assert d.declared_value == "6917.52"
+    assert d.expected_value == "9684.52"
+
+
+def test_el_iva_se_comprueba_contra_su_base() -> None:
+    r = compare(
+        [declarado(vat_amount=Decimal("23775.04"))],
+        [esperado(vat_amount=Decimal("23638.04"))],
+    )
+
+    d = next(x for x in r.divergences if x.kind is DivergenceType.VAT_MISMATCH)
+    assert "no cuadra con su base" in d.reasoning
+    assert "no se distingue" in d.reasoning, "no se afirma si fue la base o el importe"
+
+
+def test_una_diferencia_de_centavos_es_redondeo_y_no_un_hallazgo() -> None:
+    r = compare(
+        [declarado(igi_amount=Decimal("9684.53"))],
+        [esperado(igi_amount=Decimal("9684.52"))],
+    )
+
+    assert not [x for x in r.divergences if x.kind is DivergenceType.IGI_RATE_MISMATCH]
+
+
+def test_una_unidad_que_no_existe_en_el_anexo_22_es_hallazgo() -> None:
+    r = compare(
+        [declarado(unit="99")],
+        [esperado(declared_unit_is_known=False)],
+    )
+
+    d = next(x for x in r.divergences if x.kind is DivergenceType.UNIT_MISMATCH)
+    assert d.declared_value == "99"
+    assert d.expected_value is None, "no se inventa cuál era la correcta"
+    assert "Apéndice 7" in d.reasoning
+
+
+def test_sin_catalogo_de_unidades_no_se_acusa_a_la_partida() -> None:
+    """Un hueco del catálogo no es un error del pedimento."""
+    r = compare([declarado(unit="99")], [esperado(declared_unit_is_known=None)])
+
+    assert not [x for x in r.divergences if x.kind is DivergenceType.UNIT_MISMATCH]
+    assert any("no se consultó el" in m for m in r.unverifiable)
+
+
+def test_sin_tasa_en_el_catalogo_el_igi_no_se_da_por_bueno() -> None:
+    r = compare([declarado()], [esperado(igi_amount=None, vat_amount=None)])
+
+    assert not [x for x in r.divergences if x.kind is DivergenceType.IGI_RATE_MISMATCH]
+    assert any("no se pudo comprobar el IGI" in m for m in r.unverifiable)
+    assert any("no se pudo comprobar el IVA" in m for m in r.unverifiable)

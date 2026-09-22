@@ -223,6 +223,9 @@ def informe(r: Reporte) -> str:
         f"  precision {a.precision} · recall {a.recall} · F1 {a.f1}",
         f"  margen del recall al 95 %: ±{a.margen_95} puntos",
         "",
+        f"COBERTURA  {r.partidas_senaladas} de {r.partidas_con_anomalia} partidas sucias "
+        f"quedaron señaladas por algo ({r.cobertura_por_partida} %)",
+        "",
         f"FALSOS POSITIVOS  {a.fp} sobre {r.partidas_limpias} partidas limpias "
         f"({r.tasa_falsos_positivos} %)",
         f"  de ellos, revisión de origen: {r.falsos_positivos_de_revision}",

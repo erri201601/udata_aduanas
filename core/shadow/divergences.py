@@ -45,6 +45,26 @@ class DivergenceType(StrEnum):
     Subvaluar es de las infracciones más perseguidas.
     """
 
+    IGI_RATE_MISMATCH = "IGI_RATE_MISMATCH"
+    """El IGI declarado no es el que sale de aplicar la tarifa a esa fracción.
+
+    Se comprueba SIN clasificar: la tasa se consulta para la fracción DECLARADA
+    y a la fecha de la operación. Aunque la fracción estuviera equivocada, el
+    importe tiene que cuadrar con la tasa de la que se declaró.
+    """
+
+    VAT_MISMATCH = "VAT_MISMATCH"
+    """El IVA declarado no cuadra con su base.
+
+    Base = valor en aduana + IGI + DTA, con las tasas que pasa quien llama. Una
+    base alterada y un importe alterado se ven igual desde aquí —las dos
+    desvían el importe— y el corpus las distingue por su ground truth, no el
+    motor.
+    """
+
+    UNIT_MISMATCH = "UNIT_MISMATCH"
+    """La unidad de medida declarada no existe en el Apéndice 7 del Anexo 22."""
+
     INCONSISTENT_SKU_CLASSIFICATION = "INCONSISTENT_SKU_CLASSIFICATION"
     """El mismo SKU se clasificó distinto en operaciones anteriores.
 
@@ -68,8 +88,14 @@ DEFAULT_SEVERITY: Final[dict[DivergenceType, str]] = {
     DivergenceType.MISSING_NOM: "HIGH",
     # Puede cambiar la preferencia arancelaria.
     DivergenceType.ORIGIN_MISMATCH: "HIGH",
+    # Cambia lo que se paga, igual que una fracción equivocada.
+    DivergenceType.IGI_RATE_MISMATCH: "CRITICAL",
+    # El importe del IVA sale de una base que no cuadra: es dinero, aunque el
+    # error pueda estar en la base y no en la tasa.
+    DivergenceType.VAT_MISMATCH: "HIGH",
     # No cambia el arancel pero sí la estadística y el cumplimiento.
     DivergenceType.NICO_MISMATCH: "MEDIUM",
+    DivergenceType.UNIT_MISMATCH: "MEDIUM",
     DivergenceType.IDENTIFIER_MISMATCH: "MEDIUM",
     # Señala un problema sin decir de qué lado está.
     DivergenceType.INCONSISTENT_SKU_CLASSIFICATION: "MEDIUM",
