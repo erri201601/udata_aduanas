@@ -314,12 +314,26 @@ def espejo(pedimento_id: uuid.UUID, session: SessionDep) -> PedimentoEspejo:
         )
 
     con_monto = [h for h in hallazgos if h.impact_amount is not None]
-    montos: list[Decimal] = [h.impact_amount for h in con_monto if h.impact_amount is not None]
     monedas = {h.impact_amount_currency for h in con_monto if h.impact_amount_currency}
     mezcladas = len(monedas) > 1
+    # UN monto por partida, no uno por hallazgo: dos divergencias de la misma
+    # partida explican la MISMA diferencia y el motor le da a cada una el monto
+    # entero (`core.audit.engine._total`). Sumarlos contaría ese dinero dos
+    # veces, y con el corpus una partida puede traer valor y origen a la vez.
+    monto_por_partida: dict[uuid.UUID, Decimal] = {}
+    for h in con_monto:
+        if h.impact_amount is None:
+            continue
+        clave = h.pedimento_item_id or h.id
+        if abs(h.impact_amount) > abs(monto_por_partida.get(clave, Decimal(0))):
+            monto_por_partida[clave] = h.impact_amount
     # Con más de una moneda no hay total: sumar pesos con dólares da un número
     # que parece dinero y no lo es.
-    suma = sum(montos, start=Decimal(0)) if montos and not mezcladas else None
+    suma = (
+        sum(monto_por_partida.values(), start=Decimal(0))
+        if monto_por_partida and not mezcladas
+        else None
+    )
 
     return PedimentoEspejo(
         pedimento_id=pedimento.id,

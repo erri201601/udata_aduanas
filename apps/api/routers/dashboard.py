@@ -14,7 +14,15 @@ TRES REGLAS QUE LO DEFINEN
    esperan revisión humana y cuántos pedimentos nadie ha auditado dicen más
    del estado real que el total de clasificaciones.
 
-3. **`SYNTHETIC` se cuenta aparte.** §33: si una cifra mezcla datos simulados
+3. **El mismo dinero no se cuenta dos veces.** Una partida con la fracción y
+   el valor equivocados produce DOS hallazgos, y el motor atribuye a cada uno
+   el monto entero a propósito: cada causa explica la diferencia por completo
+   (`core.audit.engine._total`). Sumar los montos fila por fila contaría ese
+   delta dos veces, y con el corpus —donde una partida puede tener divergencia
+   de valor y de origen— el tablero enseñaría más dinero del que existe. Se
+   suma UN monto por partida.
+
+4. **`SYNTHETIC` se cuenta aparte.** §33: si una cifra mezcla datos simulados
    con reales, deja de poder presentarse. El tablero declara cuántas de sus
    filas son simulación.
 """
@@ -114,6 +122,34 @@ class Dashboard(BaseModel):
     """
 
 
+def _por_partida() -> sa.Subquery:
+    """Un monto por partida, no uno por hallazgo.
+
+    Varias divergencias de la misma partida explican la MISMA diferencia de
+    contribuciones, y el motor le atribuye a cada una el monto entero
+    (`core.audit.engine`). Se agrupa por partida y se toma el mayor, que es
+    exactamente lo que hace `_total` dentro del motor.
+
+    Los hallazgos sin partida —el del seed, por ejemplo— se agrupan por su
+    propio id: no se pierden, y cada uno cuenta una vez.
+
+    LO QUE ESTO TODAVÍA NO RESUELVE: dos revisiones del MISMO pedimento suman
+    dos veces su dinero, porque se agrupa también por revisión. Preferí no
+    decidir solo si el tablero debe contar sólo la última: es una pregunta de
+    producto, no de código, y está declarada aquí en vez de resuelta a medias.
+    """
+    monto = sa.func.max(RiskFinding.impact_amount).label("monto")
+    return (
+        sa.select(monto)
+        .where(RiskFinding.impact_amount.isnot(None), RiskFinding.impact_amount != 0)
+        .group_by(
+            RiskFinding.shadow_review_id,
+            sa.func.coalesce(RiskFinding.pedimento_item_id, RiskFinding.id),
+        )
+        .subquery()
+    )
+
+
 def _contar(session: SessionDep, modelo: type, *filtros: sa.ColumnElement) -> int:
     return session.scalar(sa.select(sa.func.count()).select_from(modelo).where(*filtros)) or 0
 
@@ -157,7 +193,7 @@ def tablero(session: SessionDep) -> Dashboard:
     con_monto = sa.and_(RiskFinding.impact_amount.isnot(None), RiskFinding.impact_amount != 0)
     total_hallazgos = _contar(session, RiskFinding)
     accionables = _contar(session, RiskFinding, con_monto)
-    suma = session.scalar(sa.select(sa.func.sum(RiskFinding.impact_amount)).where(con_monto))
+    suma = session.scalar(sa.select(sa.func.sum(_por_partida().c.monto)))
     moneda = session.scalar(sa.select(RiskFinding.impact_amount_currency).where(con_monto).limit(1))
     peor = session.scalar(
         sa.select(RiskFinding.severity)
