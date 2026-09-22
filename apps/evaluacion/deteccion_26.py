@@ -34,6 +34,10 @@ SE CORRE SOLO
     python -m apps.evaluacion.deteccion_26 --escenarios
     python -m apps.evaluacion.deteccion_26 --escenario corpus-espejo
 
+Desde otra máquina, la base del equipo se alcanza con `--target shared`, que
+lee `ADUANERO_SHARED_URL`. Desde la laptop de Persona 1 NO: ahí la base del
+equipo es la local, y `shared` falla pidiendo una variable que no existe.
+
 La métrica no vale si sólo la puede correr quien la escribió: el número deja de
 ser verificable y pasa a ser una afirmación. Por eso el listado va primero —
 elegir el escenario a ciegas ya costó un falso positivo que no existía.
@@ -337,13 +341,28 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Lista los corpus disponibles y termina. No mide nada.",
     )
+    parser.add_argument(
+        "--target",
+        default="local",
+        choices=["local", "shared"],
+        help=(
+            "Qué Postgres se mide. 'shared' es la base del equipo, en la laptop "
+            "de Persona 1, y lee ADUANERO_SHARED_URL. DESDE ESA LAPTOP usa "
+            "'local': ahí la base del equipo ES la local."
+        ),
+    )
     args = parser.parse_args(argv)
 
     from sqlalchemy.orm import Session as SesionSql
 
-    from apps.api.config import get_settings
+    from apps.api.config import UrlCompartidaAusenteError, url_de_postgres
 
-    motor = sa.create_engine(get_settings().sqlalchemy_url)
+    try:
+        url = url_de_postgres(args.target)
+    except UrlCompartidaAusenteError as error:
+        raise SystemExit(str(error)) from error
+
+    motor = sa.create_engine(url)
     try:
         sesion = SesionSql(motor)
     except sa.exc.OperationalError as error:  # pragma: no cover - depende del entorno
@@ -371,6 +390,7 @@ def main(argv: list[str] | None = None) -> int:
             sesion.rollback()
 
     print(f"ÁMBITO  {ambito}")
+    print(f"        base: {args.target}" + ("  (la del equipo)" if args.target == "shared" else ""))
     print("        sesión de sólo lectura y rollback al final: no se escribió nada")
     print()
     print(informe(reporte))

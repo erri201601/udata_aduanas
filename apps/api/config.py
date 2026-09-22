@@ -96,6 +96,38 @@ class Settings(BaseSettings):
         return f"redis://{auth}{self.redis_host}:{self.redis_port}/0"
 
 
+class UrlCompartidaAusenteError(RuntimeError):
+    """Se pidió la base del equipo y `ADUANERO_SHARED_URL` no está definida."""
+
+
+def url_de_postgres(target: str) -> str:
+    """De dónde se lee Postgres: la de esta máquina, o la del equipo.
+
+    LA BASE DEL EQUIPO NO ES NUESTRA Y NO SE DUPLICA
+
+    Vive en la laptop de Persona 1 (`udata-nitro`) y sólo se alcanza por
+    Tailscale. Nadie levanta una segunda: dos bases serían dos verdades, y la
+    métrica dejaría de decir algo sobre el sistema.
+
+    Su contraseña NO está en `.env` ni en el código. Se pasa por entorno en la
+    sesión que la necesita y se entrega por canal seguro (§40). Si falta, se
+    dice y se sale: un valor por omisión aquí sería una credencial en el
+    repositorio.
+
+    DESDE LA LAPTOP DE PERSONA 1, 'local' YA ES LA DEL EQUIPO. Allí 'shared'
+    falla pidiendo una variable que en esa máquina no existe.
+    """
+    if target == "shared":
+        url = os.environ.get("ADUANERO_SHARED_URL")
+        if not url:
+            raise UrlCompartidaAusenteError(
+                "ADUANERO_SHARED_URL no está definida. La contraseña la entrega "
+                "Persona 1 por canal seguro — nunca por chat ni en el código."
+            )
+        return url
+    return get_settings().sqlalchemy_url
+
+
 @lru_cache
 def get_settings() -> Settings:
     """Settings cacheadas — se leen una sola vez por proceso.

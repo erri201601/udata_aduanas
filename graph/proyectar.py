@@ -23,11 +23,10 @@ no está, no se inventa un valor por omisión: se dice y se sale.
 from __future__ import annotations
 
 import argparse
-import os
 from typing import TYPE_CHECKING
 
 import structlog
-from apps.api.config import get_settings
+from apps.api.config import UrlCompartidaAusenteError, get_settings, url_de_postgres
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -41,15 +40,11 @@ log = structlog.stdlib.get_logger("graph.proyectar")
 
 
 def _url_postgres(target: str) -> str:
-    if target == "shared":
-        url = os.environ.get("ADUANERO_SHARED_URL")
-        if not url:
-            raise SystemExit(
-                "ADUANERO_SHARED_URL no está definida. La contraseña la entrega "
-                "Persona 1 por canal seguro — nunca por chat ni en el código."
-            )
-        return url
-    return get_settings().sqlalchemy_url
+    """La misma resolución que usa la métrica del §26: una sola convención."""
+    try:
+        return url_de_postgres(target)
+    except UrlCompartidaAusenteError as error:
+        raise SystemExit(str(error)) from error
 
 
 def _driver() -> object:

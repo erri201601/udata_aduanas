@@ -57,6 +57,31 @@ Prueba:
 psql "postgresql://aduanero_app:<PASSWORD>@100.86.182.104:5433/aduanero" -c "\dn"
 ```
 
+### Las herramientas la leen de `ADUANERO_SHARED_URL`, no de `.env`
+
+Hay una sola base y vive en la laptop de Persona 1. **Nadie levanta una
+segunda**: dos bases serían dos verdades, y cualquier medición dejaría de
+decir algo sobre el sistema.
+
+Los CLIs que se conectan desde otra máquina —la métrica del §26, la proyección
+del grafo— piden `--target shared` y leen la URL de la variable de entorno:
+
+```bash
+umask 077
+cat > /tmp/.aduanero <<'EOF'
+export ADUANERO_SHARED_URL='postgresql+psycopg://aduanero_app:<PASSWORD>@100.86.182.104:5433/aduanero'
+EOF
+source /tmp/.aduanero && rm /tmp/.aduanero
+python -m apps.evaluacion.deteccion_26 --target shared --escenarios
+```
+
+La contraseña **no se escribe en `.env`, ni en el repositorio, ni en un chat**.
+Vive en la variable durante la sesión que la necesita y se va con ella.
+
+Desde la laptop de Persona 1 esto no hace falta: ahí `--target local` **ya es**
+la base del equipo, y `shared` falla pidiendo una variable que en esa máquina
+no existe.
+
 ### Esquemas y quién escribe en cada uno
 
 | Esquema | Contenido | Escribe |
