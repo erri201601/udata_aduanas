@@ -10,7 +10,8 @@ filas en la base de otro).
 Uso:
     python -m ingestion.sintetico.cli --target local
     python -m ingestion.sintetico.cli --target shared
-    python -m ingestion.sintetico.cli --target local --reset   # borra y recarga (§24)
+    python -m ingestion.sintetico.cli --target local --reset            # borra y recarga (§24)
+    python -m ingestion.sintetico.cli --target shared --fix-missing-info  # sólo corrige fichas
 """
 
 from __future__ import annotations
@@ -68,6 +69,15 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         action="store_true",
         help="Borra la carga anterior de este escenario antes de recargar (§24).",
     )
+    parser.add_argument(
+        "--fix-missing-info",
+        action="store_true",
+        help=(
+            "Sólo corrige ProductDna.missing_information/ProductAttribute de la carga "
+            "existente (bug real del 22-sep-2026) -- no toca pedimentos ni ground_truth, "
+            "no es un --reset."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -94,6 +104,19 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Parseado: {len(corpus.pedimentos)} pedimentos, {n_partidas} partidas.")
 
     engine = create_engine(database_url)
+
+    if args.fix_missing_info:
+        with Session(engine) as session:
+            n_corregidos = load.fix_missing_information(session, corpus)
+            session.commit()
+        print(f"--fix-missing-info ({args.target}): {n_corregidos} fichas corregidas.")
+        log.info(
+            "sintetico.corpus_espejo.cli.fix_missing_info",
+            target=args.target,
+            corregidos=n_corregidos,
+        )
+        return 0
+
     with Session(engine) as session:
         if args.reset:
             n_borrados = load.delete_scenario_data(session)

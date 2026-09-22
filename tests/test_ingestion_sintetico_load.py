@@ -28,12 +28,13 @@ from decimal import Decimal
 import pytest
 import sqlalchemy as sa
 from ingestion.sintetico.corpus_espejo import (
+    ParsedAnomaly,
     ParsedCorpus,
     ParsedPartida,
     ParsedPedimento,
     ParsedProductSpec,
 )
-from ingestion.sintetico.load import load_corpus
+from ingestion.sintetico.load import fix_missing_information, load_corpus
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
@@ -71,7 +72,12 @@ def pg_session(monkeypatch: pytest.MonkeyPatch) -> Iterator[Session]:
 
 
 def _partida(
-    sec: str, *, product_id: str, descripcion: str, spec: dict[str, object]
+    sec: str,
+    *,
+    product_id: str,
+    descripcion: str,
+    spec: dict[str, object],
+    anomalies: list[ParsedAnomaly] | None = None,
 ) -> ParsedPartida:
     campos = {
         "fraccion": "76151002",
@@ -100,7 +106,7 @@ def _partida(
         classification_reason="Ficha tecnica suficiente para contrastar la clasificacion.",
         expected=dict(campos),
         observed=dict(campos),
-        anomalies=[],
+        anomalies=anomalies or [],
     )
 
 
@@ -246,3 +252,117 @@ def test_load_corpus_product_dna_summary_es_la_descripcion_comercial(
     assert dna.summary == "TUBERIA DE PRUEBA DESCRIPCION COMERCIAL"
     assert "clasificacion" not in dna.summary.lower()
     assert "contrastar" not in dna.summary.lower()
+
+
+def test_load_corpus_campo_tecnico_faltante_marca_descripcion_tecnica_aunque_el_spec_este_completo(
+    pg_session: Session,
+) -> None:
+    """Regresión real (Persona 1, 22-sep-2026): 4 de las 6 partidas con la
+    anomalía `CAMPO_TECNICO_FALTANTE` traen `technical_spec` COMPLETO,
+    idéntico al de catálogo -- el corpus recorta la descripción comercial,
+    no el spec estructurado. El diff de claves nunca detecta eso; la señal
+    correcta es la propia anomalía (`field="descripcion_tecnica"`)."""
+    spec = ParsedProductSpec(
+        id="P904",
+        name="Tubería de prueba",
+        description="Descripción completa de catálogo",
+        spec={"material": "acero", "diametro_mm": 900},
+    )
+    anomalia = ParsedAnomaly(
+        code="CAMPO_TECNICO_FALTANTE",
+        field="descripcion_tecnica",
+        expected_value="caracteristicas suficientes para clasificar",
+        observed_value="informacion tecnica insuficiente",
+    )
+    corpus = ParsedCorpus(
+        pedimentos=[
+            _pedimento(
+                "DOC_E",
+                "26 00 0000 6000005",
+                partidas=[
+                    _partida(
+                        "001",
+                        product_id="P904",
+                        descripcion="TUBERIA GENERICA",
+                        spec={"material": "acero", "diametro_mm": 900},  # completo, idéntico
+                        anomalies=[anomalia],
+                    )
+                ],
+            )
+        ],
+        product_specs={"P904": spec},
+    )
+
+    load_corpus(pg_session, corpus, seed=1)
+    pg_session.flush()
+
+    from database.models.intelligence import ProductDna
+    from database.models.operational import Product
+
+    producto = pg_session.query(Product).filter_by(sku="DOC_E-001").one()
+    dna = pg_session.query(ProductDna).filter_by(product_id=producto.id).one()
+    assert dna.missing_information == ["descripcion_tecnica"]
+
+
+def test_fix_missing_information_corrige_sin_tocar_pedimentos_ni_ground_truth(
+    pg_session: Session,
+) -> None:
+    """El fix quirúrgico corrige `ProductDna.missing_information` de una
+    carga ya hecha con el bug real, sin borrar ni recargar nada más."""
+    spec = ParsedProductSpec(
+        id="P905",
+        name="Tubería de prueba 2",
+        description="Descripción completa",
+        spec={"material": "acero", "diametro_mm": 500},
+    )
+    anomalia = ParsedAnomaly(
+        code="CAMPO_TECNICO_FALTANTE",
+        field="descripcion_tecnica",
+        expected_value="caracteristicas suficientes para clasificar",
+        observed_value="informacion tecnica insuficiente",
+    )
+    corpus = ParsedCorpus(
+        pedimentos=[
+            _pedimento(
+                "DOC_F",
+                "26 00 0000 6000006",
+                partidas=[
+                    _partida(
+                        "001",
+                        product_id="P905",
+                        descripcion="TUBERIA GENERICA 2",
+                        spec={"material": "acero", "diametro_mm": 500},
+                        anomalies=[anomalia],
+                    )
+                ],
+            )
+        ],
+        product_specs={"P905": spec},
+    )
+
+    load_corpus(pg_session, corpus, seed=1)
+    pg_session.flush()
+
+    from database.models.intelligence import GroundTruthRecord, ProductDna
+    from database.models.operational import Pedimento, Product
+
+    # Simula el estado roto: como si el cargador viejo hubiera corrido.
+    producto = pg_session.query(Product).filter_by(sku="DOC_F-001").one()
+    dna = pg_session.query(ProductDna).filter_by(product_id=producto.id).one()
+    dna.missing_information = []
+    pg_session.flush()
+
+    n_pedimentos_antes = pg_session.query(Pedimento).count()
+    n_ground_truth_antes = pg_session.query(GroundTruthRecord).count()
+
+    n_corregidos = fix_missing_information(pg_session, corpus)
+    pg_session.flush()
+
+    assert n_corregidos == 1
+    pg_session.refresh(dna)
+    assert dna.missing_information == ["descripcion_tecnica"]
+    assert pg_session.query(Pedimento).count() == n_pedimentos_antes
+    assert pg_session.query(GroundTruthRecord).count() == n_ground_truth_antes
+
+    # idempotente: correrlo de nuevo no reporta correcciones de más.
+    assert fix_missing_information(pg_session, corpus) == 0

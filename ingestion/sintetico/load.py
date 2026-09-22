@@ -256,6 +256,28 @@ def _create_invoice_item(
     return item
 
 
+def _faltantes_de(parte: ParsedPartida, spec: ParsedProductSpec) -> list[str]:
+    """Qué características de la ficha de catálogo esta partida NO trae.
+
+    Regresión real (Persona 1, 22-sep-2026): el diff de claves entre
+    `technical_spec` y la ficha de catálogo sólo detecta 2 de las 6
+    partidas con la anomalía `CAMPO_TECNICO_FALTANTE`. En las otras 4
+    (las de tubería: "TUBERÍA SAW GRAN DIÁMETRO"), el corpus recorta la
+    DESCRIPCIÓN COMERCIAL, no `technical_spec` — el spec estructurado
+    queda completo, idéntico al de catálogo. El diff de claves nunca iba
+    a detectar eso, porque no hay ninguna clave que falte.
+
+    La señal correcta ya está en el propio corpus, no hay que inventarla:
+    si la partida trae una anomalía `CAMPO_TECNICO_FALTANTE`, su `field`
+    es literalmente `"descripcion_tecnica"` — se agrega esa cadena a lo
+    faltante, se haya detectado o no por el diff de claves.
+    """
+    faltantes = set(spec.spec) - set(parte.technical_spec)
+    if any(a.code == "CAMPO_TECNICO_FALTANTE" for a in parte.anomalies):
+        faltantes.add("descripcion_tecnica")
+    return sorted(faltantes)
+
+
 def _create_product_con_dna(
     session: Session,
     parte: ParsedPartida,
@@ -290,7 +312,7 @@ def _create_product_con_dna(
     pierde: `Product.model` guarda el `product_id` del corpus (`P001`..
     `P012`), aunque cada partida tenga su propio `Product`+`sku`.
     """
-    faltantes = sorted(set(spec.spec) - set(parte.technical_spec))
+    faltantes = _faltantes_de(parte, spec)
     product = Product(
         client_id=client.id,
         supplier_id=supplier.id,
@@ -562,6 +584,67 @@ def load_corpus(session: Session, corpus: ParsedCorpus, *, seed: int = 20260921)
         ground_truth_creados=ground_truth_creados,
         ground_truth_expected_true=gt_true,
     )
+
+
+def fix_missing_information(
+    session: Session, corpus: ParsedCorpus, *, slug: str = SCENARIO_SLUG
+) -> int:
+    """Corrige `ProductDna.missing_information` (y sus `ProductAttribute`)
+    de una carga YA HECHA, sin tocar pedimentos/facturas/ground_truth.
+
+    Existe para corregir el bug real de `_faltantes_de` sin un `--reset`
+    completo: el error está sólo en la ficha técnica, no en la medición
+    (`intelligence.ground_truth_records` ya es correcta) — un `--reset` la
+    invalidaría igual, y sólo hacía falta corregir la ficha. Reutiliza el
+    mismo `product_specs`/`ParsedPartida` que `load_corpus`, así que la
+    lógica de qué falta es una sola, no dos copias que se puedan desalinear.
+
+    Devuelve cuántas `ProductDna` se corrigieron. `0` si el escenario no
+    existe o ya estaba correcto.
+    """
+    scenario = session.query(SyntheticScenario).filter_by(slug=slug).one_or_none()
+    if scenario is None:
+        return 0
+
+    corregidos = 0
+    for ped in corpus.pedimentos:
+        for parte in ped.parts:
+            spec = corpus.product_specs[parte.product_id]
+            sku = f"{ped.document_id}-{parte.sec}"
+            product = (
+                session.query(Product)
+                .filter_by(sku=sku, synthetic_scenario_id=scenario.id)
+                .one_or_none()
+            )
+            if product is None:
+                continue
+            dna = session.query(ProductDna).filter_by(product_id=product.id).one_or_none()
+            if dna is None:
+                continue
+
+            correcto = _faltantes_de(parte, spec)
+            if sorted(dna.missing_information) == correcto:
+                continue
+
+            dna.missing_information = correcto
+            ya_marcadas = {
+                a.name for a in session.query(ProductAttribute).filter_by(product_dna_id=dna.id)
+            }
+            for nombre in correcto:
+                if nombre not in ya_marcadas:
+                    session.add(
+                        ProductAttribute(
+                            product_dna_id=dna.id,
+                            name=nombre,
+                            value=None,
+                            status="MISSING",
+                            data_origin=DATA_ORIGIN,
+                        )
+                    )
+            corregidos += 1
+
+    session.flush()
+    return corregidos
 
 
 def delete_scenario_data(session: Session, *, slug: str = SCENARIO_SLUG) -> int:
