@@ -568,6 +568,7 @@ después de esa hora.
 | `docs/AJR_Y_ANA.md` | quién es AJR y qué es ANA |
 | `docs/PETICION_AJR.md` | ⏸ en pausa — petición de diez pedimentos a AJR |
 | `apps/evaluacion/corpus_espejo.py` | valida un corpus antes de cargarlo |
+| `apps/evaluacion/deteccion_26.py` | mide precisión/recall del §26 · `--escenarios` lista los corpus |
 | `docs/RECONOCIMIENTO_RGCE_2026.md` | reconocimiento de RGCE 2026, antes de cargar |
 | `docs/TAREA_P2_CORPUS_JURIDICO.md` | encargo del corpus a Persona 2 |
 | `docs/TAREA_P3_RAG_INTEGRACION.md` | encargo del RAG a Persona 3 |
