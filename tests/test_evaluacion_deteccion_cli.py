@@ -98,3 +98,28 @@ def test_el_ejemplo_de_la_documentacion_usa_un_slug_que_existe() -> None:
 
     assert metrica.__doc__ is not None
     assert SCENARIO_SLUG in metrica.__doc__
+
+
+def test_un_producto_en_varias_partidas_no_pierde_la_exclusion() -> None:
+    """Si dos partidas comparten ficha, las DOS quedan excluidas, no la última.
+
+    Colapsarlas en un dict dejaba fuera a todas menos una, y esas volvían a
+    contarse como falsos positivos por un hallazgo cierto. El corpus hoy da un
+    Product por partida, pero compartirlos ya se coló una vez (PR #101,
+    revertido en #103): la métrica no debería depender de que no se repita.
+    """
+    from types import SimpleNamespace
+
+    from apps.evaluacion.deteccion_26 import _fichas_recortadas_a_proposito
+
+    producto = uuid.uuid4()
+    una, otra = uuid.uuid4(), uuid.uuid4()
+    partidas = {
+        una: SimpleNamespace(product_id=producto),
+        otra: SimpleNamespace(product_id=producto),
+    }
+    sesion = SimpleNamespace(execute=lambda _c: [SimpleNamespace(product_id=producto)])
+
+    excluidos = _fichas_recortadas_a_proposito(sesion, partidas, set())  # type: ignore[arg-type]
+
+    assert {p for p, _ in excluidos} == {str(una), str(otra)}

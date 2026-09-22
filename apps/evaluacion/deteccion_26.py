@@ -155,7 +155,15 @@ def _fichas_recortadas_a_proposito(
     Se lee de la ficha VIGENTE, no de una lista escrita aquí: el día que el
     corpus recorte otras partidas, esto las sigue sin que nadie lo actualice.
     """
-    productos = {p.product_id: pid for pid, p in partidas.items() if p.product_id is not None}
+    # Un producto puede tocar VARIAS partidas, y un dict las colapsaría dejando
+    # sólo la última: las demás perderían la exclusión y volverían a contarse
+    # como falsos positivos por un hallazgo cierto. Hoy el corpus da un Product
+    # por partida, pero eso ya se rompió una vez (PR #101, revertido en #103) y
+    # la métrica no debería depender de que no vuelva a romperse.
+    productos: dict[uuid.UUID, list[uuid.UUID]] = {}
+    for pid, partida in partidas.items():
+        if partida.product_id is not None:
+            productos.setdefault(partida.product_id, []).append(pid)
     if not productos:
         return set()
 
@@ -166,9 +174,10 @@ def _fichas_recortadas_a_proposito(
         .where(sa.func.cardinality(ProductDna.missing_information) > 0)
     )
     return {
-        (str(productos[fila.product_id]), DETECTOR_DE_FICHA)
+        (str(pid), DETECTOR_DE_FICHA)
         for fila in con_faltantes
-        if productos[fila.product_id] not in sembradas
+        for pid in productos[fila.product_id]
+        if pid not in sembradas
     }
 
 

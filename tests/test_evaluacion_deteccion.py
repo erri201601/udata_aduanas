@@ -292,3 +292,23 @@ def test_re_auditar_el_mismo_pedimento_no_multiplica_los_falsos_positivos() -> N
 
     assert r.agregado.fp == 1
     assert r.agregado.tn == 3
+
+
+def test_el_mismo_tipo_sobre_una_ficha_completa_sigue_siendo_falso_positivo() -> None:
+    """La exclusión es par a par, no un indulto al tipo de hallazgo.
+
+    `condiciones_sembradas` sale de la base —fichas con `missing_information`
+    no vacío— y por eso un hallazgo de ficha incompleta sobre una partida cuya
+    ficha SÍ está completa no entra ahí: es ruido y se cuenta como tal. Sin
+    este test, alguien podría pasar todos los pares de ese tipo y la precisión
+    dejaría de medir el detector sin que nada fallara.
+    """
+    r = evaluar(
+        [],
+        [Hallazgo("p000", "MISSING_TECHNICAL_FIELD"), Hallazgo("p001", "MISSING_TECHNICAL_FIELD")],
+        partidas=_partidas(2),
+        condiciones_sembradas={("p000", "MISSING_TECHNICAL_FIELD")},
+    )
+
+    assert r.agregado.fp == 1, "el de la ficha completa no está excluido"
+    assert r.condiciones_sembradas_no_contadas == 1
