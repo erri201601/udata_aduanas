@@ -3,6 +3,19 @@
 Lee de Postgres y escribe en Neo4j. Nunca al revés, y nunca escribe en
 Postgres: la sesión se cierra con rollback.
 
+OJO CON `--target` SI CORRES DESDE EL DEV SERVER
+
+El nombre engaña ahí, y le mordió a Persona 1 (22-sep). En udata-nitro la
+infraestructura compartida ES la local: Postgres, MinIO y Neo4j viven en esa
+máquina y el resto del equipo los alcanza por Tailscale. Así que desde el
+servidor hay que usar `--target local` para apuntar a lo compartido, y
+`--target shared` falla pidiendo `ADUANERO_SHARED_URL`, que allí no existe.
+
+`shared` significa «alcanzar la infraestructura del equipo DESDE FUERA», no
+«la base del equipo». Se deja el nombre como está para no romper los otros
+comandos que ya lo usan —`rag.backfill_embeddings` entre ellos— pero queda
+dicho aquí y en el `--help`.
+
 La contraseña de Neo4j sale de `.env` como el resto de credenciales (§9). Si
 no está, no se inventa un valor por omisión: se dice y se sale.
 """
@@ -69,7 +82,17 @@ def informe(resumen: Resumen, antes: dict[str, int], despues: dict[str, int]) ->
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--target", required=True, choices=["local", "shared"])
+    parser.add_argument(
+        "--target",
+        required=True,
+        choices=["local", "shared"],
+        help=(
+            "De dónde se lee Postgres. DESDE EL DEV SERVER usa 'local': ahí la "
+            "infraestructura compartida es la local, y 'shared' falla pidiendo "
+            "ADUANERO_SHARED_URL, que en esa máquina no existe. 'shared' es para "
+            "alcanzar la infraestructura del equipo desde otra máquina."
+        ),
+    )
     parser.add_argument(
         "--dos-veces",
         action="store_true",
