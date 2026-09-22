@@ -28,12 +28,23 @@ medición al corpus que tenemos hoy.
 
 NO ESCRIBE NADA. Misma sesión de sólo lectura que el harness de hs_accuracy:
 una evaluación que ensucie la base deja de medir lo que dice medir.
+
+SE CORRE SOLO
+
+    python -m apps.evaluacion.deteccion_26 --escenarios
+    python -m apps.evaluacion.deteccion_26 --escenario corpus-espejo
+
+La métrica no vale si sólo la puede correr quien la escribió: el número deja de
+ser verificable y pasa a ser una afirmación. Por eso el listado va primero —
+elegir el escenario a ciegas ya costó un falso positivo que no existía.
 """
 
 from __future__ import annotations
 
+import argparse
 import re
-from typing import TYPE_CHECKING, Final
+import uuid
+from typing import TYPE_CHECKING, Final, NamedTuple
 
 import sqlalchemy as sa
 import structlog
@@ -52,13 +63,13 @@ from database.models import (
     PedimentoItem,
     RiskFinding,
     ShadowReview,
+    SyntheticScenario,
 )
 from database.repositories.tariff import TariffCatalogRepository
 
 from apps.evaluacion.hs_accuracy import SesionSoloLectura
 
 if TYPE_CHECKING:
-    import uuid
     from datetime import date
 
     from sqlalchemy.orm import Session
@@ -236,3 +247,135 @@ def informe(r: Reporte) -> str:
     for tipo, c in sorted(r.por_tipo.items()):
         lineas.append(f"  {tipo:<28} TP {c.tp} FN {c.fn} · recall {c.recall} (±{c.margen_95})")
     return "\n".join(lineas)
+
+
+# ─────────────────────────────── LÍNEA DE COMANDOS ───────────────────────────
+
+
+class Corpus(NamedTuple):
+    """Un escenario, con lo que pesa. Para elegir sin adivinar el UUID."""
+
+    id: uuid.UUID
+    slug: str
+    nombre: str
+    pedimentos: int
+    eventos: int
+
+
+def corpus_disponibles(session: Session) -> list[Corpus]:
+    """Qué hay para medir.
+
+    Existe porque elegir escenario a ciegas ya costó un número equivocado: el
+    id del sembrado y el del corpus se parecen, y medir el que no era produjo
+    un falso positivo que no existía.
+    """
+    peds = (
+        sa.select(
+            Pedimento.synthetic_scenario_id.label("escenario"),
+            sa.func.count().label("n"),
+        )
+        .group_by(Pedimento.synthetic_scenario_id)
+        .subquery()
+    )
+    gts = (
+        sa.select(
+            GroundTruthRecord.synthetic_scenario_id.label("escenario"),
+            sa.func.count().label("n"),
+        )
+        .group_by(GroundTruthRecord.synthetic_scenario_id)
+        .subquery()
+    )
+    filas = session.execute(
+        sa.select(
+            SyntheticScenario.id,
+            SyntheticScenario.slug,
+            SyntheticScenario.name,
+            sa.func.coalesce(peds.c.n, 0),
+            sa.func.coalesce(gts.c.n, 0),
+        )
+        .outerjoin(peds, peds.c.escenario == SyntheticScenario.id)
+        .outerjoin(gts, gts.c.escenario == SyntheticScenario.id)
+        .order_by(sa.func.coalesce(peds.c.n, 0).desc())
+    ).all()
+    return [Corpus(*fila) for fila in filas]
+
+
+def _resolver(session: Session, texto: str) -> Corpus:
+    """Acepta slug o UUID. Si no existe, dice cuáles sí — no falla a secas."""
+    disponibles = corpus_disponibles(session)
+    try:
+        buscado = uuid.UUID(texto)
+    except ValueError:
+        elegido = next((c for c in disponibles if c.slug == texto), None)
+    else:
+        elegido = next((c for c in disponibles if c.id == buscado), None)
+    if elegido is None:
+        catalogo = "\n".join(f"  {c.slug:<28} {c.pedimentos:>4} pedimentos" for c in disponibles)
+        raise SystemExit(f"no hay escenario «{texto}». Los que hay:\n{catalogo}")
+    return elegido
+
+
+def _tabla(disponibles: list[Corpus]) -> str:
+    lineas = [f"{'SLUG':<28} {'PEDIMENTOS':>10} {'EVENTOS':>8}  NOMBRE"]
+    lineas += [f"{c.slug:<28} {c.pedimentos:>10} {c.eventos:>8}  {c.nombre}" for c in disponibles]
+    lineas.append("")
+    lineas.append("Los UUID también se aceptan en --escenario.")
+    return "\n".join(lineas)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--escenario",
+        help=(
+            "Slug o UUID del corpus a medir. SIN ÉL se mide toda la base, que "
+            "mezcla corpus distintos en una sola población."
+        ),
+    )
+    parser.add_argument(
+        "--escenarios",
+        action="store_true",
+        help="Lista los corpus disponibles y termina. No mide nada.",
+    )
+    args = parser.parse_args(argv)
+
+    from sqlalchemy.orm import Session as SesionSql
+
+    from apps.api.config import get_settings
+
+    motor = sa.create_engine(get_settings().sqlalchemy_url)
+    try:
+        sesion = SesionSql(motor)
+    except sa.exc.OperationalError as error:  # pragma: no cover - depende del entorno
+        raise SystemExit(f"la base no responde: {error.orig}") from error
+
+    with sesion:
+        try:
+            disponibles = corpus_disponibles(sesion)
+        except sa.exc.OperationalError as error:  # pragma: no cover - depende del entorno
+            raise SystemExit(f"la base no responde: {error.orig}") from error
+        if args.escenarios:
+            print(_tabla(disponibles))
+            sesion.rollback()
+            return 0
+
+        elegido = _resolver(sesion, args.escenario) if args.escenario else None
+        ambito = (
+            f"{elegido.slug} · {elegido.nombre} · {elegido.pedimentos} pedimentos"
+            if elegido
+            else f"TODA LA BASE · {len(disponibles)} escenarios mezclados en una población"
+        )
+        try:
+            reporte = medir(sesion, escenario=elegido.id if elegido else None)
+        finally:
+            sesion.rollback()
+
+    print(f"ÁMBITO  {ambito}")
+    print("        sesión de sólo lectura y rollback al final: no se escribió nada")
+    print()
+    print(informe(reporte))
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())
