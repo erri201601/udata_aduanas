@@ -14,7 +14,8 @@ TRES REGLAS QUE LO DEFINEN
    esperan revisión humana y cuántos pedimentos nadie ha auditado dicen más
    del estado real que el total de clasificaciones.
 
-3. **El mismo dinero no se cuenta dos veces.** Una partida con la fracción y
+3. **El mismo dinero no se cuenta dos veces**, ni entre las divergencias de
+   una partida ni entre auditorías repetidas del mismo pedimento. Una partida con la fracción y
    el valor equivocados produce DOS hallazgos, y el motor atribuye a cada uno
    el monto entero a propósito: cada causa explica la diferencia por completo
    (`core.audit.engine._total`). Sumar los montos fila por fila contaría ese
@@ -133,19 +134,31 @@ def _por_partida() -> sa.Subquery:
     Los hallazgos sin partida —el del seed, por ejemplo— se agrupan por su
     propio id: no se pierden, y cada uno cuenta una vez.
 
-    LO QUE ESTO TODAVÍA NO RESUELVE: dos revisiones del MISMO pedimento suman
-    dos veces su dinero, porque se agrupa también por revisión. Preferí no
-    decidir solo si el tablero debe contar sólo la última: es una pregunta de
-    producto, no de código, y está declarada aquí en vez de resuelta a medias.
+    Y SÓLO LA ÚLTIMA REVISIÓN DE CADA PEDIMENTO (Persona 1, 22-sep): la
+    exposición de un pedimento no es la suma de las veces que lo hemos mirado.
+    Auditarlo dos veces no lo hace deber el doble.
+
+    Los hallazgos sin revisión —el del seed— siguen contando: son un hecho
+    registrado aunque no conste de qué corrida salieron.
     """
+    ultimas = (
+        sa.select(ShadowReview.id)
+        .distinct(ShadowReview.pedimento_id)
+        .order_by(ShadowReview.pedimento_id, ShadowReview.created_at.desc())
+        .subquery()
+    )
     monto = sa.func.max(RiskFinding.impact_amount).label("monto")
     return (
         sa.select(monto)
-        .where(RiskFinding.impact_amount.isnot(None), RiskFinding.impact_amount != 0)
-        .group_by(
-            RiskFinding.shadow_review_id,
-            sa.func.coalesce(RiskFinding.pedimento_item_id, RiskFinding.id),
+        .where(
+            RiskFinding.impact_amount.isnot(None),
+            RiskFinding.impact_amount != 0,
+            sa.or_(
+                RiskFinding.shadow_review_id.is_(None),
+                RiskFinding.shadow_review_id.in_(sa.select(ultimas.c.id)),
+            ),
         )
+        .group_by(sa.func.coalesce(RiskFinding.pedimento_item_id, RiskFinding.id))
         .subquery()
     )
 
