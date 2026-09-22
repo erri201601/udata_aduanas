@@ -21,6 +21,7 @@ import { useEffect, useState } from 'react'
 
 import { fetchEspejo, fetchPedimentos } from '../api/client'
 import type { LineaEspejo, PedimentoEspejo, PedimentoRead } from '../api/client'
+import { detalleDe, etiquetaDe } from '../components/divergencias'
 import { SyntheticBanner } from '../components/DataOriginBadge'
 import { SEVERIDADES, formatearMonto } from '../components/severity'
 import type { Severity } from '../api/client'
@@ -139,7 +140,9 @@ function Partida({ linea }: { linea: LineaEspejo }) {
                     <span className={`sev sev--${d.severity.toLowerCase()}`}>
                       {SEVERIDADES[d.severity as Severity]?.etiqueta ?? d.severity}
                     </span>
-                    <code>{d.finding_type}</code>
+                    <span className="divergencia__tipo" title={detalleDe(d.finding_type)}>
+                      {etiquetaDe(d.finding_type)}
+                    </span>
                     {d.field && <span className="divergencia__campo">{d.field}</span>}
                   </div>
                   <p className="divergencia__valores">
