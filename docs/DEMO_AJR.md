@@ -206,16 +206,16 @@ No es un pedimento: son quince, con 180 partidas y **60 anomalías sembradas
 que el sistema no sabía dónde estaban**.
 
 ```
-encontró 39 de las 54 detectables      recall 72 % (±12)
+encontró 45 de las 54 detectables      recall 83 % (±10)
 cero falsos positivos en 126 limpias   precisión 100 %
 
-siete de los diez tipos, al 100 %:
+ocho de los diez tipos, al 100 %:
    origen · unidad · tasa de IGI · base de IVA · importe de IVA
-   valor en aduana · NICO contra catálogo
+   valor en aduana · NICO contra catálogo · ficha técnica incompleta
 ```
 
-Y la parte que no se esconde: de las 15 que no encontró, **seis** son
-clasificación de fracción —sabemos exactamente por qué falla— y **nueve** son
+Y la parte que no se esconde: de las 9 que no encontró, **seis** son
+clasificación de fracción —sabemos exactamente por qué falla— y **tres** son
 comprobaciones que todavía no existen. **Ninguna es un detector que se haya
 equivocado.**
 
@@ -260,12 +260,12 @@ comparando contra la fracción que ellos ya declararon.
 
 **«¿Y esto qué tan seguido acierta?»**
 Ahora sí hay número, y va con su margen. Sembramos 60 anomalías en 15
-pedimentos —180 partidas— sin que el sistema supiera cuáles: encontró 39 de
+pedimentos —180 partidas— sin que el sistema supiera cuáles: encontró 45 de
 las 54 detectables, con **cero falsos positivos en 126 partidas limpias**.
-Recall 72 % ±12, precisión 100 %.
+Recall 83 % ±10, precisión 100 %.
 
-Ojo con la pregunta que viene detrás: *«¿y el 28 % que falla?»*. No falla:
-seis son clasificación de fracción, que sabemos por qué no resuelve, y nueve
+Ojo con la pregunta que viene detrás: *«¿y el 17 % que falla?»*. No falla:
+seis son clasificación de fracción, que sabemos por qué no resuelve, y tres
 son comprobaciones que aún no hemos construido. Ninguna es un detector que se
 haya equivocado, y eso es una distinción que conviene hacer en voz alta.
 
