@@ -55,6 +55,9 @@ def esperado(**kw: object) -> ExpectedItem:
         "igi_amount": Decimal("15000.00"),
         "vat_amount": Decimal("18528.00"),
         "declared_unit_is_known": True,
+        # Explícito: se consultó la ficha y no le falta nada. `None` diría que
+        # no se consultó, y la partida no podría declararse limpia.
+        "missing_technical_fields": (),
         "sku": "LAP-14-8GB",
     }
     base.update(kw)
@@ -519,3 +522,79 @@ def test_toda_divergencia_tiene_etiqueta_en_la_interfaz() -> None:
 
     for tipo in DivergenceType:
         assert f"{tipo.value}: {{" in etiquetas, f"falta la etiqueta de {tipo.value}"
+
+
+# ── Ficha técnica incompleta ─────────────────────────────────────────────────
+
+
+def test_una_ficha_a_la_que_le_falta_un_dato_es_un_hallazgo() -> None:
+    """El caso del corpus: la ficha no trae la descripción técnica."""
+    r = compare([declarado()], [esperado(missing_technical_fields=("descripcion_tecnica",))])
+
+    (d,) = r.divergences
+    assert d.kind is DivergenceType.MISSING_TECHNICAL_FIELD
+    assert d.expected_value == "descripcion_tecnica"
+    assert d.severity == "MEDIUM"
+
+
+def test_el_hallazgo_no_acusa_al_que_declaro() -> None:
+    """Dice que el expediente no alcanza, no que el pedimento esté mal.
+
+    La diferencia no es de tono: una acusación se contesta corrigiendo el
+    pedimento, y esto se arregla pidiéndole la ficha al proveedor.
+    """
+    r = compare([declarado()], [esperado(missing_technical_fields=("composicion",))])
+
+    (d,) = r.divergences
+    assert d.declared_value is None, "no hay nada declarado que esté mal"
+    assert "proveedor" in d.reasoning
+
+
+def test_una_ficha_completa_no_produce_nada() -> None:
+    r = compare([declarado()], [esperado(missing_technical_fields=())])
+
+    assert not r.has_findings
+    assert r.is_complete
+
+
+def test_una_ficha_que_no_se_consulto_no_pasa_por_limpia() -> None:
+    """`None` es lo que traen las partidas sin producto ligado.
+
+    Sin esta distinción, no haber mirado la ficha se vería igual que haberla
+    mirado y encontrarla completa — que es la forma más fácil de inflar un
+    recall.
+    """
+    r = compare([declarado()], [esperado(missing_technical_fields=None)])
+
+    assert not r.has_findings
+    assert not r.is_complete
+    assert any("no se consultó la ficha técnica" in m for m in r.unverifiable)
+
+
+def test_se_señala_aunque_la_clasificacion_no_se_sostenga() -> None:
+    """Es el caso NORMAL, no el raro: suele ser la razón de que no se sostenga.
+
+    Si el detector dependiera de `is_resolved`, callaría justo cuando más falta
+    hace — en las partidas que nadie pudo clasificar por culpa de la ficha.
+    """
+    r = compare(
+        [declarado()],
+        [
+            esperado(
+                is_resolved=False,
+                fraction_code=None,
+                missing_technical_fields=("descripcion_tecnica",),
+            )
+        ],
+    )
+
+    tipos = {d.kind for d in r.divergences}
+    assert DivergenceType.MISSING_TECHNICAL_FIELD in tipos
+
+
+def test_la_metrica_ya_no_cuenta_este_tipo_como_detector_inexistente() -> None:
+    """Persona 2 corrigió el corpus el 22-sep; el detector existe desde hoy."""
+    from core.evaluation.deteccion import DETECTOR_POR_ERROR, SIN_DETECTOR
+
+    assert "MISSING_TECHNICAL_FIELD" not in SIN_DETECTOR
+    assert DETECTOR_POR_ERROR["MISSING_TECHNICAL_FIELD"] == "MISSING_TECHNICAL_FIELD"

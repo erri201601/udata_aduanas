@@ -116,6 +116,19 @@ class ExpectedItem(BaseModel):
     verdad, en vez de «no exige ninguna», que sería inventar.
     """
 
+    missing_technical_fields: tuple[str, ...] | None = None
+    """Qué le falta a la ficha técnica, según el propio extractor.
+
+    Tres valores distintos, y la diferencia importa:
+    `None`   no se consultó la ficha —no hay producto ligado o no hay DNA—, y
+             entonces la partida no está limpia: está sin mirar.
+    `()`     la ficha está completa. Eso sí permite decir que no hay hueco.
+    con algo lo que falta, tal como lo declaró el extractor.
+
+    No se inventa aquí una lista de campos obligatorios: el motor no sabe qué
+    exige cada mercancía, y suponerlo llenaría de hallazgos falsos.
+    """
+
     required_identifiers: tuple[str, ...] | None = None
     """Identificadores del Anexo 22 que la operación exige. `None` = no se sabe.
 

@@ -61,6 +61,10 @@ def test_lo_indetectable_sale_del_recall_y_se_dice() -> None:
 def test_un_tipo_sin_detector_cuenta_pero_con_su_causa_escrita() -> None:
     """EL TEST QUE IMPORTA (Persona 1, 22-sep).
 
+    El ejemplo era MISSING_TECHNICAL_FIELD y dejó de servir el 22-sep: ese
+    detector ya existe. Se cambió por uno que sigue sin construirse, no por
+    uno que dé verde.
+
     No haberlo construido no es fallar, pero tampoco se saca del denominador:
     un recall que escondiera lo no construido presentaría como bueno un
     sistema al que le falta medio detector. Cuenta, y dice por qué.
@@ -68,12 +72,12 @@ def test_un_tipo_sin_detector_cuenta_pero_con_su_causa_escrita() -> None:
     from core.evaluation.deteccion import SIN_DETECTOR_CONSTRUIDO
 
     r = evaluar(
-        [Evento("p000", "MISSING_TECHNICAL_FIELD", detectable=True)], [], partidas=_partidas(1)
+        [Evento("p000", "INCONSISTENT_QUANTITY", detectable=True)], [], partidas=_partidas(1)
     )
 
     assert r.eventos_medibles == 1
     assert r.agregado.recall == Decimal("0.00")
-    assert r.excluidos_sin_detector == {"MISSING_TECHNICAL_FIELD": 1}
+    assert r.excluidos_sin_detector == {"INCONSISTENT_QUANTITY": 1}
     assert r.fn_por_causa == {SIN_DETECTOR_CONSTRUIDO: 1}
 
 
@@ -87,7 +91,7 @@ def test_los_tres_porques_de_un_falso_negativo_se_separan() -> None:
 
     r = evaluar(
         [
-            Evento("p000", "MISSING_TECHNICAL_FIELD", detectable=True),
+            Evento("p000", "INCONSISTENT_QUANTITY", detectable=True),
             Evento("p001", "WRONG_FRACTION", detectable=True, pudo_intentarlo=False),
             Evento("p002", "WRONG_ORIGIN", detectable=True),
         ],

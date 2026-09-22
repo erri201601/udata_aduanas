@@ -33,6 +33,12 @@ export const DIVERGENCIAS: Record<string, Divergencia> = {
     etiqueta: 'NOM faltante',
     explica: 'La fracción exige una NOM que no se declaró. Detiene la mercancía.',
   },
+  MISSING_TECHNICAL_FIELD: {
+    etiqueta: 'Ficha técnica incompleta',
+    explica:
+      'A la ficha del proveedor le falta un dato que la clasificación necesita. ' +
+      'No dice que lo declarado esté mal: dice que hoy no hay con qué defenderlo.',
+  },
   IDENTIFIER_MISMATCH: {
     etiqueta: 'Identificador',
     explica: 'Falta un identificador del Anexo 22 o está mal.',

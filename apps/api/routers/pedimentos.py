@@ -390,6 +390,9 @@ def _construir_espejo(
         # usarse para acusar a nadie.
         is_resolved=outcome.code is not None,
         confidence=outcome.trace.confidence,
+        # Lo que el extractor declaró que le faltó. Aquí sí es `()` cuando la
+        # ficha está completa: se consultó y no falta nada.
+        missing_technical_fields=borrador.missing_information,
         # `None`, no `()`: no existe la correlación fracción → NOM ni el
         # Apéndice 8. Decir «no exige ninguna» sería afirmar sin fuente.
         required_nom_codes=None,
