@@ -144,6 +144,35 @@ class TariffFraction(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Regul
     specificity: Mapped[int] = mapped_column(sa.Integer, nullable=False, server_default="0")
 
 
+class TariffHeading(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base):
+    """Partida (4 dígitos) o subpartida (6) de la LIGIE — nodo de la
+    nomenclatura POR ENCIMA de la fracción (ADR 0002).
+
+    Tabla separada de `tariff_fractions` a propósito: `code` ahí es
+    `VARCHAR(8)` con `subheading NOT NULL`, así que una fila de 4 o 6
+    dígitos tendría que falsificar la subpartida — y `TariffCatalogRepository`
+    busca por `description ILIKE`, con lo que el motor podría devolver una
+    partida como si fuera una fracción real y clasificar contra algo que no
+    lo es (inventar fundamento, regla 2). La invariante de esta tabla es
+    "nodo de la nomenclatura", nunca "resultado de clasificación":
+    `classify_product` sigue devolviendo sólo códigos de `tariff_fractions`.
+    """
+
+    __tablename__ = "tariff_headings"
+    __table_args__ = (
+        sa.CheckConstraint("level IN (4, 6)", name="level_valido"),
+        sa.CheckConstraint("length(code) = level", name="code_del_largo_del_nivel"),
+        sa.Index("ix_tariff_headings_vigencia", "code", "valid_from", "valid_to"),
+        sa.UniqueConstraint("code", "valid_from", name="uq_tariff_headings_code_valid_from"),
+        {"schema": _SCHEMA},
+    )
+
+    code: Mapped[str] = mapped_column(sa.String(6), nullable=False)
+    level: Mapped[int] = mapped_column(sa.SmallInteger, nullable=False)
+    chapter: Mapped[str] = mapped_column(sa.String(2), nullable=False)
+    description: Mapped[str] = mapped_column(sa.Text, nullable=False)
+
+
 class Nico(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base):
     """Número de Identificación Comercial: 2 dígitos más sobre la fracción."""
 
