@@ -237,3 +237,58 @@ def test_la_cobertura_por_partida_se_reporta_aparte_de_la_deteccion_por_tipo() -
     assert r.partidas_senaladas == 1, "pero la partida quedó marcada"
     assert r.cobertura_por_partida == Decimal("100.00")
     assert r.hallazgos_fuera_de_su_anomalia == 1
+
+
+# ── Un hallazgo cierto no es un falso positivo (Persona 1, 22-sep) ───────────
+
+
+def test_la_ficha_recortada_por_el_corpus_no_cuenta_como_falso_positivo() -> None:
+    """El corpus recortó la ficha a propósito sin sembrar el evento.
+
+    El detector acierta: la ficha está incompleta de verdad. Contarlo como
+    falso positivo mediría una decisión del corpus, no el motor.
+    """
+    r = evaluar(
+        [Evento("p000", "MISSING_TECHNICAL_FIELD", detectable=True)],
+        [Hallazgo("p000", "MISSING_TECHNICAL_FIELD"), Hallazgo("p001", "MISSING_TECHNICAL_FIELD")],
+        partidas=_partidas(3),
+        condiciones_sembradas={("p001", "MISSING_TECHNICAL_FIELD")},
+    )
+
+    assert r.agregado.tp == 1, "el sembrado sí se cuenta"
+    assert r.agregado.fp == 0, "el otro es cierto, no falso"
+    assert r.condiciones_sembradas_no_contadas == 1, "y se declara"
+    assert r.agregado.precision == Decimal("100.00")
+
+
+def test_la_partida_excluida_sigue_siendo_control_limpio_de_los_demas() -> None:
+    """Se excluye el par (partida, tipo), no la partida.
+
+    Si se excluyera la partida entera, un hallazgo de origen inventado sobre
+    ella dejaría de verse, y ése sí es ruido.
+    """
+    r = evaluar(
+        [],
+        [Hallazgo("p000", "MISSING_TECHNICAL_FIELD"), Hallazgo("p000", "ORIGIN_MISMATCH")],
+        partidas=_partidas(2),
+        condiciones_sembradas={("p000", "MISSING_TECHNICAL_FIELD")},
+    )
+
+    assert r.agregado.fp == 1, "el de origen sí es falso positivo"
+    assert r.falsos_positivos_de_revision == 1
+    assert r.condiciones_sembradas_no_contadas == 1
+    assert r.partidas_limpias == 2, "la partida no sale de la población limpia"
+
+
+def test_re_auditar_el_mismo_pedimento_no_multiplica_los_falsos_positivos() -> None:
+    """Cada re-auditoría deja su copia del hallazgo en la base.
+
+    Sin deduplicar, el mismo ruido contado cuatro veces daría una precisión
+    peor cada vez que alguien vuelve a medir, que no es una propiedad del
+    motor.
+    """
+    repetido = [Hallazgo("p000", "ORIGIN_MISMATCH")] * 4
+    r = evaluar([], repetido, partidas=_partidas(4))
+
+    assert r.agregado.fp == 1
+    assert r.agregado.tn == 3

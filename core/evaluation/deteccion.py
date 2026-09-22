@@ -53,6 +53,16 @@ Un sistema que grita en todas las partidas detecta todo y no sirve. Por eso se
 cuentan sobre las partidas declaradas limpias, y los de origen se reportan
 aparte: son una revisión humana pedida, no una acusación, y quien lee tiene
 que poder separarlos del ruido duro.
+
+Y UN HALLAZGO CIERTO NO ES UN FALSO POSITIVO (Persona 1, 22-sep)
+
+El corpus recorta la ficha técnica de 21 partidas para que su clasificación no
+sea evaluable, y siembra como evento sólo 6. El detector de ficha incompleta
+acierta en las 21. Contar las otras 15 como falsos positivos no mediría el
+motor: mediría una decisión del corpus, y castigaría al detector por decir la
+verdad. Esos pares (partida, tipo) entran como `condiciones_sembradas`, salen
+de las dos cuentas y el reporte dice cuántos fueron. La partida sigue siendo
+control limpio para todos los demás detectores.
 """
 
 from __future__ import annotations
@@ -245,6 +255,19 @@ class Reporte:
     """Los tres porqués de un falso negativo, contados por separado."""
 
     partidas_limpias: int = 0
+    condiciones_sembradas_no_contadas: int = 0
+    """Hallazgos ciertos sobre una partida limpia que NO se cuentan como FP.
+
+    El corpus recorta la ficha técnica de 21 partidas para que su clasificación
+    no sea evaluable, y siembra como evento sólo 6 de ellas. El detector de
+    ficha incompleta acierta en las 21: la ficha está recortada de verdad.
+    Contar las otras 15 como falsos positivos mediría el corpus, no el motor.
+
+    Una partida así sigue siendo control limpio para TODOS los demás
+    detectores: lo que se excluye es el par (partida, tipo de hallazgo), no la
+    partida. Y se cuenta aquí para que el reporte lo diga en voz alta.
+    """
+
     falsos_positivos_de_revision: int = 0
     """De los FP, cuántos son el hallazgo de origen, que pide revisión."""
     hallazgos_fuera_de_su_anomalia: int = 0
@@ -296,14 +319,25 @@ def evaluar(
     hallazgos: Iterable[Hallazgo],
     *,
     partidas: Sequence[str],
+    condiciones_sembradas: Iterable[tuple[str, str]] = (),
 ) -> Reporte:
     """Compara lo sembrado con lo encontrado.
 
     `partidas` son TODAS las partidas del corpus: las que no tienen evento son
     las limpias, y son las que miden los falsos positivos.
+
+    `condiciones_sembradas` son pares (partida, tipo de hallazgo) donde el
+    corpus puso la condición a propósito pero no la sembró como evento. Ese
+    hallazgo no es un acierto —nadie lo pidió— pero tampoco un error: es
+    cierto. No entra ni al recall ni a los falsos positivos, y el reporte dice
+    cuántos fueron.
     """
     eventos = list(eventos)
-    hallazgos = list(hallazgos)
+    # Un mismo hallazgo se repite en cada re-auditoría del pedimento. Contar
+    # las copias multiplicaría los falsos positivos por el número de veces que
+    # se ha medido, que no es una propiedad del motor.
+    hallazgos = list({(h.partida_id, h.finding_type): h for h in hallazgos}.values())
+    no_contables = frozenset(condiciones_sembradas)
 
     emitidos: set[tuple[str, str]] = {(h.partida_id, h.finding_type) for h in hallazgos}
     con_anomalia = {e.partida_id for e in eventos}
@@ -336,8 +370,11 @@ def evaluar(
         tp_total += int(detectado)
         fn_total += int(not detectado)
 
-    # Falsos positivos: lo emitido sobre partidas declaradas limpias.
-    en_limpias = [h for h in hallazgos if h.partida_id in set(limpias)]
+    # Falsos positivos: lo emitido sobre partidas declaradas limpias, menos lo
+    # que el corpus puso ahí a propósito sin sembrarlo.
+    sobre_limpias = [h for h in hallazgos if h.partida_id in set(limpias)]
+    en_limpias = [h for h in sobre_limpias if (h.partida_id, h.finding_type) not in no_contables]
+    no_contadas = len(sobre_limpias) - len(en_limpias)
     fp_total = len(en_limpias)
     de_revision = sum(1 for h in en_limpias if h.finding_type == HALLAZGO_DE_REVISION)
     con_hallazgo = {h.partida_id for h in en_limpias}
@@ -367,6 +404,7 @@ def evaluar(
         excluidos_por_indetectables=sum(1 for e in eventos if not e.detectable),
         excluidos_sin_detector=dict(sin_detector),
         partidas_limpias=len(limpias),
+        condiciones_sembradas_no_contadas=no_contadas,
         falsos_positivos_de_revision=de_revision,
         hallazgos_fuera_de_su_anomalia=fuera,
     )

@@ -53,6 +53,7 @@ from typing import TYPE_CHECKING, Final, NamedTuple
 import sqlalchemy as sa
 import structlog
 from core.evaluation.deteccion import (
+    DETECTOR_POR_ERROR,
     NICO_EXIGE_FICHA,
     NICO_LO_CAZA_EL_CATALOGO,
     SUBTIPO_POR_CAMPO,
@@ -65,6 +66,7 @@ from database.models import (
     GroundTruthRecord,
     Pedimento,
     PedimentoItem,
+    ProductDna,
     RiskFinding,
     ShadowReview,
     SyntheticScenario,
@@ -74,11 +76,16 @@ from database.repositories.tariff import TariffCatalogRepository
 from apps.evaluacion.hs_accuracy import SesionSoloLectura
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from datetime import date
 
     from sqlalchemy.orm import Session
 
 log = structlog.stdlib.get_logger("apps.evaluacion.deteccion")
+
+#: El hallazgo que emite el detector de ficha incompleta. Se toma del mapeo del
+#: §26 en vez de reescribir la cadena: si allí cambia, aquí no se desincroniza.
+DETECTOR_DE_FICHA: Final = DETECTOR_POR_ERROR["MISSING_TECHNICAL_FIELD"]
 
 
 def _subtipo_nico(session: Session, partida: PedimentoItem, operacion: date | None) -> str:
@@ -135,9 +142,39 @@ def _lineas_sin_clasificacion(session: Session) -> set[uuid.UUID]:
     return sin_clasificar
 
 
+def _fichas_recortadas_a_proposito(
+    session: Session, partidas: Mapping[uuid.UUID, PedimentoItem], sembradas: set[uuid.UUID]
+) -> set[tuple[str, str]]:
+    """Pares (partida, MISSING_TECHNICAL_FIELD) que no se cuentan como FP.
+
+    El corpus recorta la ficha de 21 partidas para que su clasificación no sea
+    evaluable, y siembra el evento en sólo 6. En las otras 15 el detector
+    acierta —la ficha está recortada— pero nadie pidió ese hallazgo. Ni acierto
+    ni error: cierto y no contado.
+
+    Se lee de la ficha VIGENTE, no de una lista escrita aquí: el día que el
+    corpus recorte otras partidas, esto las sigue sin que nadie lo actualice.
+    """
+    productos = {p.product_id: pid for pid, p in partidas.items() if p.product_id is not None}
+    if not productos:
+        return set()
+
+    con_faltantes = session.execute(
+        sa.select(ProductDna.product_id)
+        .where(ProductDna.product_id.in_(productos))
+        .where(ProductDna.is_current.is_(True))
+        .where(sa.func.cardinality(ProductDna.missing_information) > 0)
+    )
+    return {
+        (str(productos[fila.product_id]), DETECTOR_DE_FICHA)
+        for fila in con_faltantes
+        if productos[fila.product_id] not in sembradas
+    }
+
+
 def recolectar(
     session: Session, *, escenario: uuid.UUID | None = None
-) -> tuple[list[Evento], list[Hallazgo], list[str]]:
+) -> tuple[list[Evento], list[Hallazgo], list[str], set[tuple[str, str]]]:
     """Lee de la base lo que la métrica necesita. Nada más.
 
     `escenario` acota a un corpus, y acota LAS TRES COSAS: eventos, partidas y
@@ -197,14 +234,20 @@ def recolectar(
         ).all()
         if f.pedimento_item_id in partidas
     ]
-    return eventos, hallazgos, [str(i) for i in partidas]
+    sembradas = {
+        e.pedimento_item_id
+        for e in session.scalars(consulta).all()
+        if e.error_type == "MISSING_TECHNICAL_FIELD" and e.pedimento_item_id is not None
+    }
+    recortadas = _fichas_recortadas_a_proposito(session, partidas, sembradas)
+    return eventos, hallazgos, [str(i) for i in partidas], recortadas
 
 
 def medir(session: Session, *, escenario: uuid.UUID | None = None) -> Reporte:
     """La métrica, sobre una sesión que no puede escribir."""
     solo_lectura = SesionSoloLectura(session)
-    eventos, hallazgos, partidas = recolectar(solo_lectura, escenario=escenario)  # type: ignore[arg-type]
-    reporte = evaluar(eventos, hallazgos, partidas=partidas)
+    eventos, hallazgos, partidas, recortadas = recolectar(solo_lectura, escenario=escenario)  # type: ignore[arg-type]
+    reporte = evaluar(eventos, hallazgos, partidas=partidas, condiciones_sembradas=recortadas)
     log.info(
         "deteccion.medida",
         eventos=reporte.eventos_totales,
@@ -244,6 +287,8 @@ def informe(r: Reporte) -> str:
         f"FALSOS POSITIVOS  {a.fp} sobre {r.partidas_limpias} partidas limpias "
         f"({r.tasa_falsos_positivos} %)",
         f"  de ellos, revisión de origen: {r.falsos_positivos_de_revision}",
+        f"  hallazgos ciertos no contados (ficha recortada por el corpus): "
+        f"{r.condiciones_sembradas_no_contadas}",
         f"  hallazgos fuera de su anomalía: {r.hallazgos_fuera_de_su_anomalia}",
         "",
         "POR TIPO",

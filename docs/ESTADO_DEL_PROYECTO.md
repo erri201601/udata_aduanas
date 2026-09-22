@@ -440,8 +440,8 @@ equivocado en producción.
 
 | # | Hueco | Por qué importa |
 |---|---|---|
-| 1 | **El corpus sin cargar** | 15 pedimentos, 180 partidas, 60 anomalías sembradas, validado el 21-sep sin un solo defecto en ocho comprobaciones. Mientras no se cargue, la capa operativa sigue con 1 partida y no hay nada que medir. **Es el camino crítico.** |
-| 2 | **Nadie ha medido el acierto** | 0 veredictos humanos, 1 fila de Ground Truth. Ya no es por falta de datos: es por falta de carga. Con el corpus dentro salen precision, recall y F1 sobre 54 eventos medibles y 126 partidas limpias. |
+| 1 | **La clasificación de fracción no resuelve** | Es el único hueco de detección que es del motor y no de código que falte: 6 de 6 anomalías de fracción sin cazar, porque el motor no determina cuál era la correcta y —bien hecho— no afirma que la declarada esté mal. La causa de fondo es el hueco 4. |
+| 2 | **El acierto ya está medido** | ✅ 22-sep, sobre el corpus cargado: **TP 45 · FP 0 · FN 9 · TN 126 · recall 83.33 % (±9.86) · precisión 100 % · F1 90.91**. Ocho de los diez tipos al 100 %. Los 9 FN: 6 de fracción (hueco 1) y 3 de NICO que exigen ficha técnica, sin detector construido. |
 | 3 | **RGCE 2026** | El parser lleva desde el 14-sep en la máquina de Persona 2 sin PR. El Sentinel ya distingue una resolución anual de una reforma, así que no hay nada bloqueándolo. |
 | 4 | **El texto de partida y subpartida de la LIGIE** | El 26% de las 8 136 fracciones sólo dice «Los demás», y el texto de los niveles de 4 y 6 dígitos no está en ninguna columna. La RGI 1 clasifica por el texto de las partidas y no lo tenemos: es la causa de fondo de que el motor no encuentre candidatas. |
 | 5 | **Knowledge Graph** | Aprobado el 21-sep y en construcción. Es **proyección de Postgres, nunca fuente**: se reconstruye con MERGE por el id de la fila, y nada que fundamente jurídicamente puede citarse desde ahí. Es lo único que falta de INTELLIGENCE. |
@@ -506,12 +506,14 @@ rama suelta de `legal-chunks-legal-rule-id`.
 
 | # | Tarea | Estado |
 |---|---|---|
-| 1 | **Métrica de detección (§26)** | ⏸ espera la carga. TP, FP, FN, TN, precision, recall y F1, con los tres límites declarados |
+| 1 | **Métrica de detección (§26)** | ✅ corriendo y medida el 22-sep. TP, FP, FN, TN, precision, recall y F1, con **cuatro** límites declarados: el cuarto es que un hallazgo cierto sobre una ficha que el corpus recortó a propósito no se cuenta como falso positivo (#112) |
 | 2 | **Knowledge Graph** | 🟢 diseño aprobado el 21-sep, en construcción. Proyección de Postgres, `data_origin` en los nodos, nombres del §28, y las omisiones (NOM, PROSEC, Treaty, RegulatoryEvent, Manufacturer) escritas en el código con la fuente que desbloquea cada una |
 | 3 | Harness de `hs_accuracy` contra CBP CROSS | ⏸ baja prioridad: el corpus mide sin depender de nadie |
 
 **Ya hecho:** Sentinel con `total_olas` (#78), doble veredicto (#79), harness
-de sólo lectura (#80), `reviews_decision_id` (#81), país de origen (#85).
+de sólo lectura (#80), `reviews_decision_id` (#81), país de origen (#85),
+métrica del §26 (#96, #105, #106), NICO contra catálogo (#90, #102), detector de
+ficha incompleta (#111).
 
 ### Persona 1 — Erick (Tech Lead)
 
