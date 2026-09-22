@@ -15,7 +15,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from core.classification import classify_product
+import sqlalchemy as sa
+from core.classification import classify_product, fundamenta_clasificacion
+from database.models import LegalDocument
 from database.repositories.chunks import PostgresChunkStore
 from database.repositories.notes import LegalNotesRepository
 from database.repositories.tariff import TariffCatalogRepository
@@ -24,6 +26,7 @@ from rag import a_legal_refs, embedder_opcional, recuperar
 from apps.api.dna import terminos
 
 if TYPE_CHECKING:
+    import uuid
     from collections.abc import Sequence
     from datetime import date
 
@@ -31,6 +34,7 @@ if TYPE_CHECKING:
     from core.evidence.types import LegalRef
     from core.product_dna.types import ProductDnaDraft
     from rag import EmbedderDegradable
+    from rag.retrieval import Recuperacion
     from sqlalchemy.orm import Session
 
 
@@ -78,7 +82,7 @@ def clasificar_borrador(
         store=PostgresChunkStore(session),
         embedder=embedder,
     )
-    legal_refs = a_legal_refs(recuperacion)
+    legal_refs = a_legal_refs(_solo_lo_que_funda_una_clasificacion(session, recuperacion))
 
     outcome = classify_product(
         borrador,
@@ -96,3 +100,41 @@ def clasificar_borrador(
         embedder=embedder,
         consulta_juridica=consulta,
     )
+
+
+def _solo_lo_que_funda_una_clasificacion(
+    session: Session, recuperacion: Recuperacion
+) -> Recuperacion:
+    """Descarta lo recuperado que no puede fundamentar una CLASIFICACIÓN.
+
+    `a_legal_refs` ya filtra por procedencia —lo sintético no fundamenta— pero
+    eso es una dimensión distinta de ésta. El artículo 78 de la Ley Aduanera es
+    oficial, vigente y verificable, y aun así no sustenta dónde clasifica una
+    mercancía: habla de cómo determinar el valor en aduana.
+
+    El filtro va aquí y no dentro del RAG a propósito: recuperar sigue
+    devolviendo todo lo que rige ese día, porque el Copilot y el Sentinel sí
+    quieren la Ley Aduanera. Lo que cambia es qué se le entrega al motor como
+    fundamento de esta decisión concreta.
+
+    Un documento cuyo tipo no se puede resolver NO pasa: no se presume
+    fundamento lo que no se pudo comprobar.
+    """
+    if not recuperacion.chunks:
+        return recuperacion
+
+    ids = {c.document_id for c in recuperacion.chunks if c.document_id}
+    tipos: dict[uuid.UUID, str] = {
+        fila.id: fila.kind
+        for fila in session.execute(
+            sa.select(LegalDocument.id, LegalDocument.kind).where(LegalDocument.id.in_(ids))
+        )
+    }
+    fundamentables = tuple(
+        c
+        for c in recuperacion.chunks
+        # Sin `document_id` no hay forma de saber de qué instrumento sale, y lo
+        # que no se puede comprobar no se presume fundamento.
+        if c.document_id is not None and fundamenta_clasificacion(tipos.get(c.document_id))
+    )
+    return recuperacion.model_copy(update={"chunks": fundamentables})

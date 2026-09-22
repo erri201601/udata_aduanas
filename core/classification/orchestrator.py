@@ -23,7 +23,7 @@ Entre paso y paso hay decisiones que ningún motor puede tomar solo:
 from __future__ import annotations
 
 import uuid
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from core.classification.result import ClassificationOutcome
 from core.evidence import EvidenceError, builder, contract, questions
@@ -155,6 +155,40 @@ def with_money_impact(
 
 
 # ── Auxiliares ───────────────────────────────────────────────────────────────
+
+
+#: Qué instrumentos pueden FUNDAMENTAR una clasificación arancelaria.
+#:
+#: `a_legal_refs` ya filtraba por PROCEDENCIA —lo sintético no fundamenta—
+#: pero nadie filtraba por MATERIA, y son dos cosas distintas. El artículo 78
+#: de la Ley Aduanera es OFICIAL, está vigente y su hash es verificable; y aun
+#: así no sustenta una clasificación, porque habla de cómo determinar el valor
+#: en aduana cuando no aplica el valor de transacción. Es derecho aplicable a
+#: la operación, no a la nomenclatura.
+#:
+#: Una clasificación se funda en la nomenclatura: el texto de las partidas, las
+#: Notas de Sección y de Capítulo y las Reglas Generales de Interpretación, que
+#: viven en la LIGIE. La Ley Aduanera regula el procedimiento —valoración,
+#: despacho, obligaciones— y no decide dónde clasifica una mercancía.
+#:
+#: Sin este filtro, el expediente de defensa citaba los artículos 64, 65, 67,
+#: 71, 78, 79 y 80 —el capítulo de valor en aduana— diciendo «sustenta la
+#: clasificación» (Persona 1, 22-sep-2026, ensayo de la demo). No era una cita
+#: inventada: era una cita correcta de una norma que no venía al caso, que ante
+#: un agente aduanal es peor, porque parece rigor y no lo es.
+#:
+#: Crecerá cuando haya con qué: los criterios de clasificación del Anexo 6 de
+#: las RGCE y las resoluciones del Consejo son fundamento y hoy no están
+#: cargados.
+FUNDAMENTAN_CLASIFICACION: Final[frozenset[str]] = frozenset({"TARIFF"})
+
+
+def fundamenta_clasificacion(kind: str | None) -> bool:
+    """¿Un documento de este tipo puede sostener una clasificación?
+
+    `None` es no: un documento sin tipo conocido no se presume fundamento.
+    """
+    return kind in FUNDAMENTAN_CLASIFICACION
 
 
 def _evidencias_de(
