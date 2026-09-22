@@ -21,7 +21,7 @@ pytestmark = pytest.mark.unit
 
 CORPUS = Corpus(
     id=uuid.UUID("3b38c4aa-abea-4e8a-aaaa-ba8cd8b22081"),
-    slug="corpus-espejo",
+    slug="corpus_espejo_v1",
     nombre="15 pedimentos con anomalías sembradas",
     pedimentos=15,
     eventos=60,
@@ -49,7 +49,7 @@ def _sesion() -> Session:
 
 @pytest.mark.usefixtures("_catalogo")
 def test_el_slug_evita_tener_que_teclear_el_uuid() -> None:
-    assert _resolver(_sesion(), "corpus-espejo") == CORPUS
+    assert _resolver(_sesion(), "corpus_espejo_v1") == CORPUS
 
 
 @pytest.mark.usefixtures("_catalogo")
@@ -63,7 +63,7 @@ def test_un_uuid_que_no_existe_no_se_mide_en_silencio() -> None:
     with pytest.raises(SystemExit) as error:
         _resolver(_sesion(), str(uuid.uuid4()))
 
-    assert "corpus-espejo" in str(error.value)
+    assert "corpus_espejo_v1" in str(error.value)
 
 
 @pytest.mark.usefixtures("_catalogo")
@@ -72,7 +72,7 @@ def test_un_slug_desconocido_dice_cuales_hay() -> None:
         _resolver(_sesion(), "corpus-que-no-existe")
 
     mensaje = str(error.value)
-    assert "corpus-espejo" in mensaje
+    assert "corpus_espejo_v1" in mensaje
     assert "semilla" in mensaje
 
 
@@ -80,7 +80,21 @@ def test_la_tabla_muestra_el_tamano_de_cada_corpus() -> None:
     """El sembrado y el corpus se distinguen por el tamaño, no por el id."""
     tabla = _tabla([CORPUS, SEMBRADO])
 
-    assert "corpus-espejo" in tabla
+    assert "corpus_espejo_v1" in tabla
     assert "15" in tabla
     assert "60" in tabla
     assert "semilla" in tabla
+
+
+def test_el_ejemplo_de_la_documentacion_usa_un_slug_que_existe() -> None:
+    """El ejemplo del docstring salió inventado y nadie lo habría notado.
+
+    Un ejemplo con un slug que no existe manda a quien lo copia contra un
+    error, y el CLI se estrena fallando. El slug real lo decide el cargador:
+    si allí cambia, este test obliga a cambiar el ejemplo.
+    """
+    import apps.evaluacion.deteccion_26 as metrica
+    from ingestion.sintetico.load import SCENARIO_SLUG
+
+    assert metrica.__doc__ is not None
+    assert SCENARIO_SLUG in metrica.__doc__

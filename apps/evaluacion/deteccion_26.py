@@ -32,7 +32,7 @@ una evaluación que ensucie la base deja de medir lo que dice medir.
 SE CORRE SOLO
 
     python -m apps.evaluacion.deteccion_26 --escenarios
-    python -m apps.evaluacion.deteccion_26 --escenario corpus-espejo
+    python -m apps.evaluacion.deteccion_26 --escenario corpus_espejo_v1
 
 Desde otra máquina, la base del equipo se alcanza con `--target shared`, que
 lee `ADUANERO_SHARED_URL`. Desde la laptop de Persona 1 NO: ahí la base del
