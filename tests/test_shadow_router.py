@@ -324,3 +324,58 @@ def test_las_columnas_usadas_existen() -> None:
     assert {"line_number", "declared_fraction_code"} <= {
         c.name for c in PedimentoItem.__table__.columns
     }
+
+
+# ── El mismo dinero no se cuenta dos veces (22-sep) ─────────────────────────
+
+
+def test_dos_hallazgos_de_la_misma_partida_no_duplican_el_dinero() -> None:
+    """EL TEST QUE IMPORTA.
+
+    El motor atribuye el monto ENTERO a cada divergencia cuantificable a
+    propósito: cada causa explica la misma diferencia por completo. Sumarlos
+    fila por fila enseñaría el doble del dinero que existe — y con el corpus,
+    una partida puede traer divergencia de valor y de origen a la vez.
+    """
+    with _cliente(
+        pedimento=_pedimento(),
+        partidas=[_partida()],
+        revision=_revision(unverifiable=[]),
+        hallazgos=[
+            _hallazgo(impact_amount=Decimal("14520.95"), impact_amount_currency="MXN"),
+            _hallazgo(
+                finding_type="ORIGIN_MISMATCH",
+                field="country_of_origin",
+                impact_amount=Decimal("14520.95"),
+                impact_amount_currency="MXN",
+            ),
+        ],
+    ) as c:
+        d = c.get(f"/pedimentos/{PEDIMENTO_ID}/shadow").json()
+
+    assert d["exposicion_cuantificada"] == "14520.95", "un monto por partida"
+    assert len(d["lineas"][0]["divergencias"]) == 2, "pero los dos hallazgos se enseñan"
+
+
+def test_partidas_distintas_si_suman() -> None:
+    """Lo que no se duplica dentro de una partida, entre partidas sí se suma."""
+    otra = uuid.UUID("33333333-3333-3333-3333-333333333333")
+    partida_2 = _partida(line_number=2)
+    partida_2.id = otra
+
+    with _cliente(
+        pedimento=_pedimento(),
+        partidas=[_partida(), partida_2],
+        revision=_revision(unverifiable=[]),
+        hallazgos=[
+            _hallazgo(impact_amount=Decimal("100.00"), impact_amount_currency="MXN"),
+            _hallazgo(
+                pedimento_item_id=otra,
+                impact_amount=Decimal("50.00"),
+                impact_amount_currency="MXN",
+            ),
+        ],
+    ) as c:
+        d = c.get(f"/pedimentos/{PEDIMENTO_ID}/shadow").json()
+
+    assert d["exposicion_cuantificada"] == "150.00"

@@ -145,3 +145,19 @@ def test_el_dinero_es_decimal() -> None:
 
 def test_el_id_de_pedimento_es_uuid() -> None:
     assert Pedimento.__table__.c.id.type.python_type is uuid.UUID
+
+
+def test_el_tablero_agrupa_el_dinero_por_partida_no_por_hallazgo() -> None:
+    """Dos divergencias de una partida explican la MISMA diferencia.
+
+    Se comprueba sobre la consulta: agrupa por revisión y partida, y toma el
+    mayor — el mismo criterio que `core.audit.engine._total`.
+    """
+    from apps.api.routers.dashboard import _por_partida
+
+    sql = str(_por_partida().original.compile(compile_kwargs={"literal_binds": True}))
+
+    assert "max(" in sql.lower()
+    assert "GROUP BY" in sql
+    assert "pedimento_item_id" in sql
+    assert "shadow_review_id" in sql
