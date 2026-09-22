@@ -160,4 +160,25 @@ def test_el_tablero_agrupa_el_dinero_por_partida_no_por_hallazgo() -> None:
     assert "max(" in sql.lower()
     assert "GROUP BY" in sql
     assert "pedimento_item_id" in sql
-    assert "shadow_review_id" in sql
+
+
+def test_el_tablero_cuenta_solo_la_ultima_revision_de_cada_pedimento() -> None:
+    """Auditar un pedimento dos veces no lo hace deber el doble.
+
+    La exposición de un pedimento no es la suma de las veces que lo hemos
+    mirado (Persona 1, 22-sep).
+    """
+    from apps.api.routers.dashboard import _por_partida
+    from sqlalchemy.dialects import postgresql
+
+    # Con el dialecto de Postgres: `DISTINCT ON` no existe en el genérico, y
+    # comprobarlo ahí daría un falso negativo.
+    sql = str(
+        _por_partida().original.compile(
+            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+        )
+    )
+
+    assert "DISTINCT ON" in sql.upper(), "una revisión por pedimento"
+    assert "shadow_reviews.created_at DESC" in sql, "la más reciente"
+    assert "shadow_review_id IS NULL" in sql, "los hallazgos sin revisión no se pierden"
