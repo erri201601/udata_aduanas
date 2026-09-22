@@ -56,11 +56,18 @@ Espejo.
 
 from __future__ import annotations
 
-from core.classification.orchestrator import classify_product, with_money_impact
+from core.classification.orchestrator import (
+    FUNDAMENTAN_CLASIFICACION,
+    classify_product,
+    fundamenta_clasificacion,
+    with_money_impact,
+)
 from core.classification.result import ClassificationOutcome
 
 __all__ = [
+    "FUNDAMENTAN_CLASIFICACION",
     "ClassificationOutcome",
     "classify_product",
+    "fundamenta_clasificacion",
     "with_money_impact",
 ]
