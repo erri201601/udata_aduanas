@@ -123,3 +123,47 @@ def test_un_producto_en_varias_partidas_no_pierde_la_exclusion() -> None:
     excluidos = _fichas_recortadas_a_proposito(sesion, partidas, set())  # type: ignore[arg-type]
 
     assert {p for p, _ in excluidos} == {str(una), str(otra)}
+
+
+def test_un_arbol_sucio_se_declara_en_el_reporte() -> None:
+    """Un número medido con cambios sin commitear no lo puede reproducir nadie.
+
+    Es el caso peligroso, no el raro: se mide justo mientras se trabaja. Si el
+    reporte no lo dice, ese número parece salir de una revisión que no lo
+    produce.
+    """
+    from apps.evaluacion.deteccion_26 import Procedencia, linea_de_procedencia
+
+    linea = linea_de_procedencia(
+        Procedencia(momento="2026-09-22 20:00 UTC", revision="a6e2f9f", rama="develop", sucio=True)
+    )
+
+    assert "SIN COMMITEAR" in linea
+    assert "a6e2f9f" in linea
+
+
+def test_un_arbol_limpio_no_lleva_advertencia() -> None:
+    from apps.evaluacion.deteccion_26 import Procedencia, linea_de_procedencia
+
+    linea = linea_de_procedencia(
+        Procedencia(momento="2026-09-22 20:00 UTC", revision="a6e2f9f", rama="develop", sucio=False)
+    )
+
+    assert "SIN COMMITEAR" not in linea
+    assert "2026-09-22 20:00 UTC" in linea
+    assert "develop" in linea
+
+
+def test_sin_git_la_medicion_no_se_rompe() -> None:
+    """La métrica mide, no depende de estar en un repositorio."""
+    from apps.evaluacion import deteccion_26
+
+    original = deteccion_26._git
+    try:
+        deteccion_26._git = lambda *_a: ""  # type: ignore[assignment]
+        p = deteccion_26.procedencia()
+    finally:
+        deteccion_26._git = original  # type: ignore[assignment]
+
+    assert p.revision == "desconocida"
+    assert p.sucio is False
