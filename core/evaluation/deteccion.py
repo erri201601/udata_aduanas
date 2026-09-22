@@ -22,6 +22,21 @@ que trae el documento —las anomalías de cantidad, comprobadas por Persona 1�
 Se excluyen del recall y se reportan aparte. Que la exclusión venga de la base
 y no de un filtro escrito aquí es lo que impide que alguien la olvide.
 
+UN FALSO NEGATIVO NO DICE POR QUÉ, Y HAY TRES PORQUÉS DISTINTOS
+
+Los tres se ven iguales en la tabla y no son lo mismo (Persona 1, 22-sep):
+
+  · EL DETECTOR NO EXISTE — nadie lo ha construido. La unidad y las tres
+    comprobaciones fiscales están aquí: no hay `UNIT_MISMATCH` ni ninguna
+    divergencia de tasa en el vocabulario del §18.
+  · EL DETECTOR EXISTE Y NO PUDO — la fracción: el motor no logra determinar
+    cuál era la correcta, y sin eso no puede afirmar que la declarada esté
+    mal. Es una limitación honesta, no un fallo de detección.
+  · EL DETECTOR EXISTE Y NO CAZÓ — eso sí es fallo del motor.
+
+Sin separarlos, un recall bajo parece que el motor falla cuando la mitad del
+hueco es código que no hemos escrito.
+
 TRES LÍMITES QUE EL REPORTE DECLARA, PORQUE SIN ELLOS EL NÚMERO ENGAÑA
 
 1. Los eventos sin detector posible no entran al recall, y se dice cuántos son.
@@ -85,6 +100,32 @@ HALLAZGO_DE_REVISION: Final = "ORIGIN_MISMATCH"
 NICO_LO_CAZA_EL_CATALOGO: Final = "WRONG_NICO/catálogo"
 NICO_EXIGE_FICHA: Final = "WRONG_NICO/ficha técnica"
 
+#: El corpus colapsa cuatro anomalías distintas en WRONG_VALUE y las separa por
+#: `expected_field`. Sólo una tiene detector: la del valor en aduana, que se
+#: comprueba con la aritmética de la partida. Las otras tres son fiscales y
+#: nadie las ha construido — no hay divergencia de tasa en el §18.
+SUBTIPO_POR_CAMPO: Final[Mapping[str, str]] = {
+    "customs_value": "WRONG_VALUE/valor en aduana",
+    "igi_rate": "WRONG_VALUE/tasa de IGI",
+    "iva_base": "WRONG_VALUE/base de IVA",
+    "iva_amount": "WRONG_VALUE/importe de IVA",
+}
+
+#: Subtipos sin detector construido. Se cuentan aparte de los que sí lo tienen.
+SUBTIPOS_SIN_DETECTOR: Final[frozenset[str]] = frozenset(
+    {
+        "WRONG_VALUE/tasa de IGI",
+        "WRONG_VALUE/base de IVA",
+        "WRONG_VALUE/importe de IVA",
+        NICO_EXIGE_FICHA,
+    }
+)
+
+#: Por qué no se detectó. Tres cosas distintas que se ven iguales en un FN.
+SIN_DETECTOR_CONSTRUIDO: Final = "el detector no existe"
+NO_PUDO_DETERMINARLO: Final = "el detector existe y no pudo"
+NO_LO_CAZO: Final = "el detector existe y no cazó"
+
 _Z: Final = 1.96  # 95 %
 _CIEN: Final = Decimal(100)
 _DOS: Final = Decimal("0.01")
@@ -99,11 +140,35 @@ class Evento:
     detectable: bool
     """`expected_detection`. `False` = nadie puede detectarlo con el documento."""
     subtipo: str | None = None
-    """Para el NICO: lo calcula quien tiene el catálogo delante, no este módulo."""
+    """Lo calcula quien tiene el catálogo o el `expected_field` delante.
+
+    Para el NICO y para los cuatro sabores de WRONG_VALUE: son capacidades
+    distintas y mezclarlas da una cifra que no significa nada.
+    """
+
+    pudo_intentarlo: bool = True
+    """`False` cuando el motor no llegó a tener contra qué comparar.
+
+    Hoy pasa con la fracción: si la clasificación no se sostuvo, el motor no
+    puede afirmar que la declarada esté mal. Eso es una limitación dicha, no
+    un fallo de detección, y el reporte las separa.
+    """
 
     @property
     def etiqueta(self) -> str:
         return self.subtipo or self.error_type
+
+    @property
+    def tiene_detector(self) -> bool:
+        """¿Existe la comprobación, aunque no la haya cazado?"""
+        if self.subtipo in SUBTIPOS_SIN_DETECTOR:
+            return False
+        return self.error_type in DETECTOR_POR_ERROR
+
+    def causa_del_fallo(self) -> str:
+        if not self.tiene_detector:
+            return SIN_DETECTOR_CONSTRUIDO
+        return NO_PUDO_DETERMINARLO if not self.pudo_intentarlo else NO_LO_CAZO
 
 
 @dataclass(frozen=True)
@@ -162,6 +227,9 @@ class Reporte:
     excluidos_sin_detector: dict[str, int] = field(default_factory=dict)
     """Tipos que el motor no sabe detectar todavía. No es fallar: es faltar."""
 
+    fn_por_causa: dict[str, int] = field(default_factory=dict)
+    """Los tres porqués de un falso negativo, contados por separado."""
+
     partidas_limpias: int = 0
     falsos_positivos_de_revision: int = 0
     """De los FP, cuántos son el hallazgo de origen, que pide revisión."""
@@ -208,16 +276,27 @@ def evaluar(
     con_anomalia = {e.partida_id for e in eventos}
     limpias = [p for p in partidas if p not in con_anomalia]
 
-    medibles = [e for e in eventos if e.detectable and e.error_type in DETECTOR_POR_ERROR]
+    # Medible = alguien PODRÍA detectarlo con el documento (`detectable`). Que
+    # el detector exista o no es otra cosa, y se cuenta aparte: un recall que
+    # excluyera lo no construido escondería justo lo que falta por construir.
+    medibles = [e for e in eventos if e.detectable]
     sin_detector: dict[str, int] = defaultdict(int)
-    for e in eventos:
-        if e.detectable and e.error_type not in DETECTOR_POR_ERROR:
-            sin_detector[e.error_type] += 1
+    for e in medibles:
+        if not e.tiene_detector:
+            sin_detector[e.etiqueta] += 1
 
     por_tipo: dict[str, Conteo] = {}
+    causas: dict[str, int] = defaultdict(int)
     tp_total = fn_total = 0
     for evento in medibles:
-        detectado = (evento.partida_id, DETECTOR_POR_ERROR[evento.error_type]) in emitidos
+        esperado = DETECTOR_POR_ERROR.get(evento.error_type)
+        detectado = (
+            evento.tiene_detector
+            and esperado is not None
+            and (evento.partida_id, esperado) in emitidos
+        )
+        if not detectado:
+            causas[evento.causa_del_fallo()] += 1
         actual = por_tipo.get(evento.etiqueta, Conteo())
         por_tipo[evento.etiqueta] = Conteo(
             tp=actual.tp + int(detectado),
@@ -251,6 +330,7 @@ def evaluar(
         por_tipo=por_tipo,
         eventos_totales=len(eventos),
         eventos_medibles=len(medibles),
+        fn_por_causa=dict(causas),
         excluidos_por_indetectables=sum(1 for e in eventos if not e.detectable),
         excluidos_sin_detector=dict(sin_detector),
         partidas_limpias=len(limpias),
