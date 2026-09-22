@@ -192,13 +192,53 @@ if [ "$VERIFICAR" -eq 1 ]; then
   fi
 fi
 
+# ── 6. Réplica fuera del disco ───────────────────────────────────────────────
+# Un respaldo en el mismo disco que la base no protege del fallo que más
+# probable es: que muera el disco. `ADUANERO_BACKUP_REMOTO` es un destino de
+# rsync (`maquina:~/ruta/`) y va en .env, no aquí: cada máquina replica a otra
+# distinta y el script es el mismo para todas.
+FALLO_REMOTO=0
+if [ -n "${ADUANERO_BACKUP_REMOTO:-}" ]; then
+  log "Replicando a $ADUANERO_BACKUP_REMOTO…"
+
+  # Sin --delete a propósito. Un error en la purga local se propagaría al
+  # remoto y borraría la única copia que queda cuando el disco local falla.
+  # Que el remoto acumule dumps viejos es un problema mucho menor.
+  #
+  # La salida va a un archivo y NO por una tubería: el estado de `rsync | sed`
+  # es el de `sed`, y un fallo de transferencia se daría por bueno. `pipefail`
+  # lo cubriría, pero no se deja un respaldo colgando de ese detalle.
+  BITACORA_REMOTA="$(mktemp)"
+  if rsync -az --partial "$DESTINO/" "$ADUANERO_BACKUP_REMOTO" >"$BITACORA_REMOTA" 2>&1; then
+    sed 's/^/    /' "$BITACORA_REMOTA"
+    # Segunda pasada por CONTENIDO, no por fecha y tamaño: un archivo truncado
+    # a medio transferir tiene el tamaño de destino y pasaría desapercibido.
+    # Va en seco, así que no copia nada: sólo pregunta si queda algo distinto.
+    PENDIENTE=$(rsync -az --checksum --dry-run --out-format='%n' \
+      "$DESTINO/" "$ADUANERO_BACKUP_REMOTO" 2>/dev/null | grep -c '\.dump' || true)
+    if [ "$PENDIENTE" -eq 0 ]; then
+      ok "Réplica verificada por contenido: los dumps del remoto son idénticos"
+    else
+      FALLO_REMOTO=1
+      fail "La réplica dejó $PENDIENTE dumps distintos del original"
+    fi
+  else
+    FALLO_REMOTO=1
+    fail "No se pudo replicar a $ADUANERO_BACKUP_REMOTO"
+    sed 's/^/    /' "$BITACORA_REMOTA" >&2
+  fi
+  rm -f "$BITACORA_REMOTA"
+fi
+
 # ── Resumen ──────────────────────────────────────────────────────────────────
 echo
 log "Listo. Ocupado: $(du -sh "$DESTINO" | cut -f1) · $(find "$DESTINO" -name '*.dump' | wc -l) dumps"
-echo
-echo "  ⚠️  Estos respaldos viven en el MISMO disco que la base. Si el disco"
-echo "      muere, se pierden los dos. Copia $DESTINO a otra máquina o disco:"
-echo "        rsync -az $DESTINO/ otro-equipo:~/backups/aduanero/"
+if [ -z "${ADUANERO_BACKUP_REMOTO:-}" ]; then
+  echo
+  echo "  ⚠️  Estos respaldos viven en el MISMO disco que la base. Si el disco"
+  echo "      muere, se pierden los dos. Define ADUANERO_BACKUP_REMOTO en .env:"
+  echo "        ADUANERO_BACKUP_REMOTO=otro-equipo:~/backups/aduanero/"
+fi
 
 # Salir distinto de 0 si MinIO quedó incompleto: el respaldo de PostgreSQL sí
 # sirve, pero el RAW es lo único irreversible (regla 7) y el cron tiene que
@@ -207,4 +247,13 @@ if [ "$FALLO_MINIO" = "1" ]; then
   echo
   fail "El respaldo de PostgreSQL está completo, pero MinIO NO. Revisa arriba."
   exit 2
+fi
+
+# La réplica falla con su propio código: el respaldo local sirve, pero sigue en
+# el mismo disco que la base, y eso es justo lo que la réplica existe para
+# evitar. Silenciarlo daría por replicado lo que no salió de la máquina.
+if [ "$FALLO_REMOTO" = "1" ]; then
+  echo
+  fail "El respaldo local está completo, pero NO salió de este disco."
+  exit 3
 fi

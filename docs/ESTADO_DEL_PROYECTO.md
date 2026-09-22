@@ -469,12 +469,21 @@ equivocado en producción.
 - `GroundTruthRecord` está diseñado para anomalías inyectadas (§26) y **no
   sirve** para medir acierto de clasificación; esa vía son las filas
   `HUMAN_VALIDATED` que comparten `product_dna_id`.
-- **Respaldos: 97 MB en el mismo disco que la base, y no hay a dónde
-  moverlos hoy.** Esta máquina tiene un solo disco. Sacarlos exige otra
-  máquina, y las dos de la tailnet pertenecen a otros usuarios: `yayo` no
-  tiene SSH escuchando y Taildrop no cruza entre dueños distintos. Queda
-  esperando una acción del dueño de `yayo`: levantar `sshd`. El script ya
-  acepta destino por `ADUANERO_BACKUP_DIR`.
+- **Respaldos: 113 MB en el mismo disco que la base, y la réplica está a un
+  paso de cerrarse.** Esta máquina tiene un solo disco, así que sacarlos exige
+  otra máquina. `yayo` ya tiene `sshd` levantado (Persona 2, 22-sep) y su
+  llave de host está **verificada por un tercero**, no aceptada a ciegas:
+  `SHA256:KerxOmVoMMh4gYut/nnpmm8lkmw/3fvKFvNloxWv32M`, confirmada por Persona 2
+  con `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` y coincidente con
+  `known_hosts`.
+  El script ya replica y **verifica la copia por contenido** —segunda pasada con
+  `--checksum`, porque un archivo truncado tiene el tamaño correcto— y sale con
+  código 3 si no logró salir del disco, en vez de dar un verde falso. Se activa
+  con `ADUANERO_BACKUP_REMOTO` en `.env`; sin ella no intenta nada.
+  **Falta una sola cosa, y es de Persona 2:** autorizar la llave pública
+  `SHA256:3c3Az8G0vAuDDPFSi/SXEPOa8/yoTa+IU2mcJ2gD/Yg`
+  (`aduanero-backup@udata-nitro`) en `~/.ssh/authorized_keys` de `yayo`,
+  restringida a rsync. Hoy `ssh` la ofrece y `yayo` la rechaza.
 - **La llave de OpenAI** viajó por un chat el 9-sep y sigue sin rotarse.
   Instrucciones entregadas el 21-sep; la rotación es de Persona 1 y la llave
   nueva no vuelve a pasar por un chat.
