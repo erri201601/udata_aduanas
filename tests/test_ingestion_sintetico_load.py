@@ -1,15 +1,20 @@
 """Tests de integración del cargador del corpus espejo V1 (Persona 1, 22-sep-2026).
 
 `integration` — necesitan PostgreSQL local; se saltan si no hay conexión.
-Regresión de dos bugs reales de la primera versión del cargador:
+Regresión de dos bugs reales:
 
-1. `Product` se creaba uno por PARTIDA en vez de uno por FICHA DE CATÁLOGO
-   (`product_id`) — con eso, `INCONSISTENT_SKU_CLASSIFICATION` ("el mismo
-   SKU clasificado distinto en dos pedimentos") no podía existir, porque
-   cada partida tenía su propio producto aislado.
-2. `ProductDna.summary` se llenaba con `classification_reason` (el motivo
+1. `ProductDna.summary` se llenaba con `classification_reason` (el motivo
    de por qué se puede o no clasificar) en vez de la descripción comercial
    de la partida.
+2. Un intento posterior de compartir un solo `Product` por `product_id` de
+   catálogo (para habilitar `INCONSISTENT_SKU_CLASSIFICATION`) introdujo un
+   bug peor: `apps/api/dna.py` resuelve la ficha vigente de un producto con
+   `is_current=True`, y con `Product` compartido cada partida crea una
+   versión nueva sin cerrar las anteriores — todas las partidas de ese
+   producto terminan leyendo la MISMA ficha (la última cargada), y las 21
+   con `classification_evaluable=false` reciben una ficha completa ajena.
+   Se revirtió a un `Product` por partida, con `model` guardando el
+   `product_id` de catálogo para no perder esa identidad.
 
 Cada test corre dentro de una transacción que se revierte al final.
 """
@@ -126,13 +131,18 @@ def _pedimento(
     )
 
 
-def test_load_corpus_comparte_product_entre_dos_pedimentos_distintos(
+def test_load_corpus_un_product_por_partida_con_identidad_de_catalogo_visible(
     pg_session: Session,
 ) -> None:
-    """Regresión: el mismo `product_id` en dos pedimentos distintos debe
-    apuntar al MISMO `Product` — si no, `INCONSISTENT_SKU_CLASSIFICATION`
-    no se puede detectar."""
-    spec_p001 = ParsedProductSpec(
+    """Regresión (Persona 1, 22-sep-2026, revirtiendo un intento anterior de
+    compartir `Product`): el mismo `product_id` en dos pedimentos distintos
+    crea DOS `Product` separados -- uno por partida, cada uno con su propia
+    `ProductDna` -- porque `apps/api/dna.py` resuelve la ficha vigente por
+    `product_id` con `is_current=True`, y un `Product` compartido dejaría
+    todas las partidas de ese producto leyendo la MISMA ficha (la última
+    cargada). La identidad de catálogo no se pierde: ambos `Product` llevan
+    el mismo `model` (el `product_id` del corpus)."""
+    spec = ParsedProductSpec(
         id="P901", name="Producto de prueba", description="Descripción de catálogo", spec={"x": 1}
     )
     corpus = ParsedCorpus(
@@ -148,7 +158,7 @@ def test_load_corpus_comparte_product_entre_dos_pedimentos_distintos(
                 partidas=[_partida("001", product_id="P901", descripcion="desc B", spec={"x": 1})],
             ),
         ],
-        product_specs={"P901": spec_p001},
+        product_specs={"P901": spec},
     )
 
     load_corpus(pg_session, corpus, seed=1)
@@ -156,8 +166,46 @@ def test_load_corpus_comparte_product_entre_dos_pedimentos_distintos(
 
     from database.models.operational import Product
 
-    productos = pg_session.query(Product).filter_by(sku="P901").all()
-    assert len(productos) == 1, "debe existir un solo Product para P901, no uno por partida"
+    productos = pg_session.query(Product).filter_by(model="P901").all()
+    assert len(productos) == 2, "un Product por partida, no uno compartido"
+    assert {p.sku for p in productos} == {"DOC_A-001", "DOC_B-001"}
+    assert all(p.model == "P901" for p in productos)
+
+
+def test_load_corpus_cada_product_tiene_exactamente_una_dna_vigente(
+    pg_session: Session,
+) -> None:
+    """Invariante que impide en la raíz el bug real: con un `Product` por
+    partida, cada `Product` sólo puede tener UNA `ProductDna`, así que
+    `is_current=True` nunca puede resolver ambiguo entre dos partidas."""
+    spec = ParsedProductSpec(
+        id="P903", name="Producto de prueba 2", description="Descripción", spec={"z": 1}
+    )
+    corpus = ParsedCorpus(
+        pedimentos=[
+            _pedimento(
+                "DOC_D",
+                "26 00 0000 6000004",
+                partidas=[
+                    _partida("001", product_id="P903", descripcion="a", spec={"z": 1}),
+                    _partida("002", product_id="P903", descripcion="b", spec={"z": 1}),
+                ],
+            )
+        ],
+        product_specs={"P903": spec},
+    )
+
+    load_corpus(pg_session, corpus, seed=1)
+    pg_session.flush()
+
+    from database.models.intelligence import ProductDna
+    from database.models.operational import Product
+
+    for producto in pg_session.query(Product).filter_by(model="P903").all():
+        dnas_vigentes = (
+            pg_session.query(ProductDna).filter_by(product_id=producto.id, is_current=True).count()
+        )
+        assert dnas_vigentes == 1
 
 
 def test_load_corpus_product_dna_summary_es_la_descripcion_comercial(
@@ -192,14 +240,9 @@ def test_load_corpus_product_dna_summary_es_la_descripcion_comercial(
     from database.models.intelligence import ProductDna
     from database.models.operational import Product
 
-    producto = pg_session.query(Product).filter_by(sku="P902").one()
-    dna = (
-        pg_session.query(ProductDna)
-        .filter_by(product_id=producto.id)
-        .order_by(ProductDna.version.desc())
-        .first()
-    )
-    assert dna is not None
+    producto = pg_session.query(Product).filter_by(sku="DOC_C-001").one()
+    assert producto.model == "P902"
+    dna = pg_session.query(ProductDna).filter_by(product_id=producto.id).one()
     assert dna.summary == "TUBERIA DE PRUEBA DESCRIPCION COMERCIAL"
     assert "clasificacion" not in dna.summary.lower()
     assert "contrastar" not in dna.summary.lower()
