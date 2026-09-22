@@ -176,6 +176,24 @@ def compare_item(declared: DeclaredItem, expected: ExpectedItem) -> list[Diverge
             (f"La unidad declarada {declared.unit} no existe en el Apéndice 7 del Anexo 22."),
         )
 
+    # ── Ficha técnica incompleta ─────────────────────────────────────────────
+    # No compara nada: mira si el expediente alcanza. Por eso no depende de que
+    # la clasificación se sostenga — al contrario, suele ser la razón de que no
+    # se sostenga.
+    if expected.missing_technical_fields:
+        campos = ", ".join(expected.missing_technical_fields)
+        emitir(
+            DivergenceType.MISSING_TECHNICAL_FIELD,
+            "missing_information",
+            None,
+            campos,
+            (
+                f"La ficha técnica no trae {campos}. La clasificación declarada "
+                "no se puede defender con el expediente actual: se le pide al "
+                "proveedor, no se corrige el pedimento."
+            ),
+        )
+
     # ── Origen ───────────────────────────────────────────────────────────────
     if expected.country_of_origin and declared.country_of_origin != expected.country_of_origin:
         if expected.origin_source == ORIGEN_DEL_PROVEEDOR:
@@ -334,6 +352,11 @@ def _lagunas(expected: ExpectedItem, declared: DeclaredItem | None = None) -> li
         razones.append(
             "no consta el país del proveedor: la partida no está ligada a una factura, "
             "así que el origen declarado no se pudo contrastar con nada"
+        )
+    if expected.missing_technical_fields is None:
+        razones.append(
+            "no se consultó la ficha técnica: sin producto ligado o sin Product DNA "
+            "no se puede decir si el expediente alcanza"
         )
     if expected.required_nom_codes is None:
         razones.append(

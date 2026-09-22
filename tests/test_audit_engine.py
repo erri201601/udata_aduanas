@@ -54,6 +54,9 @@ def comparacion(**kw: object):  # type: ignore[no-untyped-def]
         "igi_amount": Decimal("15000.00"),
         "vat_amount": Decimal("18528.00"),
         "declared_unit_is_known": True,
+        # Explícito: se consultó la ficha y está completa. `None` diría que no
+        # se consultó, y entonces la partida no se podría afirmar limpia.
+        "missing_technical_fields": (),
         "valid_nico_codes": ("00",),
     }
     dec.update(kw.get("declarado", {}))  # type: ignore[arg-type]

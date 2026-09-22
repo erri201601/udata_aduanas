@@ -65,6 +65,18 @@ class DivergenceType(StrEnum):
     UNIT_MISMATCH = "UNIT_MISMATCH"
     """La unidad de medida declarada no existe en el Apéndice 7 del Anexo 22."""
 
+    MISSING_TECHNICAL_FIELD = "MISSING_TECHNICAL_FIELD"
+    """La ficha técnica no trae un dato que la clasificación necesita.
+
+    NO ACUSA DE NADA A QUIEN DECLARÓ. Dice que el expediente, hoy, no alcanza
+    para sostener lo declarado: si mañana llega una auditoría, no hay con qué
+    defender la fracción. Se arregla pidiéndole al proveedor la ficha completa,
+    no corrigiendo el pedimento.
+
+    Sale de `ProductDna.missing_information`, que es lo que el extractor
+    declara que le faltó — no una lista de campos obligatorios inventada aquí.
+    """
+
     INCONSISTENT_SKU_CLASSIFICATION = "INCONSISTENT_SKU_CLASSIFICATION"
     """El mismo SKU se clasificó distinto en operaciones anteriores.
 
@@ -97,6 +109,10 @@ DEFAULT_SEVERITY: Final[dict[DivergenceType, str]] = {
     DivergenceType.NICO_MISMATCH: "MEDIUM",
     DivergenceType.UNIT_MISMATCH: "MEDIUM",
     DivergenceType.IDENTIFIER_MISMATCH: "MEDIUM",
+    # Deja la clasificación sin respaldo, pero no afirma que esté mal ni cuesta
+    # dinero por sí sola. MEDIUM a propósito: inflarla sería cobrar por un
+    # hueco del expediente el precio de un error probado.
+    DivergenceType.MISSING_TECHNICAL_FIELD: "MEDIUM",
     # Señala un problema sin decir de qué lado está.
     DivergenceType.INCONSISTENT_SKU_CLASSIFICATION: "MEDIUM",
 }
