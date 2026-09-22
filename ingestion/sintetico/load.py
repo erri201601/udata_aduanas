@@ -256,75 +256,63 @@ def _create_invoice_item(
     return item
 
 
-def _get_or_create_product(
-    session: Session, spec: ParsedProductSpec, *, scenario: SyntheticScenario
+def _create_product_con_dna(
+    session: Session,
+    parte: ParsedPartida,
+    *,
+    client: Client,
+    supplier: Supplier,
+    spec: ParsedProductSpec,
+    scenario: SyntheticScenario,
+    document_id: str,
 ) -> Product:
-    """El `Product` es UNO por `product_id` de catálogo — compartido entre
-    todas las partidas que lo declaran, sea en el mismo pedimento o en otro
-    (hallazgo de Persona 1, 22-sep-2026): `INCONSISTENT_SKU_CLASSIFICATION`
-    es "el mismo SKU clasificado distinto en dos pedimentos", y eso exige
-    que las dos declaraciones apunten al mismo `Product`.
+    """Un `Product`+`ProductDna` POR PARTIDA.
 
-    `client_id`/`supplier_id` quedan NULL a propósito: el producto de
-    catálogo no es propiedad de un importador ni de un proveedor en
-    particular — son distintos pedimentos, con distintos clientes, los que
-    lo declaran. La igualdad se busca a mano (`client_id IS NULL`) porque
-    `UniqueConstraint(client_id, sku)` no evita duplicados cuando
-    `client_id` es NULL (NULL nunca es igual a NULL en SQL).
+    NO se comparte un solo `Product` por `product_id` de catálogo, aunque
+    varias partidas (en el mismo pedimento o en otro) declaren la misma
+    mercancía — decisión de Persona 1, 22-sep-2026, revirtiendo un intento
+    anterior de compartirlo. La razón no es de estilo: `ProductDna` cuelga
+    de `product_id` y `apps/api/dna.py` resuelve la ficha vigente con
+    `where(product_id=..., is_current=True).order_by(version.desc())`. Con
+    un `Product` compartido, cada partida crea una versión nueva y todas
+    quedan con `is_current=True` (nada las cierra) — el Espejo devuelve LA
+    ÚLTIMA cargada para CUALQUIER partida de ese producto. Las ~15 partidas
+    de un mismo producto terminarían compartiendo una sola ficha, y las 21
+    con `classification_evaluable=false` recibirían la ficha completa de
+    otra partida según el orden de carga — exactamente lo que el corpus
+    existe para impedir que pase desapercibido.
+
+    (Para compartir el `Product` de verdad haría falta que el Espejo
+    resolviera la ficha vigente POR PARTIDA, no por producto — cambio de
+    contrato que no toca esta tarea.)
+
+    La identidad de catálogo (qué partidas son la misma mercancía) no se
+    pierde: `Product.model` guarda el `product_id` del corpus (`P001`..
+    `P012`), aunque cada partida tenga su propio `Product`+`sku`.
     """
-    existing = (
-        session.query(Product)
-        .filter(Product.client_id.is_(None), Product.sku == spec.id)
-        .one_or_none()
-    )
-    if existing is not None:
-        return existing
+    faltantes = sorted(set(spec.spec) - set(parte.technical_spec))
     product = Product(
-        client_id=None,
-        supplier_id=None,
-        sku=spec.id,
-        commercial_name=spec.name,
-        description=spec.description,
+        client_id=client.id,
+        supplier_id=supplier.id,
+        sku=f"{document_id}-{parte.sec}",
+        model=spec.id,
+        commercial_name=parte.commercial_description[:200],
+        description=parte.commercial_description,
         data_origin=DATA_ORIGIN,
         synthetic_scenario_id=scenario.id,
         seed=scenario.seed,
     )
     session.add(product)
     session.flush()
-    return product
 
-
-def _create_product_dna(
-    session: Session,
-    parte: ParsedPartida,
-    *,
-    product: Product,
-    reference_spec: dict[str, object],
-    scenario: SyntheticScenario,
-) -> None:
-    """Una versión de `ProductDna` POR PARTIDA (nunca compartida entre
-    partidas, aunque el `Product` sí lo sea): cada declaración trae su
-    propia ficha, completa o recortada, y las 21 con
-    `classification_evaluable=false` necesitan la suya sin afectar a las
-    demás versiones del mismo producto.
-
-    `summary` viene de la descripción COMERCIAL de esta partida
-    (`commercial_description`), no de `classification_reason` — corrección
-    de Persona 1, 22-sep-2026: el resumen de un producto no es el motivo por
-    el que se puede o no clasificar.
-    """
-    version_siguiente = (
-        session.query(sa.func.coalesce(sa.func.max(ProductDna.version), 0))
-        .filter(ProductDna.product_id == product.id)
-        .scalar()
-        + 1
-    )
-    faltantes = sorted(set(reference_spec) - set(parte.technical_spec))
     dna = ProductDna(
         product_id=product.id,
-        version=version_siguiente,
+        version=1,
         is_current=True,
         input_kinds=["TEXT"],
+        # Descripción COMERCIAL de esta partida, no `classification_reason`
+        # (el motivo de por qué se puede o no clasificar no es un resumen
+        # de producto) — corrección de Persona 1, 22-sep-2026.
         summary=parte.commercial_description,
         missing_information=faltantes,
         data_origin=DATA_ORIGIN,
@@ -355,6 +343,7 @@ def _create_product_dna(
             )
         )
     session.flush()
+    return product
 
 
 def _d(valor: object) -> Decimal:
@@ -508,9 +497,14 @@ def load_pedimento(
             session, parte, invoice=invoice, scenario=scenario, exchange_rate=ped.exchange_rate
         )
         spec = product_specs[parte.product_id]
-        product = _get_or_create_product(session, spec, scenario=scenario)
-        _create_product_dna(
-            session, parte, product=product, reference_spec=spec.spec, scenario=scenario
+        product = _create_product_con_dna(
+            session,
+            parte,
+            client=client,
+            supplier=supplier,
+            spec=spec,
+            scenario=scenario,
+            document_id=ped.document_id,
         )
         item = _create_pedimento_item(
             session,
