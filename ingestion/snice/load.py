@@ -13,7 +13,14 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from database.models.regulatory import LegalDocument, LegalRule, LegalSource, Nico, TariffFraction
+from database.models.regulatory import (
+    LegalDocument,
+    LegalRule,
+    LegalSource,
+    Nico,
+    TariffFraction,
+    TariffHeading,
+)
 from database.repositories.chunks import PostgresChunkStore
 from rag.types import LegalChunk, hash_contenido
 
@@ -23,6 +30,7 @@ if TYPE_CHECKING:
     from ingestion.snice.nico import ParsedNico
     from ingestion.snice.notes import ParsedNote
     from ingestion.snice.tariff import ParsedFraction
+    from ingestion.snice.tariff_headings import ParsedHeading
 
 SNICE_SLUG = "snice"
 LIGIE_SHORT_NAME = "LIGIE"
@@ -297,3 +305,63 @@ def load_ligie_notes_chunks(
         for parsed_note in notes
     ]
     return PostgresChunkStore(session).add(chunks)
+
+
+def _close_previous_heading_versions(session: Session, *, code: str, new_valid_from: date) -> None:
+    """Igual que `_close_previous_fraction_versions`, para `tariff_headings` por `code`."""
+    anteriores = (
+        session.query(TariffHeading)
+        .filter(
+            TariffHeading.code == code,
+            TariffHeading.valid_to.is_(None),
+            TariffHeading.valid_from < new_valid_from,
+        )
+        .all()
+    )
+    for anterior in anteriores:
+        anterior.valid_to = new_valid_from - timedelta(days=1)
+    if anteriores:
+        session.flush()
+
+
+def to_tariff_heading_row(
+    parsed: ParsedHeading, *, source: LegalSource, content_hash: str, retrieved_at: datetime
+) -> TariffHeading:
+    return TariffHeading(
+        code=parsed.code,
+        level=parsed.level,
+        chapter=parsed.chapter,
+        description=parsed.description,
+        data_origin="OFFICIAL",
+        source_id=source.id,
+        valid_from=LIGIE_VALID_FROM,
+        source_url=LIGIE_SOURCE_URL,
+        source_document="LIGIE 2022 (DOF)",
+        content_hash=content_hash,
+        retrieved_at=retrieved_at,
+    )
+
+
+def load_tariff_headings(
+    session: Session, *, headings: list[ParsedHeading], ligie_content_hash: str
+) -> int:
+    """Inserta partidas/subpartidas ya parseadas (ADR 0002). Devuelve cuántas.
+
+    No lleva `legal_document_id`: a diferencia de `tariff_fractions`, el ADR
+    no lo pide -- `source_id` ya trazabiliza de dónde salió, y esta tabla
+    nunca es un resultado de clasificación que necesite citarse como tal.
+    Idempotente por `(code, valid_from)`, igual que fracciones y NICO: una
+    recarga con la misma vigencia revienta la `UniqueConstraint` en vez de
+    duplicar.
+    """
+    source = get_or_create_snice_source(session)
+    retrieved_at = datetime.now(UTC)
+    for parsed in headings:
+        _close_previous_heading_versions(session, code=parsed.code, new_valid_from=LIGIE_VALID_FROM)
+        session.add(
+            to_tariff_heading_row(
+                parsed, source=source, content_hash=ligie_content_hash, retrieved_at=retrieved_at
+            )
+        )
+    session.flush()
+    return len(headings)

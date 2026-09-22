@@ -41,8 +41,8 @@ def test_extrae_partida_de_cuatro_lineas_completa_sin_perder_la_ultima() -> None
     palabras = _palabras_de(PAGINA_889_CAPITULO_84)
     encontrados = {c: (n, t) for c, n, t in _headings_de_pagina(palabras)}
 
-    assert "84.01" in encontrados
-    nivel, texto = encontrados["84.01"]
+    assert "8401" in encontrados
+    nivel, texto = encontrados["8401"]
     assert nivel == 4
     assert texto == (
         "Reactores nucleares; elementos combustibles (cartuchos) sin irradiar para reactores "
@@ -54,7 +54,7 @@ def test_subpartida_de_una_sola_linea_no_hereda_texto_de_la_partida() -> None:
     palabras = _palabras_de(PAGINA_889_CAPITULO_84)
     encontrados = {c: (n, t) for c, n, t in _headings_de_pagina(palabras)}
 
-    assert encontrados["8401.10"] == (6, "Reactores nucleares.")
+    assert encontrados["840110"] == (6, "Reactores nucleares.")
 
 
 def test_ninguna_partida_o_subpartida_trae_ruido_institucional() -> None:
@@ -86,8 +86,8 @@ def test_capitulo_61_no_mezcla_prendas_con_encabezado_de_pagina() -> None:
     encontrados = {c: (n, t) for c, n, t in _headings_de_pagina(palabras)}
 
     # Lo que sí se recuperó, real y verificado a mano contra el PDF.
-    assert encontrados.get("6102.10") == (6, "De lana o pelo fino.")
-    assert encontrados.get("6102.20") == (6, "De algodón.")
+    assert encontrados.get("610210") == (6, "De lana o pelo fino.")
+    assert encontrados.get("610220") == (6, "De algodón.")
     for _, (_, texto) in encontrados.items():
         assert "Facilitación" not in texto
         assert "Pachuca" not in texto
@@ -97,8 +97,8 @@ def test_capitulo_3_pescado_subpartidas_reales() -> None:
     palabras = _palabras_de(PAGINA_33_CAPITULO_3)
     encontrados = {c: (n, t) for c, n, t in _headings_de_pagina(palabras)}
 
-    assert encontrados.get("0302.74") == (6, "Anguilas (Anguilla spp.).")
-    assert encontrados.get("0302.84") == (6, "Róbalos (Dicentrarchus spp.).")
+    assert encontrados.get("030274") == (6, "Anguilas (Anguilla spp.).")
+    assert encontrados.get("030284") == (6, "Róbalos (Dicentrarchus spp.).")
 
 
 def test_nunca_devuelve_una_fraccion_de_ocho_digitos() -> None:

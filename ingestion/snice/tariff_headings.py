@@ -249,16 +249,21 @@ def _headings_de_pagina(palabras: list[_Palabra]) -> list[tuple[str, int, str]]:
     y_min = y_encabezado if y_encabezado is not None else float("-inf")
     y_max = y_pie if y_pie is not None else float("inf")
 
+    # El código se guarda SIN el punto ("8401" no "84.01"): mismo convenio
+    # que `tariff_fractions.code` (`ingestion.snice.tariff._split_code`), y
+    # lo que exige el CHECK `length(code) = level` de la migración -- con
+    # el punto, "84.01" mide 5, no 4, y toda fila reventaría la restricción
+    # (regresión real, encontrada al probar la carga contra Postgres).
     anclas: list[tuple[float, str, int]] = []
     for p in palabras:
         if p.x >= X_CODIGO_MAX or not (y_min < p.y < y_max):
             continue
         if _FRACCION_RE.match(p.texto):
-            anclas.append((p.y, p.texto, 8))
+            anclas.append((p.y, p.texto.replace(".", ""), 8))
         elif _SUBPARTIDA_RE.match(p.texto):
-            anclas.append((p.y, p.texto, 6))
+            anclas.append((p.y, p.texto.replace(".", ""), 6))
         elif _PARTIDA_RE.match(p.texto):
-            anclas.append((p.y, p.texto, 4))
+            anclas.append((p.y, p.texto.replace(".", ""), 4))
     anclas.sort(key=lambda a: a[0])
 
     lineas_y = _y_de_lineas(palabras, y_min, y_max)
