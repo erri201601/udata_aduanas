@@ -101,10 +101,9 @@ class CorpusEspejo:
         self._session = session
         self._escenario = escenario
         self._solo_evaluables = solo_evaluables
-
-    @property
-    def nombre(self) -> str:
-        return f"CORPUS_ESPEJO/{self._escenario}"
+        # Atributo, no `property`: el puerto lo declara como atributo y una
+        # propiedad de sólo lectura no lo satisface.
+        self.nombre = f"CORPUS_ESPEJO/{escenario}"
 
     def _fracciones_esperadas(self) -> dict[object, str]:
         """La verdad del corpus donde difiere de lo declarado."""

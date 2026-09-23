@@ -47,9 +47,7 @@ from __future__ import annotations
 
 import argparse
 import re
-import subprocess
 import uuid
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Final, NamedTuple
 
 import sqlalchemy as sa
@@ -77,6 +75,7 @@ from database.repositories.findings import de_la_ultima_revision
 from database.repositories.tariff import TariffCatalogRepository
 
 from apps.evaluacion.hs_accuracy import SesionSoloLectura
+from apps.evaluacion.procedencia import linea_de_procedencia, procedencia
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -400,56 +399,6 @@ def _tabla(disponibles: list[Corpus]) -> str:
     lineas.append("")
     lineas.append("Los UUID también se aceptan en --escenario.")
     return "\n".join(lineas)
-
-
-class Procedencia(NamedTuple):
-    """Cuándo se midió y con qué código. Sin esto el número no es reproducible."""
-
-    momento: str
-    revision: str
-    rama: str
-    sucio: bool
-
-
-def _git(*argumentos: str) -> str:
-    """Lo que diga git, o vacío. Que no haya git no puede romper una medición."""
-    try:
-        salida = subprocess.run(
-            ["git", *argumentos],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return ""
-    return salida.stdout.strip() if salida.returncode == 0 else ""
-
-
-def procedencia() -> Procedencia:
-    return Procedencia(
-        momento=datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC"),
-        revision=_git("rev-parse", "--short", "HEAD") or "desconocida",
-        rama=_git("rev-parse", "--abbrev-ref", "HEAD") or "desconocida",
-        sucio=bool(_git("status", "--porcelain")),
-    )
-
-
-def linea_de_procedencia(p: Procedencia) -> str:
-    """Una línea que viaja con el número cuando alguien lo pega en un chat.
-
-    El 22 de septiembre el recall pasó de 27.78 % a 83.33 % en unas horas, y no
-    porque el motor mejorara solo: cambió el código y se volvió a auditar. Un
-    reporte sin fecha ni revisión no se puede situar después, y dos números del
-    mismo día parecen contradecirse cuando en realidad miden cosas distintas.
-
-    El árbol sucio se declara: si hay cambios sin commitear, ese número no sale
-    de ninguna revisión que otro pueda recuperar.
-    """
-    linea = f"MEDIDO  {p.momento} · código {p.revision} ({p.rama})"
-    if p.sucio:
-        linea += "  ← CON CAMBIOS SIN COMMITEAR: no se puede reproducir desde esa revisión"
-    return linea
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -132,7 +132,7 @@ def test_un_arbol_sucio_se_declara_en_el_reporte() -> None:
     reporte no lo dice, ese número parece salir de una revisión que no lo
     produce.
     """
-    from apps.evaluacion.deteccion_26 import Procedencia, linea_de_procedencia
+    from apps.evaluacion.procedencia import Procedencia, linea_de_procedencia
 
     linea = linea_de_procedencia(
         Procedencia(momento="2026-09-22 20:00 UTC", revision="a6e2f9f", rama="develop", sucio=True)
@@ -143,7 +143,7 @@ def test_un_arbol_sucio_se_declara_en_el_reporte() -> None:
 
 
 def test_un_arbol_limpio_no_lleva_advertencia() -> None:
-    from apps.evaluacion.deteccion_26 import Procedencia, linea_de_procedencia
+    from apps.evaluacion.procedencia import Procedencia, linea_de_procedencia
 
     linea = linea_de_procedencia(
         Procedencia(momento="2026-09-22 20:00 UTC", revision="a6e2f9f", rama="develop", sucio=False)
@@ -156,14 +156,14 @@ def test_un_arbol_limpio_no_lleva_advertencia() -> None:
 
 def test_sin_git_la_medicion_no_se_rompe() -> None:
     """La métrica mide, no depende de estar en un repositorio."""
-    from apps.evaluacion import deteccion_26
+    from apps.evaluacion import procedencia as modulo
 
-    original = deteccion_26._git
+    original = modulo._git
     try:
-        deteccion_26._git = lambda *_a: ""  # type: ignore[assignment]
-        p = deteccion_26.procedencia()
+        modulo._git = lambda *_a: ""  # type: ignore[assignment]
+        p = modulo.procedencia()
     finally:
-        deteccion_26._git = original  # type: ignore[assignment]
+        modulo._git = original  # type: ignore[assignment]
 
     assert p.revision == "desconocida"
     assert p.sucio is False
