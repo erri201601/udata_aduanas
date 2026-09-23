@@ -227,7 +227,6 @@ def test_una_partida_sin_producto_igual_se_le_comprueba_el_pais() -> None:
         _partida(product_id=None),  # type: ignore[arg-type]
         date(2026, 3, 15),
         _CatalogoFalso(("00",)),  # type: ignore[arg-type]
-        None,  # type: ignore[arg-type]
         ReviewRequest(),
     )
 
@@ -252,7 +251,6 @@ def test_sin_producto_y_sin_proveedor_no_hay_espejo() -> None:
             ),
             date(2026, 3, 15),
             _CatalogoFalso(("00",)),  # type: ignore[arg-type]
-            None,  # type: ignore[arg-type]
             ReviewRequest(),
         )
         is None

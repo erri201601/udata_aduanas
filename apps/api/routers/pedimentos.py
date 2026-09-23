@@ -66,20 +66,19 @@ from decimal import Decimal
 from typing import Any, Final
 
 import sqlalchemy as sa
-from core.classification import classify_product
 from core.review import LineInput, PedimentoReview, review_pedimento
 from core.shadow import DeclaredItem, ExpectedItem
 from core.shadow.types import ORIGEN_DEL_PROVEEDOR
 from core.taxation import Money, TaxRates
 from database.models import Invoice, InvoiceItem, Pedimento, PedimentoItem, Supplier
 from database.repositories import save_review
-from database.repositories.notes import LegalNotesRepository
 from database.repositories.tariff import TariffCatalogRepository
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
+from apps.api.clasificacion import clasificar_borrador
 from apps.api.db import SessionDep
-from apps.api.dna import cargar_borrador, terminos
+from apps.api.dna import cargar_borrador
 
 router = APIRouter(prefix="/pedimentos", tags=["pedimentos"])
 
@@ -167,14 +166,13 @@ def revisar(
         raise HTTPException(status.HTTP_409_CONFLICT, "el pedimento no tiene partidas")
 
     catalogo = TariffCatalogRepository(session)
-    notas = LegalNotesRepository(session)
     fecha = pedimento.operation_date
 
     lineas: list[LineInput] = []
     sin_espejo = 0
 
     for partida in partidas:
-        esperada = _construir_espejo(session, partida, fecha, catalogo, notas, peticion)
+        esperada = _construir_espejo(session, partida, fecha, catalogo, peticion)
         if esperada is None:
             sin_espejo += 1
 
@@ -345,7 +343,6 @@ def _construir_espejo(
     partida: PedimentoItem,
     fecha: date,
     catalogo: TariffCatalogRepository,
-    notas: LegalNotesRepository,
     peticion: ReviewRequest,
 ) -> ExpectedItem | None:
     """Clasifica el producto de la partida SIN mirar lo declarado (§36).
@@ -373,14 +370,29 @@ def _construir_espejo(
             **documental,
         )
 
-    outcome = classify_product(
+    # POR EL MISMO CAMINO QUE EL ENDPOINT, NO POR UNA COPIA
+    #
+    # Esto llamaba a `classify_product` directamente, sin pasarle `legal_refs`.
+    # El motor devolvía entonces `RESOLVED` con `code = None` —resuelto a nada—
+    # y `is_resolved` quedaba en falso, así que el Espejo NUNCA llegaba a
+    # comparar fracciones. La métrica del §26 marcaba `WRONG_FRACTION` 0 de 6
+    # y parecía un límite del clasificador: era este atajo.
+    #
+    # Aislado el 23-sep sobre la misma vajilla, mismos términos y mismo
+    # catálogo:
+    #
+    #     sin legal_refs : RESOLVED  code=None
+    #     con legal_refs : RESOLVED  code=69111001
+    #
+    # `clasificar_borrador` es la función que usa `POST /products/{id}/classify`
+    # y que el harness de `hs_accuracy` mide a propósito. Que el Espejo use otra
+    # es exactamente lo que su docstring advierte que no se haga.
+    outcome = clasificar_borrador(
+        session,
         borrador,
         operation_date=fecha,
-        catalog=catalogo,
-        notes=notas,
-        search_terms=terminos(borrador),
         trade_flow="IMPORT",
-    )
+    ).outcome
 
     return ExpectedItem(
         line_number=partida.line_number,

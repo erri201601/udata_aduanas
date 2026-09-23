@@ -43,6 +43,7 @@ from database.models.regulatory import (
     PedimentoClave,
     RegulatoryEvent,
     TariffFraction,
+    TariffHeading,
     UnitOfMeasure,
 )
 
@@ -76,5 +77,6 @@ __all__ = [
     "Supplier",
     "SyntheticScenario",
     "TariffFraction",
+    "TariffHeading",
     "UnitOfMeasure",
 ]

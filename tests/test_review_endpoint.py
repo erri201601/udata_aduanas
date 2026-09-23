@@ -70,7 +70,7 @@ def test_sin_producto_ligado_se_comprueba_lo_que_no_exige_clasificar() -> None:
     catalogo.igi_rate.return_value = None
     catalogo.hay_unidades.return_value = False
     espejo = _construir_espejo(
-        MagicMock(), _partida(product_id=None), FECHA, catalogo, MagicMock(), ReviewRequest()
+        MagicMock(), _partida(product_id=None), FECHA, catalogo, ReviewRequest()
     )
 
     assert espejo is not None

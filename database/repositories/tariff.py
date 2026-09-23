@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING
 import sqlalchemy as sa
 from core.rgi_engine.context import TariffCandidate
 
-from database.models import Nico, TariffFraction, UnitOfMeasure
+from database.models import Nico, TariffFraction, TariffHeading, UnitOfMeasure
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -80,7 +80,51 @@ def _casa(termino: str) -> sa.ColumnElement[bool]:
     se llevaba los candidatos con términos genéricos. Unos cables eléctricos
     acababan clasificados en 9806.
     """
-    return sa.func.unaccent(TariffFraction.description).ilike(sa.func.unaccent(f"%{termino}%"))
+    return sa.func.unaccent(_texto_completo()).ilike(sa.func.unaccent(f"%{termino}%"))
+
+
+#: Alias de `tariff_headings` para la partida (4) y la subpartida (6) de cada
+#: fracción. Dos, porque una fracción cuelga de las dos a la vez.
+_PARTIDA = sa.orm.aliased(TariffHeading, name="partida")
+_SUBPARTIDA = sa.orm.aliased(TariffHeading, name="subpartida")
+
+
+def _texto_completo() -> sa.ColumnElement[str]:
+    """La descripción de la fracción MÁS la de su partida y su subpartida.
+
+    Una descripción de fracción no se sostiene sola, y no es un defecto del
+    catálogo: es como se lee la LIGIE. La 73239305 dice «De acero
+    inoxidable.» y no dice de qué; el sujeto está en la 7323, «Artículos de
+    uso doméstico y sus partes, de fundición, hierro o acero». Medido: **3 683
+    de las 8 136 descripciones (45 %) tienen menos de 25 caracteres** y 2 104
+    empiezan por «Los demás».
+
+    Buscar sólo en la fracción es buscar en fragmentos sin sujeto. Con la
+    jerarquía, una vajilla de porcelana pasó de 8 candidatas equivocadas a la
+    6911 sola, que es «Vajilla y demás artículos de uso doméstico… de
+    porcelana» (Persona 1, 23-sep).
+
+    `coalesce` y no `join` obligatorio: una fracción cuya partida no esté
+    cargada sigue buscándose por su propio texto en vez de desaparecer.
+    """
+    return (
+        TariffFraction.description
+        + sa.literal(" ")
+        + sa.func.coalesce(_PARTIDA.description, "")
+        + sa.literal(" ")
+        + sa.func.coalesce(_SUBPARTIDA.description, "")
+    )
+
+
+def _con_jerarquia(consulta: sa.Select) -> sa.Select:
+    """Engancha partida y subpartida. Toda consulta que use `_casa` lo necesita."""
+    return consulta.outerjoin(
+        _PARTIDA,
+        sa.and_(_PARTIDA.code == TariffFraction.heading, _PARTIDA.level == 4),
+    ).outerjoin(
+        _SUBPARTIDA,
+        sa.and_(_SUBPARTIDA.code == TariffFraction.subheading, _SUBPARTIDA.level == 6),
+    )
 
 
 def _terminos_utiles(terms: Sequence[str]) -> list[str]:
@@ -125,21 +169,51 @@ class TariffCatalogRepository:
         self._session = session
 
     def headings(self, *, on_date: date, terms: Sequence[str]) -> Sequence[TariffCandidate]:
-        """Partidas (4 dígitos) cuyo texto coincide con los términos.
+        """Partidas (4 dígitos) que comprenden la mercancía según los términos.
 
         Se agrupa por partida porque la tabla guarda fracciones de 8 dígitos:
         la partida no es una fila, es el prefijo que comparten varias.
+
+        SÓLO LAS QUE MÁS TÉRMINOS CUBREN, NO TODAS LAS QUE ROZAN UNO
+
+        `_coincide` es un OR: una partida que casa UNA palabra de seis entra
+        igual que la que casa cinco. Antes se devolvían todas y `coincidencias`
+        sólo ordenaba — pero la RGI 3 c) elige «la última en orden numérico» y
+        no mira ese orden, así que el ruido acababa ganando. Un estropajo de
+        acero llegó a clasificarse en 9001, elementos de óptica.
+
+        Ahora entran sólo las del MEJOR nivel de cobertura que exista para esa
+        mercancía. No es un umbral escrito a mano —probé ≥2 y ≥3 y dejaban una
+        vajilla en cero candidatas—: es el máximo que se alcance, así que nunca
+        devuelve vacío si algo casó. Medido el 23-sep: el estropajo pasa de 60
+        candidatas —última 9605— a una sola, la 7323, que es «lana de hierro o
+        acero; esponjas, estropajos y artículos similares».
         """
+        cobertura = _coincidencias(terms)
+        # La cobertura más alta que alcance cualquier partida. Se ordena y se
+        # toma la primera en vez de envolver en `max(...)`: `cobertura` ya es
+        # una suma de agregados, y Postgres no admite agregados anidados.
+        mejor = (
+            _con_jerarquia(sa.select(cobertura.label("cobertura")))
+            .where(_vigentes(on_date), _coincide(terms))
+            .group_by(TariffFraction.heading)
+            .order_by(sa.desc("cobertura"))
+            .limit(1)
+            .scalar_subquery()
+        )
         filas = self._session.execute(
-            sa.select(
-                TariffFraction.heading,
-                sa.func.min(TariffFraction.description).label("description"),
-                sa.func.max(TariffFraction.specificity).label("specificity"),
-                _coincidencias(terms).label("coincidencias"),
-                _un_source_id(),
+            _con_jerarquia(
+                sa.select(
+                    TariffFraction.heading,
+                    sa.func.min(TariffFraction.description).label("description"),
+                    sa.func.max(TariffFraction.specificity).label("specificity"),
+                    cobertura.label("coincidencias"),
+                    _un_source_id(),
+                )
             )
             .where(_vigentes(on_date), _coincide(terms))
             .group_by(TariffFraction.heading)
+            .having(cobertura >= mejor)
             .order_by(sa.desc("coincidencias"), sa.desc("specificity"), TariffFraction.heading)
             .limit(MAX_CANDIDATOS)
         ).all()
