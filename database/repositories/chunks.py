@@ -67,8 +67,11 @@ def _vigentes(on_date: date) -> sa.ColumnElement[bool]:
     )
 
 
-def _row_to_chunk(row: LegalChunkRecord, *, document: str) -> LegalChunk:
+def _row_to_chunk(
+    row: LegalChunkRecord, *, document: str, distancia: float | None = None
+) -> LegalChunk:
     return LegalChunk(
+        distancia=distancia,
         source_id=row.source_id,
         document_id=row.legal_document_id,
         legal_rule_id=row.legal_rule_id,
@@ -163,8 +166,16 @@ class PostgresChunkStore:
         if solo_fundamentables:
             condiciones.append(LegalChunkRecord.data_origin.in_(ORIGENES_QUE_FUNDAMENTAN))
 
+        # La distancia se SELECCIONA, no sólo se ordena por ella. Antes se
+        # calculaba para el ORDER BY y se tiraba, así que el llamante recibía
+        # ocho pasajes sin manera de saber si el primero se parecía mucho o
+        # poco a la pregunta.
+        distancia: sa.ColumnElement[float] | sa.Null = sa.null()
+        if query_embedding is not None:
+            distancia = LegalChunkRecord.embedding.cosine_distance(list(query_embedding))
+
         consulta = (
-            sa.select(LegalChunkRecord, LegalDocument.title)
+            sa.select(LegalChunkRecord, LegalDocument.title, distancia.label("distancia"))
             .join(LegalDocument, LegalChunkRecord.legal_document_id == LegalDocument.id)
             .where(*condiciones)
         )
@@ -174,7 +185,7 @@ class PostgresChunkStore:
             # filas ya vectorizadas. El resto de la vigencia no se pierde: una
             # búsqueda por término aparte las sigue encontrando.
             consulta = consulta.where(LegalChunkRecord.embedding.is_not(None)).order_by(
-                LegalChunkRecord.embedding.cosine_distance(list(query_embedding))
+                sa.text("distancia")
             )
         else:
             if terms:
@@ -186,4 +197,4 @@ class PostgresChunkStore:
             consulta = consulta.order_by(LegalChunkRecord.valid_from.desc())
 
         filas = self._session.execute(consulta.limit(limit)).all()
-        return [_row_to_chunk(fila, document=titulo) for fila, titulo in filas]
+        return [_row_to_chunk(fila, document=titulo, distancia=d) for fila, titulo, d in filas]

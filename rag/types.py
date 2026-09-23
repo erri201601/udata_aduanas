@@ -49,6 +49,21 @@ class LegalChunk(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
+    distancia: float | None = None
+    """Distancia del coseno a la consulta. `None` si no se buscó por vectores.
+
+    Se calculaba ya —era el ORDER BY— y se tiraba. Se conserva porque es el
+    único dato que dice CUÁNTO se parece un pasaje a la pregunta, y sin él una
+    respuesta de ocho pasajes parece igual de pertinente venga de donde venga.
+
+    No decide nada por sí sola. Medido el 23-sep contra el corpus cargado, la
+    mejor distancia de cinco preguntas respondibles cayó entre 0.24 y 0.42, y
+    la de cinco cuyo corpus NO existe, entre 0.41 y 0.65: se solapan. Lo que sí
+    separa es el dominio —«la receta del mole» da 0.74 y «el mundial del 86»,
+    0.84—. Sirve para ordenar y para que quien lee juzgue, no para afirmar que
+    un pasaje responde.
+    """
+
     # ── Identidad y procedencia ──────────────────────────────────────────────
     source_id: Any | None = None
     """Fuente registrada de la que salió. Lo exige el Evidence Contract."""
