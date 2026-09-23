@@ -39,7 +39,7 @@ from apps.api.config import get_settings
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from ingestion.snice import load, nico, notes, raw, tariff
+from ingestion.snice import load, nico, notes, raw, tariff, tariff_headings
 
 if TYPE_CHECKING:
     from ingestion.snice.raw import MinioTarget
@@ -114,13 +114,23 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
             "similitud, hasta que se vectorice."
         ),
     )
+    parser.add_argument(
+        "--headings",
+        action="store_true",
+        help=(
+            "Carga partidas (4 dígitos) y subpartidas (6) a "
+            "regulatory.tariff_headings (ADR 0002) — recorre la LIGIE completa "
+            "con pdftotext -bbox-layout, ~90s. No filtra por --chapters: son el "
+            "documento completo, igual que --notes."
+        ),
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    if not args.raw_only and not args.chapters and not args.notes:
-        raise SystemExit("--chapters o --notes es obligatorio salvo con --raw-only")
+    if not args.raw_only and not args.chapters and not args.notes and not args.headings:
+        raise SystemExit("--chapters, --notes o --headings es obligatorio salvo con --raw-only")
     if args.chunks and not args.notes:
         raise SystemExit("--chunks sólo tiene efecto junto con --notes")
     chapters = frozenset(args.chapters or ())
@@ -192,6 +202,10 @@ def main(argv: list[str] | None = None) -> int:
             ligie_lines = notes.extract_text(str(ligie_path))
             parsed_notes = notes.parse_notes(ligie_lines)
 
+        parsed_headings = None
+        if args.headings:
+            parsed_headings = tariff_headings.parse_headings(str(ligie_path))
+
     if fa_result is not None and nico_result is not None:
         fa_declared = len(fa_result.accepted) + len(fa_result.rejected)
         nico_declared = len(nico_result.accepted) + len(nico_result.rejected)
@@ -203,6 +217,12 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Advertencias de tasa: {len(fa_result.rate_warnings)}")
     if parsed_notes is not None:
         print(f"Notas parseadas: {len(parsed_notes)} (Secciones y Capítulos con bloque de notas).")
+    if parsed_headings is not None:
+        n_partidas = sum(1 for h in parsed_headings if h.level == 4)
+        n_subpartidas = sum(1 for h in parsed_headings if h.level == 6)
+        print(
+            f"Partidas/subpartidas parseadas: {n_partidas} partidas, {n_subpartidas} subpartidas."
+        )
 
     assert database_url is not None  # solo llegamos aquí sin --raw-only
     engine = create_engine(database_url)
@@ -228,6 +248,12 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 print(f"OK ({args.target}): {n_chunks} chunks de notas insertados.")
                 log.info("snice.cli.done", target=args.target, chunks=n_chunks)
+        if parsed_headings is not None:
+            n_headings = load.load_tariff_headings(
+                session, headings=parsed_headings, ligie_content_hash=ligie_capture.content_hash
+            )
+            print(f"OK ({args.target}): {n_headings} partidas/subpartidas insertadas.")
+            log.info("snice.cli.done", target=args.target, headings=n_headings)
         session.commit()
 
     return 0
