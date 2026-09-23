@@ -113,6 +113,50 @@ cambia con ella.
 - **Nada de esto entra antes de la demo.** Toca el catálogo y la clasificación,
   que es justo lo que se enseña.
 
+## Addendum 23-sep: hay una segunda causa, y es independiente
+
+La primera corrida real de `hs_accuracy` (Persona 3, #125) dio **0 de 10**, y
+al seguirlo hasta el final aparece un defecto que **el texto de partidas no
+arregla**: la selección de candidatas.
+
+`_coincide(terms)` es un **OR**. Cualquier partida que toque UNO de los seis
+términos entra como candidata. Y `_coincidencias` —cuántos términos casa cada
+partida— se calcula ya, pero **sólo se usa para ordenar**, nunca para filtrar.
+La RGI 3 c) elige «la última en orden numérico», que no mira ese orden, así que
+el ruido acaba ganando.
+
+Medido el 23-sep contra el catálogo, para un estropajo de acero inoxidable:
+
+| candidatas que casan | cuántas | la RGI 3 c) elegiría |
+|---|---|---|
+| ≥ 1 término | 60 | 9605 |
+| ≥ 2 términos | 14 | 8481 |
+| **≥ 3 términos** | **1** | **7323** ← la correcta |
+
+La 7323 es «Lana de hierro o acero; esponjas, estropajos, guantes y artículos
+similares». Con el filtro adecuado, el motor la encuentra sola.
+
+**Pero un umbral fijo no sirve**: el mismo ≥3 deja una vajilla de porcelana en
+**cero** candidatas, y a un sartén y a una olla no los arregla. Lo que el dato
+sí establece es que `coincidencias` como FILTRO es mucho más potente que como
+criterio de orden, y que el diseño correcto es quedarse con el mejor nivel que
+exista para cada mercancía, no con un número escrito a mano.
+
+Dos defectos menores del mismo camino, medidos a la vez:
+
+- **`MIN_LONGITUD_TERMINO = 5` tira «OLLA».** La palabra más discriminante de
+  una olla a presión se pierde por tener cuatro letras.
+- **No hay palabras vacías.** «PRESENTACION», «CAPACIDAD», «DIAMETRO» y
+  «CUERPO» entran como términos de búsqueda y ocupan cupo de los seis.
+  «PRESENTACION» trae quesos (0406) y fósforos (3606).
+
+**Por qué no se arregla todavía:** cualquier umbral que se afine hoy se afina
+contra descripciones que están a punto de cambiar —cuando se cargue el texto de
+partidas, «SARTEN» dejará de competir contra `De acero inoxidable.` y competirá
+contra «Artículos de uso doméstico… de fundición, hierro o acero»—. El orden
+correcto es cargar primero, volver a medir, y ajustar la selección de
+candidatas contra el catálogo definitivo.
+
 ## Lo que esta decisión no resuelve
 
 Que el motor encuentre la candidata correcta no implica que la resuelva: las 6
