@@ -450,6 +450,16 @@ equivocado en producción.
 
 ### Deuda técnica conocida
 
+- **No hay datos reales, y no los va a haber por esta vía.** AJR no entregará
+  más pedimentos (Persona 1, 23-sep): por eso el corpus espejo se generó por
+  nuestra cuenta y los 16 pedimentos y 181 partidas están marcados `SYNTHETIC`.
+  La consecuencia que importa no es la etiqueta —es correcta— sino que el
+  número se queda en **detección medida**, nunca en precisión medida.
+  **La salida no es conseguir pedimentos: es conseguir un dictamen.** Cuando un
+  clasificador revise un caso, esa fila entra como `HUMAN_VALIDATED` y deja de
+  ser sintética. Hoy hay **cero** filas `HUMAN_VALIDATED` en todo el sistema, y
+  los diez primeros candidatos ya existen: los desacuerdos de la primera
+  corrida de `hs_accuracy` (#125). Ver `docs/PETICION_AJR.md` §0.
 - **La vigencia de una evidencia no se persiste.** `Evidence.to_row()` no
   emite `valid_from` ni `valid_to`, y `evidence_records` no tiene esas
   columnas, así que el expediente del §49 contesta la vigencia como
