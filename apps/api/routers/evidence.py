@@ -26,17 +26,23 @@ existe para evitar.
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
+import structlog
 from core.evidence import questions
 from core.evidence.kinds import EvidenceKind
-from core.evidence.types import Evidence
+from core.evidence.types import DocumentRef, Evidence
 from database.models import ClassificationDecision, EvidenceRecord
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from apps.api.db import SessionDep
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
+log = structlog.stdlib.get_logger("apps.api.evidencia")
 
 router = APIRouter(prefix="/evidence", tags=["evidence"])
 
@@ -87,6 +93,23 @@ class DossierRead(BaseModel):
     """
 
 
+def _a_referencia(refs: Sequence[Mapping[str, Any]] | None) -> DocumentRef | None:
+    """La primera referencia documental de la fila, si la trae.
+
+    `to_row()` emite una lista porque el modelo la admite, pero `Evidence`
+    tiene un solo `document_ref`: se toma la primera y las demás no se
+    inventan. Una referencia mal formada NO tumba el dossier —se devuelve
+    `None` y la pregunta queda sin responder, que es la respuesta honesta.
+    """
+    if not refs:
+        return None
+    try:
+        return DocumentRef.model_validate(dict(refs[0]))
+    except ValidationError:
+        log.warning("evidencia.referencia_ilegible", ref=refs[0])
+        return None
+
+
 def _a_evidence(fila: EvidenceRecord) -> Evidence | None:
     """Convierte una fila en `Evidence`, o `None` si no declara su tipo.
 
@@ -100,6 +123,15 @@ def _a_evidence(fila: EvidenceRecord) -> Evidence | None:
         kind=EvidenceKind(fila.evidence_kind),
         summary=fila.summary or "",
         source_id=fila.source_id,
+        # `Evidence.to_row()` guarda la referencia en `document_refs`; leerla de
+        # vuelta es lo que faltaba. Sin esto `document_ref` era siempre `None`,
+        # y la pregunta del §49 —«¿con qué fuente?»— salía sin responder aunque
+        # la fila tuviera documento, artículo, URL y hash.
+        document_ref=_a_referencia(fila.document_refs),
+        # Sin el origen, `is_legal_basis` no puede distinguir una norma real de
+        # una sintética. Se lee aquí, no se supone: un defecto razonable
+        # convertiría en oficial todo lo que alguien olvidara marcar.
+        data_origin=fila.data_origin,
         content_hash=fila.content_hashes[0] if fila.content_hashes else None,
         legal_rule_ids=tuple(fila.legal_rule_ids or ()),
         model_provider=fila.model_provider,
