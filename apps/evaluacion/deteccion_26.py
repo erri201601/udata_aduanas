@@ -73,6 +73,7 @@ from database.models import (
     ShadowReview,
     SyntheticScenario,
 )
+from database.repositories.findings import de_la_ultima_revision
 from database.repositories.tariff import TariffCatalogRepository
 
 from apps.evaluacion.hs_accuracy import SesionSoloLectura
@@ -183,6 +184,19 @@ def _fichas_recortadas_a_proposito(
     }
 
 
+def consulta_de_hallazgos() -> sa.Select[tuple[RiskFinding]]:
+    """Los hallazgos que representan al motor de HOY.
+
+    Separada para poder probarla sin base: CI no tiene Postgres, así que lo
+    que se comprueba allí es que la consulta LLEVE el acotamiento. Que el
+    acotamiento haga lo que dice se comprobó contra la compartida — 302
+    hallazgos del corpus en todas las revisiones, 86 en la vigente.
+    """
+    return sa.select(RiskFinding).where(
+        RiskFinding.pedimento_item_id.isnot(None), de_la_ultima_revision()
+    )
+
+
 def recolectar(
     session: Session, *, escenario: uuid.UUID | None = None
 ) -> tuple[list[Evento], list[Hallazgo], list[str], set[tuple[str, str]]]:
@@ -238,11 +252,16 @@ def recolectar(
 
     # Sólo los hallazgos de las partidas del corpus: uno de otro escenario
     # entraría como falso positivo sin serlo.
+    #
+    # Y SÓLO LOS DE LA REVISIÓN VIGENTE. Cada pedimento se ha auditado varias
+    # veces, y sin filtrar se mide la UNIÓN de todas las corridas en vez del
+    # motor de hoy: un tipo que una auditoría vieja emitió y la actual ya no,
+    # seguiría contando como acierto. La deduplicación del #112 no alcanza —
+    # colapsa copias del mismo par (partida, tipo), no distingue de qué corrida
+    # salió cada una. Ayer esto tapó un error durante horas (Persona 1, 23-sep).
     hallazgos = [
         Hallazgo(partida_id=str(f.pedimento_item_id), finding_type=f.finding_type)
-        for f in session.scalars(
-            sa.select(RiskFinding).where(RiskFinding.pedimento_item_id.isnot(None))
-        ).all()
+        for f in session.scalars(consulta_de_hallazgos()).all()
         if f.pedimento_item_id in partidas
     ]
     sembradas = {

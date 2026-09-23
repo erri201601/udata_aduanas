@@ -167,3 +167,24 @@ def test_sin_git_la_medicion_no_se_rompe() -> None:
 
     assert p.revision == "desconocida"
     assert p.sucio is False
+
+
+def test_la_metrica_solo_mira_la_revision_vigente() -> None:
+    """Sin esto se mide la UNIÓN de todas las auditorías, no el motor de hoy.
+
+    Un tipo que una corrida vieja emitió y la actual ya no seguiría contando
+    como acierto. La deduplicación del #112 no alcanza: colapsa copias del
+    mismo par (partida, tipo), no distingue de qué corrida salió cada una.
+
+    CI no tiene Postgres, así que aquí se comprueba que la consulta lleve el
+    acotamiento. Que el acotamiento haga lo que dice está medido contra la
+    base compartida: 302 hallazgos del corpus en todas las revisiones, 86 en
+    la vigente.
+    """
+    from apps.evaluacion.deteccion_26 import consulta_de_hallazgos
+
+    sql = str(consulta_de_hallazgos().compile(compile_kwargs={"literal_binds": True}))
+
+    assert "shadow_reviews" in sql, "la consulta no correlaciona con las revisiones"
+    assert "shadow_review_id IS NULL" in sql, "los hallazgos sin revisión se perderían"
+    assert "ORDER BY" in sql and "created_at DESC" in sql, "no toma la MÁS RECIENTE"
