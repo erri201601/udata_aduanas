@@ -250,25 +250,31 @@ Dilo tú antes de que lo pregunten. Enseña el tablero, que declara
 |---|---|
 | RGCE 2026 y el resto de la Ley Aduanera | interpretación de notas → clasificaciones cerradas |
 | Anexo 2.2.1 de la SE | validación de NOM por fracción |
-| Datos reales de AJR | ⏸ **en pausa desde el 14-sep** — no se piden por ahora |
+| El texto de partidas de la LIGIE | cierra los 6 casos de fracción que hoy no resuelve |
+| **Un dictamen humano** | convierte «detección medida» en **precisión medida** |
 
-> ⏸ **En pausa desde el 14-sep-2026.** El cierre de abajo y la petición de
-> `docs/PETICION_AJR.md` quedan sin usar hasta que Persona 1 retome los
-> pedimentos. **No lo digas en la demo.** Se conserva el texto porque el
-> razonamiento sigue siendo válido.
+Y el cierre, que es una petición concreta y pequeña:
 
-Y el cierre, que es una petición concreta:
+> «Los datos que acaban de ver los generamos nosotros, y por eso están
+> marcados. Lo único que no podemos generar es el criterio de un clasificador.
+>
+> **¿Nos revisa diez clasificaciones y nos dice si están bien?** No necesitamos
+> ningún documento suyo: le mandamos las diez descripciones de mercancía y la
+> fracción que propuso el sistema. Media hora de uno de sus clasificadores.
+>
+> Con eso podemos decirles con qué precisión clasifica. Sin eso, lo único que
+> podemos decirles es con qué precisión **detecta**, que es lo que acaban de
+> ver.»
 
-> «Denos diez pedimentos reales suyos, ya cerrados, de los que ya sepan el
-> resultado. Se los devolvemos auditados y comparan. Si no encontramos nada,
-> lo dicen y no perdieron nada. Si encontramos algo, lo verifican contra su
-> propio expediente.»
+Eso convierte la demo en un piloto sin pedirles presupuesto **ni documentos**.
 
-Eso convierte la demo en un piloto sin pedirles presupuesto.
+> 📌 **No pidas pedimentos.** AJR ya dijo que no va a entregar más, y por eso el
+> corpus es sintético. Insistir quema la reunión; pedir criterio es una
+> petición distinta, mucho más fácil de aceptar, y sirve igual. El razonamiento
+> completo está en `docs/PETICION_AJR.md` §0.
 
-**Qué pedirles exactamente:** `docs/PETICION_AJR.md`. No basta con los diez
-pedimentos — hace falta la documentación técnica de la mercancía, o estaríamos
-comparando contra la fracción que ellos ya declararon.
+**Los diez casos ya existen:** son los diez desacuerdos de la primera corrida
+de `hs_accuracy`. No hay que fabricar nada para pedirlo.
 
 ---
 
@@ -284,6 +290,21 @@ Ojo con la pregunta que viene detrás: *«¿y el 17 % que falla?»*. No falla:
 seis son clasificación de fracción, que sabemos por qué no resuelve, y tres
 son comprobaciones que aún no hemos construido. Ninguna es un detector que se
 haya equivocado, y eso es una distinción que conviene hacer en voz alta.
+
+**«¿De dónde salieron esos pedimentos?»**
+La pregunta viene justo detrás del número, y la respuesta honesta es la mejor
+que tienes:
+
+> «Los generamos nosotros, y por eso está marcado `SYNTHETIC` en cada pantalla.
+> Precisamente por eso el número mide **detección de anomalías que nosotros
+> sembramos**: sabemos exactamente qué está mal en cada partida porque lo
+> pusimos nosotros, y eso hace el número verificable en lugar de una promesa.
+>
+> Lo que **no** podemos medir así es el acierto de clasificación, porque eso
+> exige el criterio de un clasificador. Es lo único que les estamos pidiendo.»
+
+Enlaza directo con el cierre del punto 7. No lo esquives: es el punto donde la
+honestidad del sistema y la petición se tocan.
 
 **«¿Usa inteligencia artificial?»**
 Para leer fichas técnicas y extraer atributos, sí. **Para decidir la fracción y

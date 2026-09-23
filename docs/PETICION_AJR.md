@@ -1,26 +1,73 @@
-# Petición a AJR — diez pedimentos cerrados
+# Petición a AJR — de pedir documentos a pedir juicio
 
-> ⏸ **EN PAUSA desde el 14 de septiembre de 2026. No enviar.**
-> Persona 1 decidió omitir los pedimentos por ahora, tanto los reales como los
-> sintéticos. El documento se conserva tal cual para cuando se retome: el
-> análisis de qué pedir y por qué sigue siendo válido. Quién es AJR:
-> `docs/AJR_Y_ANA.md`.
+> ❌ **CANCELADA el 23 de septiembre de 2026. No enviar.**
+> **AJR no va a entregar más pedimentos reales** (Persona 1, 23-sep). Ésa es la
+> razón por la que el corpus espejo se generó por nuestra cuenta y por la que
+> toda la capa operativa está marcada `SYNTHETIC`: 16 pedimentos y 181
+> partidas, sin una sola fila real.
+>
+> El documento **no se borra**: lo que pedía —y sobre todo el análisis de por
+> qué un pedimento sin su ficha técnica no sirve— sigue siendo correcto, y hay
+> que conservarlo por si aparece otra fuente de datos reales. Lo que cambia es
+> a quién se le pide y qué. Ver §0.
 
 > Preparado el 9 de septiembre de 2026. Los campos de este documento salen de
 > `database/models/operational.py` y del camino que recorre
 > `POST /pedimentos/{id}/review`, no de una lista de deseos.
 
-## Por qué esto existe
+---
 
-`DEMO_AJR.md` cierra pidiendo «diez pedimentos reales suyos, ya cerrados». Es
-la petición correcta y sigue en pie. Este documento es lo que faltaba: **qué
-necesitamos exactamente y en qué forma**, porque «diez pedimentos» a secas
-devuelve diez PDF que no podemos ingerir, y el segundo intento cuesta el doble
-de credibilidad que el primero.
+## 0. Lo que la sustituye: pedir juicio, no documentos
 
-Hoy el motor está en ~85 **sin validar**. Ese número no se mueve con más
-código: se mueve cuando alguien calificado revise mercancía real. Es la única
-dependencia externa del proyecto.
+Pedir **pedimentos** es pedir que salgan documentos confidenciales de su casa.
+Es un no razonable y no vale la pena insistir.
+
+Pedir **juicio** es otra cosa, y sirve igual para lo que necesitamos:
+
+> ¿Nos revisa estas diez clasificaciones y nos dice si están bien?
+
+No sale ningún documento suyo. No hay riesgo de confidencialidad. Le cuesta
+media hora a un clasificador. Y es **exactamente** lo que el proyecto necesita,
+porque el problema nunca fue tener pedimentos: era no tener un dictamen humano
+contra el que medir.
+
+### Por qué eso basta
+
+La capa operativa puede seguir siendo sintética. **El juicio de clasificación
+no tiene por qué serlo.** Cuando alguien calificado dictamina «esta mercancía
+va en 7323», esa fila entra como `HUMAN_VALIDATED` —uno de los cinco valores
+del §9— y deja de ser `SYNTHETIC`. Contra eso sí se mide precisión.
+
+Hoy hay **cero** filas `HUMAN_VALIDATED` en todo el sistema. Es la casilla que
+nunca hemos usado y la que desbloquea el número de verdad.
+
+### Los primeros diez casos ya existen
+
+`hs_accuracy` dio **0 de 10** en su primera corrida (#125): diez desacuerdos
+entre lo que el motor clasificó y lo que dice el corpus. Ésos son los diez que
+hay que poner delante de un clasificador. No hay que fabricar nada.
+
+### Y si AJR también dice que no
+
+La pregunta pasa a ser **a quién se le paga media hora de revisión**, no qué
+empresa nos cede diez expedientes. Es la única dependencia externa que le queda
+al proyecto, y acaba de encogerse de «diez expedientes de una empresa» a
+«media hora de una persona con firma».
+
+---
+
+## Por qué existía esto
+
+`DEMO_AJR.md` cerraba pidiendo «diez pedimentos reales suyos, ya cerrados».
+Este documento era lo que faltaba: **qué necesitábamos exactamente y en qué
+forma**, porque «diez pedimentos» a secas devuelve diez PDF que no podemos
+ingerir, y el segundo intento cuesta el doble de credibilidad que el primero.
+
+Ese razonamiento se conserva entero por si aparece otra fuente. Lo que ya no
+aplica es el destinatario.
+
+El motor está en **83.33 % (±9.86) sin validar**. Ese número no se mueve con
+más código: se mueve cuando alguien calificado revise mercancía real.
 
 ---
 
