@@ -86,6 +86,25 @@ class CasoDeEvaluacion(BaseModel):
     data_origin: str
     """OFFICIAL/PUBLIC para rulings reales; SYNTHETIC en pruebas (§33)."""
 
+    verdad_de_modelo: bool = False
+    """La clasificación esperada la decidió un MODELO, no una persona.
+
+    No es lo mismo que `data_origin=SYNTHETIC`, y confundirlos es el error que
+    esto existe para impedir. SYNTHETIC dice que el DATO es inventado; esto
+    dice que el JUICIO contra el que se compara lo emitió otro modelo.
+
+    Un caso así no mide precisión: mide COINCIDENCIA CON OTRO MODELO. Sigue
+    sirviendo —los desacuerdos son justo donde hay que mirar— pero presentarlo
+    como precisión sería afirmar que un modelo valida a otro.
+
+    El corpus espejo v1 salió de una sesión de ChatGPT y no tuvo clasificador
+    humano en el circuito (Persona 1, 23-sep-2026). Sus afirmaciones
+    contrastables sí están verificadas contra la LIGIE oficial —fracción
+    existente, NICO válido, tasa y UMC correctas, las ocho comprobaciones del
+    #84 sobre 180 partidas, cero defectos—; lo que nadie comprobó es el JUICIO
+    de clasificación.
+    """
+
 
 class UsoDeCaso(BaseModel):
     """Tokens consumidos por un caso, para el costo."""
@@ -181,6 +200,14 @@ class Reporte(BaseModel):
     es_simulacion: bool
     """Algún caso es SYNTHETIC: el número NO es una medición (§33)."""
 
+    verdad_de_modelo: bool = False
+    """Algún caso trae verdad decidida por un modelo: esto NO es precisión.
+
+    El cuarto límite, con las mismas letras que los otros tres. Va en el
+    reporte y no en una nota al pie porque un número que se presenta como
+    precisión sin serlo hace más daño que no medir.
+    """
+
     resultados: list[ResultadoDeCaso] = Field(default_factory=list)
 
 
@@ -246,12 +273,14 @@ def evaluar(
     resultados: list[ResultadoDeCaso] = []
     excluidos: Counter[str] = Counter()
     simulacion = False
+    de_modelo = False
     costo = Decimal(0)
 
     for i, caso in enumerate(casos):
         if limite is not None and i >= limite:
             break
         simulacion = simulacion or caso.data_origin == "SYNTHETIC"
+        de_modelo = de_modelo or caso.verdad_de_modelo
 
         motivo = motivo_de_exclusion(caso, fecha_minima=fecha_minima)
         if motivo is not None:
@@ -325,5 +354,6 @@ def evaluar(
         costo_usd=costo.quantize(_DOS),
         tarifas_fuente=tarifas.fuente,
         es_simulacion=simulacion,
+        verdad_de_modelo=de_modelo,
         resultados=resultados,
     )
