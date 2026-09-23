@@ -289,10 +289,24 @@ Cuando haya datos suyos, eso se define por contrato antes de cargar nada.
 
 - [ ] `make up` y `curl` a `/health/ready` — los cuatro servicios en verde
 - [ ] La API responde en la IP de Tailscale, **no** en `localhost`
+- [ ] **La web arriba.** No es automática y no hay unidad de systemd:
+
+      ```bash
+      cd apps/web && npm run dev -- --port 5173
+      ```
+
+      Ábrela en **`http://localhost:5173`** (o `127.0.0.1:5173`). Si muere a
+      media demo, ése es el comando para revivirla.
 - [ ] Clasifica el producto una vez en privado: si el resultado cambió, quieres
       enterarte antes que ellos
 - [ ] Ten la nota del Capítulo 84 abierta en otra pestaña
 - [ ] El tablero declarando `SYNTHETIC DEMO DATA`
+
+> ⚠️ **La demo se da DESDE ESTA LAPTOP.** La web escucha sólo en `127.0.0.1` y
+> la API permite exactamente dos orígenes: `localhost:5173` y `127.0.0.1:5173`.
+> Comprobado el 23-sep: desde `100.86.182.104:5173` el navegador bloquea todas
+> las llamadas y las pantallas salen vacías. No abras la URL en otra máquina ni
+> se la pases a nadie durante la sesión — compartir pantalla, sí.
 
 **No improvises con un producto que traigan ellos.** Ofrécelo como el piloto
 del punto 7: «démelo por escrito y se lo devuelvo auditado esta semana». Un
