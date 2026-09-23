@@ -58,16 +58,32 @@ def _chunk(
 
 
 class SesionFalsa:
-    """Sólo responde los dos conteos de cobertura del router."""
+    """Los dos conteos de cobertura y los instrumentos del corpus."""
 
-    def __init__(self, *, totales: int = 0, vectorizados: int = 0) -> None:
+    def __init__(
+        self,
+        *,
+        totales: int = 0,
+        vectorizados: int = 0,
+        instrumentos: tuple[str, ...] = ("Ley Aduanera",),
+    ) -> None:
         self._valores = [totales, vectorizados]
         self._i = 0
+        self._instrumentos = instrumentos
+        #: El SQL de la consulta del corpus, para poder afirmar que acota por
+        #: vigencia y procedencia y no devuelve la tabla entera.
+        self.sql_corpus: list[str] = []
 
     def scalar(self, _sentencia: Any) -> Any:
         valor = self._valores[self._i] if self._i < len(self._valores) else 0
         self._i += 1
         return valor
+
+    def scalars(self, sentencia: Any) -> Any:
+        self.sql_corpus.append(str(sentencia))
+        resultado = type("R", (), {})()
+        resultado.all = lambda: list(self._instrumentos)
+        return resultado
 
 
 @contextmanager
@@ -75,6 +91,7 @@ def _cliente(
     chunks: list[LegalChunk] | None = None,
     *,
     embedder: Any = None,
+    sesion: SesionFalsa | None = None,
     **cobertura: int,
 ) -> Iterator[TestClient]:
     """Cliente con el almacén en memoria en lugar del de Postgres.
@@ -90,7 +107,8 @@ def _cliente(
         almacen.add(chunks)
 
     app = create_app()
-    app.dependency_overrides[get_session] = lambda: SesionFalsa(**cobertura)
+    la_sesion = sesion or SesionFalsa(**cobertura)
+    app.dependency_overrides[get_session] = lambda: la_sesion
 
     # El router construye su propio PostgresChunkStore; se sustituye por el de
     # memoria para no necesitar Postgres en un test unitario.
@@ -360,3 +378,72 @@ def test_sin_proveedor_la_consulta_sigue_funcionando() -> None:
     assert d["modo_busqueda"] == "TERMINO_Y_VIGENCIA"
     assert d["degradado_por"] == "no hay proveedor de embeddings configurado"
     assert d["pasajes"]
+
+
+# ── Dónde se buscó, y a qué distancia (Persona 1, 23-sep) ───────────────────
+
+
+def test_la_respuesta_declara_en_que_instrumentos_se_busco() -> None:
+    """La respuesta honesta a «¿por qué me diste la Ley Aduanera?».
+
+    Preguntando por PROSEC, la búsqueda semántica devuelve lo más cercano de
+    lo que hay, que es la Ley Aduanera. Sin decir qué se buscó, ocho pasajes
+    vigentes y citables parecen una respuesta a cualquier cosa.
+    """
+    sesion = SesionFalsa(instrumentos=("Anexo 22", "Ley Aduanera"))
+    with _cliente(
+        [_chunk(article="78", text="El valor en aduana se determina conforme a esta Ley.")],
+        sesion=sesion,
+    ) as c:
+        cuerpo = c.post("/copilot/consultas", json={"pregunta": "¿Qué es PROSEC?"}).json()
+
+    assert cuerpo["corpus_consultado"] == ["Anexo 22", "Ley Aduanera"]
+
+
+def test_la_cobertura_nombra_los_instrumentos_no_solo_los_cuenta() -> None:
+    """Esa ruta existe para decir con qué se va a buscar. Dos números no lo dicen."""
+    sesion = SesionFalsa(totales=366, vectorizados=366, instrumentos=("Ley Aduanera",))
+    with _cliente(sesion=sesion) as c:
+        cuerpo = c.get("/copilot/cobertura").json()
+
+    assert cuerpo["corpus_consultado"] == ["Ley Aduanera"]
+
+
+def test_el_corpus_se_acota_por_vigencia_y_procedencia() -> None:
+    """No es la lista de documentos de la base: es en los que SE PUDO buscar.
+
+    Enseñar un instrumento que el recuperador descarta —por no regir ese día o
+    por no poder fundamentar— sería peor que no enseñar ninguno.
+    """
+    sesion = SesionFalsa()
+    with _cliente(
+        [_chunk(article="78", text="El valor en aduana se determina conforme a esta Ley.")],
+        sesion=sesion,
+    ) as c:
+        c.post("/copilot/consultas", json={"pregunta": "¿Qué es PROSEC?"})
+
+    sql = sesion.sql_corpus[0]
+    assert "valid_from" in sql and "valid_to" in sql, "no acota por vigencia"
+    assert "data_origin" in sql, "no acota por procedencia"
+
+
+def test_el_pasaje_lleva_su_distancia_cuando_hubo_vectores() -> None:
+    """Se calculaba para ordenar y se tiraba. Es el único dato que dice cuánto
+    se parece un pasaje a la pregunta."""
+    chunk = _chunk(
+        article="78", text="El valor en aduana se determina conforme a esta Ley."
+    ).model_copy(update={"distancia": 0.3091})
+    with _cliente([chunk]) as c:
+        cuerpo = c.post("/copilot/consultas", json={"pregunta": "valor en aduana"}).json()
+
+    assert cuerpo["pasajes"][0]["distancia"] == pytest.approx(0.3091)
+
+
+def test_sin_vectores_la_distancia_es_nula_y_no_cero() -> None:
+    """Cero sería «idéntico a la pregunta». Aquí es «no se midió»."""
+    with _cliente(
+        [_chunk(article="78", text="El valor en aduana se determina conforme a esta Ley.")]
+    ) as c:
+        cuerpo = c.post("/copilot/consultas", json={"pregunta": "valor en aduana"}).json()
+
+    assert cuerpo["pasajes"][0]["distancia"] is None

@@ -42,13 +42,14 @@ from datetime import date
 from typing import Annotated, Final
 
 import sqlalchemy as sa
-from database.models.regulatory import LegalChunkRecord
+from database.models.regulatory import LegalChunkRecord, LegalDocument
 from database.repositories.chunks import PostgresChunkStore
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from rag import (
     MODO_SEMANTICO,
     MODO_TERMINO,
+    ORIGENES_QUE_FUNDAMENTAN,
     EmbedderDegradable,
     embedder_opcional,
     recuperar,
@@ -107,6 +108,13 @@ class Pasaje(BaseModel):
     """`False` = sirve para orientarse, no para sostener nada ante nadie."""
     url: str | None = None
     content_hash: str | None = None
+    distancia: float | None = None
+    """Distancia del coseno a la pregunta. `None` si se buscó por término.
+
+    Se enseña como dato, no como veredicto: medido el 23-sep contra el corpus
+    cargado, las preguntas respondibles y las que no tienen corpus se SOLAPAN
+    en este número.
+    """
 
     terminos_coincidentes: list[str] = Field(default_factory=list)
     """Cuáles de los términos buscados aparecen de verdad en este pasaje.
@@ -168,6 +176,20 @@ class Respuesta(BaseModel):
     `None` cuando no hubo degradación. Degradar en silencio sería tan malo
     como fallar: el resultado saldría peor sin que nadie pudiera saber por qué
     (Persona 1, 2026-09-09)."""
+
+    corpus_consultado: list[str] = Field(default_factory=list)
+    """Los instrumentos que regían ese día y en los que SE BUSCÓ.
+
+    Es la respuesta honesta a «¿por qué me devolviste la Ley Aduanera cuando
+    pregunté por PROSEC?»: porque el decreto PROSEC, los cupos y el Anexo
+    2.2.1 no están cargados, y la búsqueda semántica siempre devuelve lo más
+    cercano de lo que hay. Sin esta lista, ocho pasajes citables y vigentes
+    parecen una respuesta a cualquier cosa que se pregunte.
+
+    `hay_fundamento` no cubre esto y no pretende hacerlo: dice que los pasajes
+    PUEDEN fundamentar —vigencia y procedencia—, no que respondan la pregunta.
+    Son dos cosas distintas y hacían falta las dos.
+    """
 
     chunks_vectorizados: int = 0
     """Cuántos chunks ya tienen vector. Los consuma alguien o no."""
@@ -242,6 +264,26 @@ def _cobertura(session: SessionDep) -> tuple[int, int]:
     return totales, vectorizados
 
 
+def _corpus_consultado(session: SessionDep, on_date: date) -> list[str]:
+    """Qué instrumentos regían ese día y tenían pasajes donde buscar.
+
+    Se lee de la base y no de una lista escrita aquí: el día que se cargue el
+    Anexo 2.2.1 aparece solo. Y sólo los que pueden fundamentar, que son
+    exactamente los que la recuperación admite — enseñar un instrumento que el
+    buscador descarta sería peor que no enseñar nada.
+    """
+    filas = session.scalars(
+        sa.select(LegalDocument.title)
+        .join(LegalChunkRecord, LegalChunkRecord.legal_document_id == LegalDocument.id)
+        .where(LegalChunkRecord.data_origin.in_(ORIGENES_QUE_FUNDAMENTAN))
+        .where(LegalChunkRecord.valid_from <= on_date)
+        .where(sa.or_(LegalChunkRecord.valid_to.is_(None), LegalChunkRecord.valid_to >= on_date))
+        .distinct()
+        .order_by(LegalDocument.title)
+    ).all()
+    return list(filas)
+
+
 @router.post("/consultas", summary="Pregunta al corpus jurídico")
 def consultar(consulta: Consulta, session: SessionDep) -> Respuesta:
     """Recupera los pasajes vigentes que hablan de la pregunta.
@@ -296,6 +338,7 @@ def consultar(consulta: Consulta, session: SessionDep) -> Respuesta:
             puede_fundamentar=c.puede_fundamentar,
             url=c.url,
             content_hash=c.content_hash,
+            distancia=c.distancia,
             terminos_coincidentes=_coincidencias(c.text, terminos),
         )
         for c in recuperacion.chunks
@@ -310,6 +353,7 @@ def consultar(consulta: Consulta, session: SessionDep) -> Respuesta:
         sin_evidencia=None if recuperacion.hay_fundamento else recuperacion.sin_evidencia(),
         descartados_por_vigencia=recuperacion.descartados_por_vigencia,
         descartados_por_origen=recuperacion.descartados_por_origen,
+        corpus_consultado=_corpus_consultado(session, on_date),
         terminos_buscados=list(terminos),
         # El modo dice lo que pasó, no lo que el corpus permitiría.
         modo_busqueda=MODO_SEMANTICO if uso_vectores else MODO_TERMINO,
@@ -338,6 +382,9 @@ def cobertura(
     return Respuesta(
         pregunta="",
         fecha=on_date,
+        # Aquí es donde más falta hacía: esta ruta existe para decir con qué se
+        # va a buscar, y contestaba con dos números sin nombrar un instrumento.
+        corpus_consultado=_corpus_consultado(session, on_date),
         modo_busqueda=MODO_TERMINO,
         busqueda_semantica_disponible=False,
         chunks_vectorizados=vectorizados,
