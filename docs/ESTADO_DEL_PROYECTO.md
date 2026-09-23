@@ -396,8 +396,9 @@ inventado. Por eso hizo falta la de OpenAI, específicamente.
 migración. Gemini declara `text-embedding-004`, cuya dimensionalidad por defecto
 **no es 1536** — usarlo obligaría a migrar y reconstruir el índice HNSW.
 
-⚠️ **La llave de OpenAI viajó por un chat.** Debe rotarse; la de reemplazo va
-directa al `.env` del dev server.
+⚠️ **La llave de OpenAI viajó por un chat el 9-sep.** Persona 1 decidió el
+23-sep **no rotarla mientras el entorno sea de pruebas**, y cambiarla al pasar
+a producción. Ver la decisión y su disparador más abajo.
 
 ### Scorecard del §44
 
@@ -499,9 +500,19 @@ equivocado en producción.
   `SHA256:3c3Az8G0vAuDDPFSi/SXEPOa8/yoTa+IU2mcJ2gD/Yg`
   (`aduanero-backup@udata-nitro`) en `~/.ssh/authorized_keys` de `yayo`,
   restringida a rsync. Hoy `ssh` la ofrece y `yayo` la rechaza.
-- **La llave de OpenAI** viajó por un chat el 9-sep y sigue sin rotarse.
-  Instrucciones entregadas el 21-sep; la rotación es de Persona 1 y la llave
-  nueva no vuelve a pasar por un chat.
+- **Credenciales expuestas: rotación diferida a producción (Persona 1,
+  23-sep).** Tres viajaron por un chat: la llave de OpenAI (9-sep) y las de
+  PostgreSQL y Neo4j (22-sep). **Decisión: no se rotan mientras el entorno sea
+  de pruebas.** El razonamiento vale para las de infraestructura —viven en una
+  red de Tailscale, con datos sintéticos y sin nada de cliente— y para la de
+  OpenAI se asume a sabiendas: esa llave no está acotada a un entorno sino a
+  una cuenta de facturación, así que el gasto es posible hoy, no en producción.
+
+  **Disparador, no fecha:** se rotan las tres antes de que entre el primer dato
+  real de un cliente, que es también cuando `aduanero_app` deja de ser un
+  superusuario compartido. Lo que no cambia mientras tanto: ninguna credencial
+  nueva vuelve a pasar por un chat, y el rol de sólo lectura que ofreció
+  Persona 3 sigue en pie para la métrica.
 
 **Cerrado desde el 14-sep:** el doble veredicto (#79), el tope de olas del
 Sentinel (#78), el emparejamiento de la métrica por DNA y tiempo (#81) y la
@@ -544,7 +555,7 @@ ficha incompleta (#111).
 | # | Tarea | Estado |
 |---|---|---|
 | 1 | **Verificar la carga de Brandon** antes de dar luz verde a la métrica | cuando llegue |
-| 2 | Rotar la llave de OpenAI | 🔴 doce días abierta |
+| 2 | Rotar las tres credenciales expuestas | ⏸ **diferido a producción** por decisión de Persona 1 el 23-sep. Disparador: el primer dato real de cliente |
 | 3 | Respaldos fuera de esta máquina | ⏸ espera que Edi levante SSH en `yayo` |
 | 4 | Análisis de ANA frente a ADUANERO OS | define el discurso de la demo |
 
