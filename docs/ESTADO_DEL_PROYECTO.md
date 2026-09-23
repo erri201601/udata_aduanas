@@ -449,6 +449,13 @@ equivocado en producción.
 
 ### Deuda técnica conocida
 
+- **La métrica lee los hallazgos de TODAS las revisiones, no de la última**
+  (hallazgo de Persona 1, 23-sep). Eso le permitió tapar un error real: una
+  re-auditoría mía con el cuerpo vacío borró los 28 hallazgos de IVA de las
+  revisiones vigentes, y la métrica siguió marcando 83.33 % porque contaba los
+  del día anterior como aciertos. El número volvió a ser cierto al re-auditar
+  con `iva_rate` y `dta_rate`, pero **la métrica debe medir el estado actual, no
+  el histórico acumulado**. Va para Persona 3 junto al filtro de `/findings`.
 - **Seis anomalías del corpus son indetectables por construcción.** Las de
   `CANTIDAD_UMC_INCONSISTENTE`: el precio unitario del PDF se calculó con la
   cantidad ya alterada, así que no hay inconsistencia aritmética, y los kg por

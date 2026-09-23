@@ -171,18 +171,34 @@ Corre la revisión de un pedimento. Construye lo que *debería* declararse **sin
 mirar lo declarado**, y sólo después compara — para no caer en justificar lo
 que ya está ahí, que es el sesgo de cualquier revisor humano.
 
+> ⚠️ **La revisión necesita las tasas de la operación.** Son opcionales en el
+> cuerpo de la petición y sin ellas el IVA esperado no se puede calcular: el
+> sistema devuelve `None` en vez de suponer un número, y **los tres hallazgos de
+> IVA no aparecen**. Con `{}` salen 5 hallazgos; con las tasas, 8. Comprobado en
+> carne propia el 23-sep.
+>
+> ```json
+> {"iva_rate": "0.16", "dta_rate": "0.008"}
+> ```
+
 Toma el `26 47 9999 600001`, de doce partidas. Esto es lo que sale, verificado
-el 22 de septiembre:
+el 23 de septiembre:
 
 ```
-línea  2   IGI_RATE_MISMATCH  CRITICAL  declaró   6,917.52   debía   9,684.52
-línea  2   VAT_MISMATCH       HIGH      declaró   5,569.43   debía   6,012.15
-línea  3   UNIT_MISMATCH      MEDIUM    unidad 99: no existe en el Anexo 22
-línea 11   VAT_MISMATCH       HIGH      declaró  12,363.27   debía  12,449.28
-línea 12   VALUE_MISMATCH     CRITICAL  declaró 196,032.83   debía 181,511.88
-línea 12   IGI_RATE_MISMATCH  CRITICAL  declaró  63,529.16   debía  68,611.49
-línea 12   VAT_MISMATCH       HIGH      declaró  39,438.90   debía  42,594.01
+línea  2   IGI_RATE_MISMATCH        CRITICAL  declaró   6,917.52   debía   9,684.52
+línea  2   VAT_MISMATCH             HIGH      declaró   5,569.43   debía   6,012.15
+línea  3   UNIT_MISMATCH            MEDIUM    unidad 99: no existe en el Anexo 22
+línea  9   MISSING_TECHNICAL_FIELD  MEDIUM    falta espesor_pared en la ficha
+línea 11   VAT_MISMATCH             HIGH      declaró  12,363.27   debía  12,449.28
+línea 12   VALUE_MISMATCH           CRITICAL  declaró 196,032.83   debía 181,511.88
+línea 12   IGI_RATE_MISMATCH        CRITICAL  declaró  63,529.16   debía  68,611.49
+línea 12   VAT_MISMATCH             HIGH      declaró  39,438.90   debía  42,594.01
 ```
+
+La línea 9 es nueva y conviene no pasarla de largo: **no acusa a nadie**. Dice
+que la ficha técnica no alcanza para sostener la clasificación de esa partida —
+falta el espesor de pared— y por eso es MEDIUM y no CRITICAL. Es el sistema
+distinguiendo «esto está mal» de «esto no lo puedo defender».
 
 Detente en la línea 12. El valor en aduana declarado **no es el precio pagado
 más los incrementables**: sobran 14,520.95 pesos. Y como el IGI y el IVA se
