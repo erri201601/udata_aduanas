@@ -272,3 +272,146 @@ def ejecutar(
         simulacion=reporte.es_simulacion,
     )
     return reporte
+
+
+# ─────────────────────────────── LÍNEA DE COMANDOS ───────────────────────────
+
+
+def _limites(r: Reporte) -> list[str]:
+    """Lo que este número NO dice. Va arriba, no en una nota al pie.
+
+    Un número de precisión que se presenta sin sus límites es peor que no
+    medir: convence.
+    """
+    lineas = ["LÍMITES DE ESTE NÚMERO"]
+    if r.verdad_de_modelo:
+        lineas += [
+            "  1. LA VERDAD LA DECIDIÓ UN MODELO. Esto NO es precisión: es",
+            "     coincidencia con otro modelo. Lo contrastable del corpus sí está",
+            "     verificado contra la LIGIE —fracción, NICO, tasa, UMC: las ocho",
+            "     comprobaciones del #84 sobre 180 partidas, cero defectos—. Lo que",
+            "     nadie comprobó es el JUICIO de clasificación.",
+        ]
+    if r.es_simulacion:
+        lineas.append("  2. Datos SYNTHETIC: no es una medición de producción (§33).")
+    lineas.append("  3. INSUFFICIENT_INFORMATION cuenta como NO acierto en `hs_accuracy`.")
+    if r.excluidos:
+        lineas.append(f"  4. {sum(r.excluidos.values())} casos no midieron nada:")
+        lineas += [f"       {motivo:<34} {n}" for motivo, n in sorted(r.excluidos.items())]
+    else:
+        lineas.append("  4. Ningún caso quedó excluido.")
+    return lineas
+
+
+def _desacuerdos(r: Reporte) -> list[str]:
+    """Donde el motor y el corpus no coinciden. Lo más valioso de la corrida.
+
+    Cada uno que una persona resuelva se vuelve verdad de campo —`HUMAN_VALIDATED`
+    compartiendo `product_dna_id`— y ése es el único camino a medir precisión de
+    verdad (Persona 1, 23-sep). Por eso salen con su identificador: hay que poder
+    ir a mirar la partida.
+    """
+    fallos = [x for x in r.resultados if x.resultado == "EVALUADO" and x.acierto is False]
+    if not fallos:
+        return ["DESACUERDOS  ninguno"]
+    lineas = [f"DESACUERDOS  {len(fallos)} — aquí es donde hay que mirar"]
+    lineas += [
+        f"  {x.identificador:<26} esperado {x.hs6_esperado} · motor "
+        f"{x.hs6_obtenido or '—':<8} {x.estado_motor or ''}"
+        for x in fallos
+    ]
+    return lineas
+
+
+def informe(r: Reporte) -> str:
+    """El reporte completo: primero lo que no dice, después lo que dice."""
+    a, cuando = r.hs_accuracy, r.acierto_cuando_responde
+    lineas = [
+        f"FUENTE  {r.fuente}",
+        f"CASOS   {r.casos} mirados · {r.evaluados} evaluados · {r.errores} con error",
+        "",
+        *_limites(r),
+        "",
+        "AGREGADO",
+        f"  hs_accuracy            {a.porcentaje if a.porcentaje is not None else '—'} "
+        f"({a.aciertos}/{a.comparados})",
+        f"  acierto cuando responde {cuando.porcentaje if cuando.porcentaje is not None else '—'} "
+        f"({cuando.aciertos}/{cuando.comparados})",
+        f"  información insuficiente {r.tasa_insuficiente if r.tasa_insuficiente is not None else '—'} %",
+        f"  llegó a RGI 3c           {r.tasa_rgi_3c if r.tasa_rgi_3c is not None else '—'} %",
+        f"  búsqueda degradada       {r.tasa_degradacion if r.tasa_degradacion is not None else '—'} %",
+        "",
+        f"COSTO   ${r.costo_usd} · {r.tarifas_fuente}",
+        "",
+        *_desacuerdos(r),
+    ]
+    return "\n".join(lineas)
+
+
+def main(argv: list[str] | None = None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--target",
+        default="local",
+        choices=["local", "shared"],
+        help="Qué Postgres se lee. 'shared' es la base del equipo (ADUANERO_SHARED_URL).",
+    )
+    parser.add_argument("--escenario", default="corpus_espejo_v1", help="Slug del corpus.")
+    parser.add_argument("--lote", type=int, default=LOTE_INICIAL, help="Cuántos casos.")
+    parser.add_argument(
+        "--confirmar",
+        action="store_true",
+        help="SIN ESTO NO GASTA NADA: devuelve el presupuesto y no llama a ningún modelo.",
+    )
+    parser.add_argument(
+        "--incluir-fichas-recortadas",
+        action="store_true",
+        help=(
+            "Incluye las partidas cuya ficha el corpus recortó. Ahí la respuesta "
+            "correcta es pedir revisión humana, así que cuentan como fallo: sirve "
+            "para MIRAR qué hace el motor, no para publicar un número."
+        ),
+    )
+    args = parser.parse_args(argv)
+
+    from sqlalchemy.orm import Session as SesionSql
+
+    from apps.api.config import UrlCompartidaAusenteError, url_de_postgres
+    from apps.evaluacion.corpus_como_fuente import CorpusEspejo
+    from apps.evaluacion.procedencia import linea_de_procedencia, procedencia
+
+    try:
+        url = url_de_postgres(args.target)
+    except UrlCompartidaAusenteError as error:
+        raise SystemExit(str(error)) from error
+
+    with SesionSql(sa.create_engine(url)) as sesion:
+        fuente = CorpusEspejo(
+            sesion,
+            escenario=args.escenario,
+            solo_evaluables=not args.incluir_fichas_recortadas,
+        )
+        try:
+            resultado = ejecutar(fuente, sesion, lote=args.lote, confirmar=args.confirmar)
+        finally:
+            sesion.rollback()
+
+    print(linea_de_procedencia(procedencia()))
+    print(f"ÁMBITO  {args.escenario} · base: {args.target}")
+    print()
+    if isinstance(resultado, Presupuesto):
+        print(
+            f"PRESUPUESTO  {resultado.casos} casos · ${resultado.costo_estimado_usd} "
+            f"(techo con reintentos ${resultado.techo_con_reintentos_usd})"
+        )
+        print(f"  {resultado.tarifas_fuente}")
+        print("\nNo se llamó a ningún modelo. Para correr de verdad: --confirmar")
+        return 0
+    print(informe(resultado))
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())
