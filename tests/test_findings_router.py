@@ -94,6 +94,10 @@ class SesionFalsa:
         self._pedimento = pedimento
         self._hallazgos = hallazgos
         self._revision = revision
+        #: El SQL de cada consulta de hallazgos, para poder afirmar sobre el
+        #: filtro. La sesión falsa ignora los WHERE —devuelve la lista entera—
+        #: así que el comportamiento sólo se puede fijar mirando la sentencia.
+        self.sql_hallazgos: list[str] = []
 
     def get(self, _modelo: type, _id: uuid.UUID) -> Any:
         return self._pedimento
@@ -106,6 +110,7 @@ class SesionFalsa:
         elif entidad is ShadowReview:
             resultado.first = lambda: self._revision
         else:
+            self.sql_hallazgos.append(str(sentencia))
             resultado.all = lambda: self._hallazgos
         return resultado
 
@@ -251,3 +256,57 @@ def test_el_limite_esta_acotado(cliente: TestClient) -> None:
 def test_pedimento_inexistente_da_404() -> None:
     with _cliente(pedimento=None, hallazgos=[]) as c:
         assert c.get(f"/findings/pedimentos/{PEDIMENTO_ID}").status_code == 404
+
+
+# ── Los hallazgos son los de la revisión vigente (Persona 1, 23-sep) ─────────
+
+
+def _sesion_espia() -> SesionFalsa:
+    return SesionFalsa(pedimento=_pedimento(), hallazgos=_hallazgos(), revision=None)
+
+
+def _con(sesion: SesionFalsa) -> TestClient:
+    app = create_app()
+    app.dependency_overrides[get_session] = lambda: sesion
+    return TestClient(app)
+
+
+def test_el_detalle_acota_los_hallazgos_a_la_ultima_revision() -> None:
+    """Sin acotar, el mismo hallazgo sale una vez por auditoría.
+
+    El `26 47 9999 600001` llegó a listar 41 hallazgos donde su revisión
+    vigente tiene 8, porque se había re-auditado cinco veces.
+    """
+    sesion = _sesion_espia()
+    with _con(sesion) as c:
+        c.get(f"/findings/pedimentos/{_pedimento().id}")
+
+    assert sesion.sql_hallazgos, "no se consultaron hallazgos"
+    sql = sesion.sql_hallazgos[0]
+    assert "shadow_review_id" in sql, "los hallazgos no se acotan por revisión"
+    assert "shadow_reviews" in sql, "no se busca la revisión vigente"
+
+
+def test_el_listado_general_tambien_acota_por_revision() -> None:
+    """La pantalla de hallazgos usa este endpoint, no sólo el detalle.
+
+    Se afirma sobre `shadow_reviews`, la TABLA, y no sobre la columna
+    `shadow_review_id`: `select(RiskFinding)` ya la lista entre las columnas
+    seleccionadas, así que buscar la columna daba verde sin filtro alguno.
+    """
+    sesion = _sesion_espia()
+    with _con(sesion) as c:
+        c.get("/findings")
+
+    assert "shadow_reviews" in sesion.sql_hallazgos[0], "no se busca la revisión vigente"
+
+
+def test_un_hallazgo_sin_revision_no_se_esconde() -> None:
+    """Los anteriores al registro de revisiones (#81) no tienen a qué revisión
+    atribuirse. Filtrarlos sería perder datos en silencio."""
+    sesion = _sesion_espia()
+    with _con(sesion) as c:
+        c.get("/findings")
+
+    sql = sesion.sql_hallazgos[0]
+    assert "IS NULL" in sql.upper(), "los hallazgos sin revisión quedarían fuera"

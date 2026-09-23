@@ -73,6 +73,38 @@ class PedimentoFindings(PedimentoRead):
     """La peor severidad presente, o `None` si no hay hallazgos."""
 
 
+def _de_la_ultima_revision() -> sa.ColumnElement[bool]:
+    """Sólo los hallazgos de la revisión vigente de cada pedimento.
+
+    Un pedimento se audita varias veces —antes y después de una rectificación, o
+    simplemente porque se volvió a medir— y cada auditoría deja sus hallazgos.
+    Devolverlos todos muestra el mismo hallazgo repetido una vez por revisión:
+    el `26 47 9999 600001` llegó a listar 41 donde su revisión vigente tiene 8.
+    No es un historial útil, es el estado actual mal contado.
+
+    Es el mismo criterio que el #100 fijó para la exposición del tablero, que
+    ya toma la de la última revisión y no la suma de todas. Este endpoint se
+    había quedado fuera, y su propio comentario ya decía la regla que no
+    aplicaba a los hallazgos.
+
+    Los hallazgos con `shadow_review_id` nulo SÍ pasan: son anteriores a que se
+    registraran las revisiones (§81), así que no se les puede atribuir una
+    revisión superada. Esconderlos sería perder datos en silencio.
+    """
+    ultima = (
+        sa.select(ShadowReview.id)
+        .where(ShadowReview.pedimento_id == RiskFinding.pedimento_id)
+        .order_by(ShadowReview.created_at.desc())
+        .limit(1)
+        .correlate(RiskFinding)
+        .scalar_subquery()
+    )
+    return sa.or_(
+        RiskFinding.shadow_review_id == ultima,
+        RiskFinding.shadow_review_id.is_(None),
+    )
+
+
 def _peor_severidad(hallazgos: list[RiskFindingRead]) -> str | None:
     for nivel in ORDEN_SEVERIDAD:
         if any(h.severity == nivel for h in hallazgos):
@@ -97,7 +129,7 @@ def listar_hallazgos(
         value=RiskFinding.severity,
         else_=len(ORDEN_SEVERIDAD),
     )
-    sentencia = sa.select(RiskFinding)
+    sentencia = sa.select(RiskFinding).where(_de_la_ultima_revision())
     if pedimento_id is not None:
         sentencia = sentencia.where(RiskFinding.pedimento_id == pedimento_id)
 
@@ -124,8 +156,19 @@ def obtener_pedimento(pedimento_id: uuid.UUID, session: SessionDep) -> Pedimento
     if pedimento is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "pedimento no encontrado")
 
+    # La revisión más reciente. Una auditoría es un evento: el mismo pedimento
+    # se audita antes y después de una rectificación, y la última es la que
+    # describe el estado actual. Va ANTES de los hallazgos porque los acota.
+    revision = session.scalars(
+        sa.select(ShadowReview)
+        .where(ShadowReview.pedimento_id == pedimento_id)
+        .order_by(ShadowReview.created_at.desc())
+    ).first()
+
     filas = session.scalars(
-        sa.select(RiskFinding).where(RiskFinding.pedimento_id == pedimento_id)
+        sa.select(RiskFinding)
+        .where(RiskFinding.pedimento_id == pedimento_id)
+        .where(_de_la_ultima_revision())
     ).all()
     hallazgos = [RiskFindingRead.model_validate(f, from_attributes=True) for f in filas]
     hallazgos.sort(
@@ -135,15 +178,6 @@ def obtener_pedimento(pedimento_id: uuid.UUID, session: SessionDep) -> Pedimento
             else len(ORDEN_SEVERIDAD)
         )
     )
-
-    # La revisión más reciente. Una auditoría es un evento: el mismo pedimento
-    # se audita antes y después de una rectificación, y la última es la que
-    # describe el estado actual.
-    revision = session.scalars(
-        sa.select(ShadowReview)
-        .where(ShadowReview.pedimento_id == pedimento_id)
-        .order_by(ShadowReview.created_at.desc())
-    ).first()
 
     detalle = PedimentoFindings.model_validate(pedimento, from_attributes=True)
     return detalle.model_copy(
