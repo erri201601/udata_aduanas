@@ -22,6 +22,37 @@ CUATRO REGLAS QUE DECIDEN SI EL NÚMERO VALE ALGO (Persona 1, 14-sep)
    otra nomenclatura, o con un HS6 que no son seis dígitos, se excluye y se
    cuenta — nunca se adapta.
 
+   CON UNA EXCEPCIÓN, Y NO ES UNA GRIETA: `mismo_catalogo_a_la_fecha`.
+
+   El filtro de nomenclatura protege de comparar un HTS10 de Estados Unidos
+   contra la TIGIE: dos nomenclaturas distintas, dos cosas que no se tocan.
+   Pero cuando la verdad de un caso SALE DEL MISMO CATÁLOGO que el motor
+   consulta, y a la MISMA FECHA, la comparación es válida por construcción y
+   no hace falta afirmar ninguna edición del Sistema Armonizado.
+
+   La fecha no es un adorno. Comparar una verdad construida contra la LIGIE de
+   2024 con una clasificación de 2026 sería inválido aunque las dos fueran
+   TIGIE: es la regla 5 y es innegociable. Ya se cumple por construcción —el
+   caso lleva su fecha y el harness llama `clasificar(dna, caso.fecha)`, así
+   que las dos partes leen el catálogo vigente ese día— y por eso el campo
+   NOMBRA esa condición en vez de decir «misma nomenclatura» a secas. Si
+   alguien construye mañana una fuente cuya verdad venga de otra fecha, el
+   nombre del campo le dirá que está mintiendo.
+
+   POR QUÉ SE QUITÓ «HS2022» DE LA FUENTE DEL CORPUS, PARA QUE NADIE LO
+   VUELVA A PONER: porque no se podía citar. Persona 2 verificó las 893
+   páginas de la LIGIE 2022 y el decreto del DOF del 7-jun-2022: ni el
+   Artículo 1 ni el preámbulo mencionan el Sistema Armonizado, ninguna
+   enmienda, ninguna edición. El Artículo 1 sólo dice «de conformidad con la
+   siguiente TARIFA». Afirmar SA 2022 en el código era conocimiento nuestro
+   presentado como hecho verificable, que es justo lo que la regla 1 prohíbe.
+   Y para esta medición no sostenía nada: la verdad del corpus y el motor
+   leen la misma tabla el mismo día.
+
+   `NOMENCLATURA_ADMITIDA = "HS2022"` se queda para las fuentes externas.
+   Cuando llegue CBP CROSS, ese filtro protege algo real, y la fuente citable
+   será el Convenio de la OMA — no la LIGIE.
+
 4. **Cuesta dinero.** `estimar_costo` antes de correr; el reporte trae el costo
    real de lo que sí se llamó. Todo en Decimal: lo calcula este código, no un
    modelo.
@@ -85,6 +116,23 @@ class CasoDeEvaluacion(BaseModel):
     nomenclatura: str
     data_origin: str
     """OFFICIAL/PUBLIC para rulings reales; SYNTHETIC en pruebas (§33)."""
+
+    mismo_catalogo_a_la_fecha: bool = False
+    """La verdad de este caso y el motor leen el MISMO catálogo a la MISMA fecha.
+
+    Cuando es cierto, el filtro de nomenclatura no aplica: comparar los seis
+    primeros dígitos es comparar la misma tabla contra sí misma, y no hace
+    falta afirmar ninguna edición del Sistema Armonizado para justificarlo.
+
+    Las dos mitades importan. «Mismo catálogo» sin «misma fecha» no basta: una
+    verdad construida contra la LIGIE de 2024 no se puede comparar con una
+    clasificación de 2026 aunque las dos sean TIGIE (regla 5). Aquí se cumple
+    porque el caso lleva su fecha y el motor clasifica con ella.
+
+    Es `False` por omisión: una fuente externa —un ruling de otro país— no
+    cumple ninguna de las dos, y el que escriba un adaptador tiene que
+    afirmarlo a propósito, no heredarlo.
+    """
 
     verdad_de_modelo: bool = False
     """La clasificación esperada la decidió un MODELO, no una persona.
@@ -229,7 +277,7 @@ def _contiene_hs6(descripcion: str, hs6: str) -> bool:
 
 def motivo_de_exclusion(caso: CasoDeEvaluacion, *, fecha_minima: date | None) -> Motivo | None:
     """Por qué un caso no puede medir nada. `None` si se puede evaluar."""
-    if caso.nomenclatura != NOMENCLATURA_ADMITIDA:
+    if not caso.mismo_catalogo_a_la_fecha and caso.nomenclatura != NOMENCLATURA_ADMITIDA:
         return "NOMENCLATURA_NO_SA2022"
     if not re.fullmatch(r"\d{6}", caso.hs6_esperado):
         return "HS6_INVALIDO"

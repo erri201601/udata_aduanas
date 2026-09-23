@@ -61,18 +61,19 @@ if TYPE_CHECKING:
 
 log = structlog.stdlib.get_logger("apps.evaluacion.corpus")
 
-#: La nomenclatura que se declara para estos casos.
+#: La nomenclatura que se declara. La real, sin adornos: estas fracciones son
+#: de la TIGIE.
 #:
-#: Los seis primeros dígitos de una fracción de la TIGIE son la subpartida del
-#: Sistema Armonizado. La LIGIE vigente adoptó el SA 2022 y la edición
-#: siguiente no ha entrado, así que esos seis dígitos son HS2022.
+#: Antes decía «HS2022». Se quitó porque NO SE PODÍA CITAR: Persona 2 verificó
+#: las 893 páginas de la LIGIE 2022 y el decreto del DOF —ni el Artículo 1 ni
+#: el preámbulo mencionan el Sistema Armonizado ni edición alguna—. Afirmarlo
+#: aquí era conocimiento nuestro disfrazado de hecho verificable (regla 1).
 #:
-#: SI ESTO ESTUVIERA MAL, FALLA RUIDOSAMENTE: el harness excluiría los casos
-#: con `NOMENCLATURA_NO_SA2022` y el reporte diría cero evaluados. No hay forma
-#: de que produzca un número equivocado en silencio, que es la única razón por
-#: la que se puede escribir aquí un supuesto sin haberlo confirmado con la
-#: fuente oficial.
-NOMENCLATURA: Final = "HS2022"
+#: Y no sostenía nada: lo que hace válida esta comparación es que la verdad y
+#: el motor lean el mismo catálogo a la misma fecha, que es lo que declara
+#: `mismo_catalogo_a_la_fecha`. El porqué completo está en el docstring del
+#: harness, donde vive el filtro.
+NOMENCLATURA: Final = "TIGIE"
 
 #: El corpus es sintético y no puede fundamentar nada (§33).
 ORIGEN: Final = "SYNTHETIC"
@@ -162,6 +163,9 @@ class CorpusEspejo:
                 data_origin=ORIGEN,
                 # La verdad contra la que se compara la decidió un modelo.
                 verdad_de_modelo=True,
+                # La verdad sale de este mismo catálogo, leído a la fecha de la
+                # operación — la misma con la que clasifica el motor.
+                mismo_catalogo_a_la_fecha=True,
             )
 
         log.info("corpus.casos", escenario=self._escenario, partidas=len(filas), omitidas=omitidas)

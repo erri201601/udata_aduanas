@@ -356,3 +356,84 @@ def test_el_nucleo_del_harness_no_conoce_la_base() -> None:
         fuente = archivo.read_text()
         assert "from database" not in fuente and "import sqlalchemy" not in fuente, archivo
         assert "from apps" not in fuente, archivo
+
+
+# ── La nomenclatura que no se podía citar (23-sep) ───────────────────────────
+
+
+def _caso_del_catalogo(**kw: object):  # type: ignore[no-untyped-def]
+    from core.evaluation.harness import CasoDeEvaluacion
+
+    base: dict[str, object] = {
+        "identificador": "26 47 9999 600001/2",
+        "descripcion": "ESTROPAJO DE ACERO INOXIDABLE PARA LIMPIEZA DOMESTICA",
+        "hs6_esperado": "732310",
+        "fecha": date(2026, 8, 3),
+        "fuente": "CORPUS_ESPEJO/corpus_espejo_v1",
+        "nomenclatura": "TIGIE",
+        "data_origin": "SYNTHETIC",
+        "mismo_catalogo_a_la_fecha": True,
+    }
+    base.update(kw)
+    return CasoDeEvaluacion(**base)  # type: ignore[arg-type]
+
+
+def test_una_verdad_del_mismo_catalogo_no_necesita_declarar_el_sa() -> None:
+    """Comparar la misma tabla contra sí misma es válido por construcción.
+
+    Afirmar «SA 2022» aquí era conocimiento nuestro disfrazado de hecho: la
+    LIGIE 2022 no menciona el Sistema Armonizado en su Artículo 1 ni en su
+    preámbulo (Persona 2, 23-sep, sobre las 893 páginas).
+    """
+    from core.evaluation.harness import motivo_de_exclusion
+
+    assert motivo_de_exclusion(_caso_del_catalogo(), fecha_minima=None) is None
+
+
+def test_una_fuente_externa_sigue_teniendo_que_declarar_hs2022() -> None:
+    """El filtro protege algo real cuando las nomenclaturas son distintas.
+
+    Sin `mismo_catalogo_a_la_fecha`, un HTS10 de Estados Unidos comparado
+    contra la TIGIE pasaría como si midiera algo.
+    """
+    from core.evaluation.harness import motivo_de_exclusion
+
+    caso = _caso_del_catalogo(nomenclatura="HTS2022", mismo_catalogo_a_la_fecha=False)
+
+    assert motivo_de_exclusion(caso, fecha_minima=None) == "NOMENCLATURA_NO_SA2022"
+
+
+def test_el_campo_no_es_un_pase_libre() -> None:
+    """Sólo levanta el filtro de nomenclatura. Las otras salvaguardas siguen.
+
+    Si dejara pasar una fuga o un HS6 inválido, sería una grieta en vez de una
+    excepción razonada.
+    """
+    from core.evaluation.harness import motivo_de_exclusion
+
+    fuga = _caso_del_catalogo(descripcion="ESTROPAJO, fracción 7323.10, de acero")
+    invalido = _caso_del_catalogo(hs6_esperado="7323")
+    viejo = _caso_del_catalogo(fecha=date(2020, 1, 1))
+
+    assert motivo_de_exclusion(fuga, fecha_minima=None) == "POSIBLE_FUGA"
+    assert motivo_de_exclusion(invalido, fecha_minima=None) == "HS6_INVALIDO"
+    assert motivo_de_exclusion(viejo, fecha_minima=date(2022, 6, 7)) == (
+        "FUERA_DE_VIGENCIA_DEL_CATALOGO"
+    )
+
+
+def test_por_omision_una_fuente_no_hereda_la_excepcion() -> None:
+    """Quien escriba un adaptador tiene que afirmarlo a propósito."""
+    from core.evaluation.harness import CasoDeEvaluacion
+
+    caso = CasoDeEvaluacion(
+        identificador="HQ H123456",
+        descripcion="Steel wool scouring pad",
+        hs6_esperado="732310",
+        fecha=date(2026, 8, 3),
+        fuente="CBP_CROSS",
+        nomenclatura="HS2022",
+        data_origin="PUBLIC",
+    )
+
+    assert caso.mismo_catalogo_a_la_fecha is False
