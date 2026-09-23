@@ -80,6 +80,7 @@ class SesionFalsa:
         self.agregadas: list[Any] = []
         self.commits = 0
         self.rollbacks = 0
+        self.sql_bandeja: list[str] = []
 
     def scalar(self, _sentencia: Any) -> Any:
         # La única consulta escalar de `revisar`: ¿hay un veredicto que apunte aquí?
@@ -93,7 +94,11 @@ class SesionFalsa:
             return _producto()
         return self._decision
 
-    def scalars(self, _sentencia: Any) -> Any:
+    def scalars(self, sentencia: Any) -> Any:
+        #: El SQL de la bandeja, para poder afirmar sobre su acotamiento: la
+        #: sesión falsa ignora los WHERE, así que el comportamiento sólo se fija
+        #: mirando la sentencia.
+        self.sql_bandeja.append(str(sentencia))
         r = type("R", (), {})()
         r.all = lambda: [self._decision] if self._decision else []
         return r
@@ -461,3 +466,37 @@ def test_otra_violacion_de_integridad_no_se_disfraza_de_409() -> None:
 
     with TestClient(app) as c, pytest.raises(IntegrityError):
         c.post(f"/review/{DECISION_ID}", json={"veredicto": "CONFIRMA", "reviewer": "u"})
+
+
+# ── Un caso por ficha, no uno por vez que se clasificó (Persona 1, 23-sep) ──
+
+
+def test_la_bandeja_no_repite_el_mismo_caso_por_cada_clasificacion() -> None:
+    """Clasificar dos veces el mismo producto no son dos casos que revisar.
+
+    La bandeja llegó a tener el mismo producto DIEZ veces —una por cada
+    corrida de prueba— mientras los casos reales esperaban debajo. Quien revisa
+    perdería la tarde en uno solo, y su veredicto describiría una decisión que
+    el motor ya no toma.
+    """
+    sesion = SesionFalsa(decision=_decision())
+    app = create_app()
+    app.dependency_overrides[get_session] = lambda: sesion
+    with TestClient(app) as c:
+        c.get("/review")
+
+    sql = sesion.sql_bandeja[0]
+    assert "max(" in sql.lower(), "no se toma la decisión más reciente"
+    assert "product_dna_id" in sql, "no se agrupa por ficha"
+
+
+def test_una_decision_sin_ficha_no_se_pierde() -> None:
+    """Sin `product_dna_id` no hay por qué agrupar, y descartarla sería perder
+    un caso en silencio."""
+    sesion = SesionFalsa(decision=_decision())
+    app = create_app()
+    app.dependency_overrides[get_session] = lambda: sesion
+    with TestClient(app) as c:
+        c.get("/review")
+
+    assert "IS NULL" in sesion.sql_bandeja[0].upper()
