@@ -20,6 +20,7 @@ paso devolvería la fila incorrecta en silencio.
 from __future__ import annotations
 
 import operator
+import re
 from functools import reduce
 from typing import TYPE_CHECKING
 
@@ -66,7 +67,7 @@ def _vigentes(on_date: date) -> sa.ColumnElement[bool]:
 
 
 def _casa(termino: str) -> sa.ColumnElement[bool]:
-    """¿La descripción contiene el término, ignorando acentos?
+    r"""¿La descripción contiene el término, ignorando acentos?
 
     `unaccent` a los DOS lados, y no sólo al término, porque el desajuste es
     real y silencioso: un pedimento se escribe en mayúsculas y sin acentos
@@ -79,8 +80,37 @@ def _casa(termino: str) -> sa.ColumnElement[bool]:
     —operaciones especiales, 411 caracteres de media frente a 60 del resto—
     se llevaba los candidatos con términos genéricos. Unos cables eléctricos
     acababan clasificados en 9806.
+
+    LA PALABRA EMPIEZA DONDE EMPIEZA, PERO PUEDE SEGUIR
+
+    `ILIKE '%olla%'` casaba dentro de «cebollas», «enrolladas» y «Pollachius»:
+    32 partidas, las 32 falsas. `%presion%` casaba «impresión» y «compresión»,
+    36 partidas donde hay 11. Por eso existía `MIN_LONGITUD_TERMINO`: un
+    parche contra el subcadeneo, que a cambio tiraba «OLLA», la palabra que
+    más discrimina en una olla a presión.
+
+    Se ancla al INICIO de palabra (`\m`) y no al final: la tarifa escribe
+    «juegos», «ollas», «válvulas» en plural, y anclar los dos extremos dejaba
+    «JUEGO» en cero coincidencias donde hay 16. Medido el 23-sep sobre la
+    jerarquía completa:
+
+        OLLA     32 → 0     todas eran falsas
+        PRESION  36 → 11
+        JUEGO    16 → 16    el plural se conserva
     """
-    return sa.func.unaccent(_texto_completo()).ilike(sa.func.unaccent(f"%{termino}%"))
+    return sa.func.unaccent(_texto_completo()).op("~*")(
+        sa.func.concat(r"\m", sa.func.unaccent(_como_literal(termino)))
+    )
+
+
+def _como_literal(termino: str) -> str:
+    """El término, con sus metacaracteres de expresión regular neutralizados.
+
+    Un término sale de la descripción de una mercancía, que es texto libre: un
+    `(`, un `*` o un `+` convertirían el patrón en otra cosa o lo harían
+    fallar. Se escapan todos.
+    """
+    return re.sub(r"([\\^$.|?*+()\[\]{}])", r"\\\1", termino)
 
 
 #: Alias de `tariff_headings` para la partida (4) y la subpartida (6) de cada
