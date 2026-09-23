@@ -449,6 +449,14 @@ equivocado en producción.
 
 ### Deuda técnica conocida
 
+- **La vigencia de una evidencia no se persiste.** `Evidence.to_row()` no
+  emite `valid_from` ni `valid_to`, y `evidence_records` no tiene esas
+  columnas, así que el expediente del §49 contesta la vigencia como
+  `UNKNOWN → vigente`. La fecha existe cuando se construye la evidencia y se
+  pierde al guardarla. Necesita migración —lane de Persona 2, regla 8— y se
+  agrava porque `legal_documents.published_at` está NULL en los cuatro
+  documentos cargados. Hasta entonces, «¿cuándo era vigente?» se contesta a
+  medias.
 - **La métrica lee los hallazgos de TODAS las revisiones, no de la última**
   (hallazgo de Persona 1, 23-sep). Eso le permitió tapar un error real: una
   re-auditoría mía con el cuerpo vacío borró los 28 hallazgos de IVA de las

@@ -30,6 +30,14 @@ if TYPE_CHECKING:
 UNKNOWN: str = "UNKNOWN"
 
 
+def _cita(evidencia: Evidence) -> str:
+    """«Documento, artículo» — la cita corta, tal como se lee en un dictamen."""
+    ref = evidencia.document_ref
+    if ref is None:
+        return UNKNOWN
+    return ref.document + (f", {ref.article}" if ref.article else "")
+
+
 class Dossier(BaseModel):
     """Respuesta a las diez preguntas del §49 sobre una decisión concreta.
 
@@ -121,15 +129,23 @@ def answer_all(
         which_rule = UNKNOWN
         sin_responder.append("which_rule")
 
-    # ¿CON QUÉ FUENTE? Los comparables se etiquetan con su jurisdicción para
-    # que nadie los lea como fundamento mexicano.
-    fuentes = [
-        f"{e.document_ref.document}"
-        + (f", {e.document_ref.article}" if e.document_ref and e.document_ref.article else "")
-        for e in legales
-        if e.document_ref
-    ]
+    # ¿CON QUÉ FUENTE? Dos filtros, no uno. El tipo `LEGAL_SOURCE` dice que la
+    # evidencia TIENE forma de norma; `is_legal_basis` dice que además es real.
+    # Una norma sintética cumple todos los campos —documento, artículo, hash
+    # perfectamente calculable— y aun así no es ley (§10, §33). Preguntar sólo
+    # por el tipo la dejaría contestando la pregunta del §49 sin marca alguna.
+    fundamentan = [e for e in legales if e.is_legal_basis]
+    fuentes = [_cita(e) for e in fundamentan if e.document_ref]
     fuentes += [f"[comparable {e.jurisdiction}] {e.case_ref}" for e in comparables]
+
+    # Lo sintético se enseña, pero marcado y sin contar como respuesta: que
+    # esté a la vista es lo que impide que alguien lo descubra en una auditoría
+    # creyendo que se le ocultó.
+    simuladas = [
+        f"[SYNTHETIC · no fundamenta] {_cita(e)}"
+        for e in legales
+        if e.is_synthetic and e.document_ref
+    ]
     if not fuentes:
         sin_responder.append("which_source")
 
@@ -189,7 +205,7 @@ def answer_all(
         what=what,
         why=why,
         which_rule=which_rule,
-        which_source=fuentes or [UNKNOWN],
+        which_source=(fuentes + simuladas) or [UNKNOWN],
         source_version=versiones or [UNKNOWN],
         validity=vigencias or [UNKNOWN],
         data_used=datos,

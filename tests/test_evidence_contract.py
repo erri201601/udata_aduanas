@@ -437,3 +437,50 @@ def test_lo_sintetico_llega_marcado_a_la_tabla() -> None:
     campos = norma_vigente(data_origin="SYNTHETIC").to_record_fields()
 
     assert campos["data_origin"] == "SYNTHETIC"
+
+
+# ── «¿Con qué fuente?» — el §49 (Persona 1, 23-sep) ─────────────────────────
+
+
+def test_una_norma_sintetica_no_contesta_con_que_fuente() -> None:
+    """Cumple todos los campos de una norma y aun así no es ley.
+
+    Tiene documento, artículo y un `content_hash` perfectamente calculable.
+    Filtrar sólo por el TIPO `LEGAL_SOURCE` la dejaría respondiendo la
+    pregunta del §49 como si fundamentara.
+    """
+    dossier = questions.answer_all(
+        what="Clasificación 8471.30.01",
+        evidences=[norma_vigente(data_origin="SYNTHETIC")],
+        operation_date=OPERACION,
+    )
+
+    assert "which_source" in dossier.unanswered, "una norma sintética no fundamenta"
+
+
+def test_la_norma_sintetica_se_enseña_marcada_en_vez_de_esconderse() -> None:
+    """§33: se presenta siempre marcada. Ocultarla sería peor que mostrarla.
+
+    Quien audita tiene que ver que ahí había algo y por qué no contó.
+    """
+    dossier = questions.answer_all(
+        what="Clasificación 8471.30.01",
+        evidences=[norma_vigente(data_origin="SYNTHETIC")],
+        operation_date=OPERACION,
+    )
+
+    assert any("SYNTHETIC" in f for f in dossier.which_source)
+    assert any("LIGIE 2022" in f for f in dossier.which_source)
+
+
+def test_una_norma_real_junto_a_una_sintetica_si_contesta() -> None:
+    """La sintética no contamina a la real: se separan, no se anulan."""
+    dossier = questions.answer_all(
+        what="Clasificación 8471.30.01",
+        evidences=[norma_vigente(), norma_vigente(data_origin="SYNTHETIC")],
+        operation_date=OPERACION,
+    )
+
+    assert "which_source" not in dossier.unanswered
+    assert any(f.startswith("Ley de los Impuestos") or "LIGIE" in f for f in dossier.which_source)
+    assert any("SYNTHETIC" in f for f in dossier.which_source)
