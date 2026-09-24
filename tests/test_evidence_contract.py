@@ -337,6 +337,34 @@ def test_el_mapeo_a_la_tabla_no_importa_la_capa_de_datos() -> None:
     assert campos["document_refs"][0]["document"] == "LIGIE 2022 (DOF)"
     assert "sha256:aaaa1111bbbb2222" in campos["content_hashes"]
     assert len(campos["source_ids"]) == 1
+    assert campos["valid_from"] == date(2022, 7, 7)
+    assert campos["valid_to"] is None
+
+
+def test_la_vigencia_de_la_norma_llega_al_mapeo_de_la_tabla() -> None:
+    """`evidence_records.valid_from`/`valid_to` -- sin esto, `covers()` no
+    tenía nada que leer de vuelta y el §49 contestaba siempre UNKNOWN
+    (regresión real, hallazgo de Persona 1: valid_from/valid_to en 0 filas)."""
+    derogada = norma_vigente(valid_from=date(2020, 1, 1), valid_to=date(2022, 6, 30))
+    campos = derogada.to_record_fields()
+
+    assert campos["valid_from"] == date(2020, 1, 1)
+    assert campos["valid_to"] == date(2022, 6, 30)
+
+
+def test_una_evidencia_no_temporal_mapea_vigencia_nula() -> None:
+    """`model_output` no exige `valid_from`: una salida de modelo no tiene
+    vigencia propia. El mapeo no debe inventarle una."""
+    campos = builder.model_output(
+        summary="El modelo detectó que el producto es una laptop.",
+        model_provider="anthropic",
+        model_name="claude-sonnet-5",
+        prompt_id="clasificacion-v3",
+        prompt_version="3.1",
+    ).to_record_fields()
+
+    assert campos["valid_from"] is None
+    assert campos["valid_to"] is None
 
 
 def test_el_origen_humano_se_distingue_en_la_tabla() -> None:

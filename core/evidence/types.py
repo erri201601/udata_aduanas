@@ -194,6 +194,11 @@ class Evidence(BaseModel):
             "model_name": self.model_name,
             "prompt_version": self.prompt_version,
             "created_by": _CREATED_BY[self.kind],
+            # `None` para una evidencia no temporal (MODEL_OUTPUT, COMPARABLE)
+            # es el valor correcto, no un hueco -- se emite igual que
+            # `evidence_kind`, incondicionalmente.
+            "valid_from": self.valid_from,
+            "valid_to": self.valid_to,
         }
         # Sólo cuando consta. La columna es NOT NULL, así que emitir `None`
         # obligaría a todo llamante a sobrescribirlo, y emitir la clave siempre
