@@ -54,6 +54,7 @@ class EvidenceRecord(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Base)
     __tablename__ = "evidence_records"
     __table_args__ = (
         sa.Index("ix_evidence_records_subject", "subject_kind", "subject_id"),
+        sa.Index("ix_evidence_records_vigencia", "valid_from", "valid_to"),
         {"schema": _SCHEMA},
     )
 
@@ -84,6 +85,20 @@ class EvidenceRecord(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Base)
     evidence_kind: Mapped[str | None] = mapped_column(
         check_enum(EVIDENCE_KIND, "evidence_kind"), nullable=True
     )
+    # Vigencia de la NORMA citada por esta evidencia -- no de cuándo se creó
+    # la fila (eso ya lo da `created_at`, y es un dato distinto: una norma
+    # puede llevar vigente años antes de que algo la cite). Nullable: no toda
+    # evidencia es temporal (`Evidence.covers()` ya lo documenta -- una salida
+    # de modelo o un caso comparable no tienen vigencia propia), y las filas
+    # anteriores a esta columna no tienen forma honesta de inferirla en
+    # retrospectiva -- inventar un valor aquí sería inventar fundamento legal
+    # (regla 1 CLAUDE.md). NULL se lee como UNKNOWN, no como "vigente"
+    # (`apps/api/routers/evidence.py` y `core/evidence/questions.py` ya
+    # tratan `valid_from is None` así -- el hueco no era la lógica, era que
+    # la columna nunca existió para que esa lógica tuviera algo que leer).
+    valid_from: Mapped[date | None] = mapped_column(sa.Date, nullable=True)
+    # NULL = vigente. Nunca se inventa una fecha de fin (§5 CLAUDE.md).
+    valid_to: Mapped[date | None] = mapped_column(sa.Date, nullable=True)
 
 
 class ProductDna(
