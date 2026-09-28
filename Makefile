@@ -52,7 +52,9 @@ merge: ## Mergea un PR sólo si los seis jobs del CI pasaron (make merge PR=47)
 lint: ## ruff + mypy
 	$(VENV)/ruff check .
 	$(VENV)/ruff format --check .
-	$(VENV)/mypy apps core database schemas
+	@# El MISMO alcance que el CI. Con menos, `make lint` daba verde sobre
+	@# un error que el CI sí veía: 130 archivos aquí contra 177 allí.
+	$(VENV)/mypy apps core database schemas ingestion rag graph
 
 fmt: ## Formatea y autocorrige
 	$(VENV)/ruff format .

@@ -138,6 +138,15 @@ def _a_evidence(fila: EvidenceRecord) -> Evidence | None:
         model_name=fila.model_name,
         prompt_version=fila.prompt_version,
         engine_version=fila.engine_version,
+        # Sin esto, `covers()` trataba TODA evidencia como si no fuera
+        # temporal (nunca restringía fecha) y la pregunta del §49 —«¿cuándo
+        # era vigente?»— salía siempre "UNKNOWN → vigente", aunque la norma
+        # citada sí tuviera vigencia conocida al momento de clasificar. El
+        # hueco no era la lógica de `covers()`/`questions.py` —ya trataban
+        # `None` como UNKNOWN, correctamente—: era que la columna nunca
+        # existía para que hubiera algo que leer.
+        valid_from=fila.valid_from,
+        valid_to=fila.valid_to,
     )
 
 

@@ -48,7 +48,7 @@ from __future__ import annotations
 import argparse
 import re
 import uuid
-from typing import TYPE_CHECKING, Final, NamedTuple
+from typing import TYPE_CHECKING, Any, Final, NamedTuple
 
 import sqlalchemy as sa
 import structlog
@@ -183,8 +183,15 @@ def _fichas_recortadas_a_proposito(
     }
 
 
-def consulta_de_hallazgos() -> sa.Select[tuple[RiskFinding]]:
+def consulta_de_hallazgos() -> sa.Select[Any]:
     """Los hallazgos que representan al motor de HOY.
+
+    El tipo del retorno va sin parametrizar a propósito. `select(Modelo)` se
+    anota `Select[tuple[Modelo]]` en unas versiones de SQLAlchemy y
+    `Select[Modelo]` en otras, y `pyproject` pide `sqlalchemy>=2.0.36` sin
+    tope: la local resuelve 2.0.52 y el CI instala la más nueva que haya ese
+    día. Con la firma exacta, mypy pasaba aquí y fallaba allí — y el tipo
+    concreto no aporta nada a quien lee esta función.
 
     Separada para poder probarla sin base: CI no tiene Postgres, así que lo
     que se comprueba allí es que la consulta LLEVE el acotamiento. Que el

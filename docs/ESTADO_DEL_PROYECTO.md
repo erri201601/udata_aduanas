@@ -24,7 +24,7 @@ cuánto dinero, si requiere revisión humana.
 
 El objetivo inmediato es un MVP demostrable ante **AJR**, con fuentes
 jurídicas reales y datos operativos sintéticos. Quién es AJR y qué es ANA:
-`docs/AJR_Y_ANA.md`.
+un documento interno, fuera del repositorio.
 
 ---
 
@@ -459,7 +459,7 @@ equivocado en producción.
   clasificador revise un caso, esa fila entra como `HUMAN_VALIDATED` y deja de
   ser sintética. Hoy hay **cero** filas `HUMAN_VALIDATED` en todo el sistema, y
   los diez primeros candidatos ya existen: los desacuerdos de la primera
-  corrida de `hs_accuracy` (#125). Ver `docs/PETICION_AJR.md` §0.
+  corrida de `hs_accuracy` (#125). Ver el documento interno de la petición, fuera del repositorio.
 - **La vigencia de una evidencia no se persiste.** `Evidence.to_row()` no
   emite `valid_from` ni `valid_to`, y `evidence_records` no tiene esas
   columnas, así que el expediente del §49 contesta la vigencia como
@@ -611,9 +611,6 @@ después de esa hora.
 | `docs/TAREA_P3_MODEL_PROVIDER.md` | especificación de ModelProvider y frontend |
 | `docs/PROMPT_P2.md` · `docs/PROMPT_P3.md` | prompts de arranque para los agentes |
 | `docs/ER_DIAGRAM.md` | diagrama Mermaid del modelo |
-| `docs/DEMO_AJR.md` | guion de la demo, verificado contra el sistema el 21-sep |
-| `docs/AJR_Y_ANA.md` | quién es AJR y qué es ANA |
-| `docs/PETICION_AJR.md` | ⏸ en pausa — petición de diez pedimentos a AJR |
 | `apps/evaluacion/corpus_espejo.py` | valida un corpus antes de cargarlo |
 | `apps/evaluacion/deteccion_26.py` | mide precisión/recall del §26 · `--escenarios` lista los corpus |
 | `docs/RECONOCIMIENTO_RGCE_2026.md` | reconocimiento de RGCE 2026, antes de cargar |

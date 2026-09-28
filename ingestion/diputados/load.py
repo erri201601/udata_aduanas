@@ -15,10 +15,13 @@ from database.models.regulatory import LegalDocument, LegalRule, LegalSource
 from database.repositories.chunks import PostgresChunkStore
 from rag.types import LegalChunk, hash_contenido
 
+from ingestion.snice.load import get_or_create_ligie_document
+
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
     from ingestion.diputados.ley_aduanera import ParsedArticle
+    from ingestion.diputados.ligie import ParsedArticulo
 
 DIPUTADOS_SLUG = "diputados"
 LEY_ADUANERA_SHORT_NAME = "LEY_ADUANERA"
@@ -190,3 +193,98 @@ def load_ley_aduanera_chunks(
         for parsed in articulos
     ]
     return PostgresChunkStore(session).add(chunks)
+
+
+LIGIE_ARTICULO1_SOURCE_URL = "https://www.diputados.gob.mx/LeyesBiblio/pdf/LIGIE_2022.pdf"
+LIGIE_ARTICULO1_SOURCE_DOCUMENT = "LIGIE 2022, Texto Vigente (DOF, última reforma 29-dic-2025)"
+# "Nueva Ley publicada en el Diario Oficial de la Federación el 7 de junio
+# de 2022" -- misma fecha que `ingestion.snice.load.LIGIE_VALID_FROM`: es
+# la misma ley, aunque este archivo (Texto Vigente de Diputados) sea un PDF
+# distinto del que publica SNICE, con su propio content_hash.
+LIGIE_ARTICULO1_VALID_FROM = date(2022, 6, 7)
+
+# REGRESIÓN REAL (2026-09-23, hallazgo de Persona 2 al verificar el supuesto
+# de Ulises sobre la edición del Sistema Armonizado): ni el preámbulo ni el
+# Artículo 1o. citan el Sistema Armonizado ni ninguna edición o enmienda --
+# verificado con una búsqueda de texto completo contra las 893 páginas del
+# PDF y contra el decreto original del DOF (7-jun-2022): cero coincidencias
+# de "Sistema Armonizado", "enmienda" o "nomenclatura del sistema" en todo
+# el documento. Sin una columna dedicada a este tipo de anotación en
+# `LegalRule` (ni `reform_note`, específico de reformas, encaja), la nota
+# va pegada al propio `text` del Artículo 1o. -- exactamente lo que pidió
+# Ulises: "que el content_hash y la nota lo digan ahorra la búsqueda dos
+# veces". No se pega al preámbulo: el hallazgo es específico de lo que el
+# Artículo 1o. sí y no dice.
+NOTA_NEEDS_VALIDATION_SA = (
+    "\n\n[NEEDS_VALIDATION -- verificado 2026-09-23] Este artículo NO cita el "
+    'Sistema Armonizado ni ninguna edición o enmienda: ni "Sistema Armonizado", '
+    'ni "enmienda", ni "nomenclatura del sistema" aparecen en ninguna de las '
+    "893 páginas del texto vigente ni en el decreto original publicado en el "
+    "DOF el 7 de junio de 2022. No usar esta fuente para afirmar ni descartar "
+    "la edición del Sistema Armonizado de las fracciones TIGIE."
+)
+
+
+def to_ligie_legal_rule_row(
+    parsed: ParsedArticulo,
+    *,
+    source: LegalSource,
+    document: LegalDocument,
+    content_hash: str,
+    retrieved_at: datetime,
+) -> LegalRule:
+    texto = parsed.text
+    if parsed.rule_number == "1":
+        texto += NOTA_NEEDS_VALIDATION_SA
+    return LegalRule(
+        legal_document_id=document.id,
+        rule_number=parsed.rule_number,
+        heading_text=parsed.heading_text,
+        text=texto,
+        data_origin="OFFICIAL",
+        source_id=source.id,
+        valid_from=LIGIE_ARTICULO1_VALID_FROM,
+        source_url=LIGIE_ARTICULO1_SOURCE_URL,
+        source_document=LIGIE_ARTICULO1_SOURCE_DOCUMENT,
+        content_hash=content_hash,
+        retrieved_at=retrieved_at,
+    )
+
+
+def load_ligie_preambulo_y_articulo1(
+    session: Session,
+    *,
+    articulos: list[ParsedArticulo],
+    content_hash: str,
+    retrieved_at: datetime | None = None,
+) -> int:
+    """Inserta el preámbulo y el Artículo 1o. de la LIGIE. Devuelve cuántos.
+
+    Reutiliza el mismo `LegalDocument` (short_name "LIGIE") que ya crea
+    `ingestion.snice.load.get_or_create_ligie_document` para las notas de
+    capítulo/sección y las partidas/subpartidas -- es el mismo instrumento
+    jurídico, aunque este PDF (Texto Vigente de Diputados) sea un archivo
+    distinto del que publica SNICE. Cada fila registra su propio
+    `content_hash`/`source_url` (`RegulatoryMixin`), así que la trazabilidad
+    por fila es correcta sin importar cuál de los dos loaders creó el
+    documento primero.
+    """
+    retrieved_at = retrieved_at or datetime.now(UTC)
+    source = get_or_create_diputados_source(session)
+    document = get_or_create_ligie_document(
+        session, source, content_hash=content_hash, retrieved_at=retrieved_at
+    )
+
+    for parsed in articulos:
+        session.add(
+            to_ligie_legal_rule_row(
+                parsed,
+                source=source,
+                document=document,
+                content_hash=content_hash,
+                retrieved_at=retrieved_at,
+            )
+        )
+
+    session.flush()
+    return len(articulos)
