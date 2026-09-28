@@ -12,6 +12,7 @@ Uso:
     python -m ingestion.sintetico.cli --target shared
     python -m ingestion.sintetico.cli --target local --reset            # borra y recarga (§24)
     python -m ingestion.sintetico.cli --target shared --fix-missing-info  # sólo corrige fichas
+    python -m ingestion.sintetico.cli --target shared --add-coves        # sólo agrega el COVE
 """
 
 from __future__ import annotations
@@ -78,6 +79,14 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
             "no es un --reset."
         ),
     )
+    parser.add_argument(
+        "--add-coves",
+        action="store_true",
+        help=(
+            "Sólo agrega el Cove a facturas de la carga existente que todavía no lo "
+            "tenían -- no toca pedimentos, facturas ni ground_truth, no es un --reset."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -117,6 +126,18 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
+    if args.add_coves:
+        with Session(engine) as session:
+            n_coves = load.add_missing_coves(session, corpus)
+            session.commit()
+        print(f"--add-coves ({args.target}): {n_coves} COVE agregados.")
+        log.info(
+            "sintetico.corpus_espejo.cli.add_coves",
+            target=args.target,
+            creados=n_coves,
+        )
+        return 0
+
     with Session(engine) as session:
         if args.reset:
             n_borrados = load.delete_scenario_data(session)
@@ -130,6 +151,7 @@ def main(argv: list[str] | None = None) -> int:
         f"({reporte.pedimentos_saltados} ya existían), "
         f"{reporte.partidas_creadas} partidas, "
         f"{reporte.partidas_con_invoice_item} con invoice_item_id, "
+        f"{reporte.coves_creados} COVE, "
         f"{reporte.ground_truth_creados} filas de ground truth "
         f"({reporte.ground_truth_expected_true} con expected_detection=true)."
     )
@@ -139,6 +161,7 @@ def main(argv: list[str] | None = None) -> int:
         pedimentos_creados=reporte.pedimentos_creados,
         pedimentos_saltados=reporte.pedimentos_saltados,
         partidas_creadas=reporte.partidas_creadas,
+        coves_creados=reporte.coves_creados,
         ground_truth_creados=reporte.ground_truth_creados,
     )
     return 0

@@ -57,6 +57,7 @@ import sqlalchemy as sa
 from database.models.intelligence import GroundTruthRecord, ProductAttribute, ProductDna
 from database.models.operational import (
     Client,
+    Cove,
     Invoice,
     InvoiceItem,
     Pedimento,
@@ -120,6 +121,7 @@ class LoadReport:
     partidas_con_invoice_item: int
     ground_truth_creados: int
     ground_truth_expected_true: int
+    coves_creados: int
 
 
 def get_or_create_scenario(session: Session, *, seed: int) -> SyntheticScenario:
@@ -217,6 +219,50 @@ def _create_invoice(
     session.add(invoice)
     session.flush()
     return invoice
+
+
+def _create_cove(
+    session: Session,
+    ped: ParsedPedimento,
+    *,
+    invoice: Invoice,
+    scenario: SyntheticScenario,
+) -> Cove:
+    """Un COVE por factura -- el propio VUCEM lo exige así (FAQ oficial:
+
+    "cada factura deberá ser amparada por un COVE"), y el corpus no
+    distingue varias facturas por pedimento (ver `_create_invoice`).
+
+    `cove_number` deriva de `ped.document_id` (el mismo identificador que ya
+    usa `invoice_number`): único por construcción, uno por pedimento, y
+    trazable a su factura sin inventar un folio VUCEM real que no existe en
+    este escenario.
+
+    `cove_type` queda `None`: no encontré un catálogo oficial verificable de
+    valores para esta columna (revisado el manual de usuario y las FAQ de
+    VUCEM) -- inventar un código sin poder citarlo sería peor que dejarlo en
+    blanco. `edocument_hash` también queda `None`: no hay un documento
+    electrónico real detrás de un escenario sintético, y un hash inventado
+    aparentaría una verificabilidad que no existe (mismo criterio que
+    `country_of_origin=None` en `_create_invoice_item`).
+
+    `issued_at = ped.date_entry`: el COVE se transmite antes o el mismo día
+    del cruce y el corpus no trae una fecha de transmisión separada -- es la
+    mejor aproximación disponible sin inventar un dato que el corpus no da.
+    """
+    cove = Cove(
+        invoice_id=invoice.id,
+        cove_number=f"COVE-{ped.document_id}",
+        cove_type=None,
+        issued_at=ped.date_entry,
+        edocument_hash=None,
+        data_origin=DATA_ORIGIN,
+        synthetic_scenario_id=scenario.id,
+        seed=scenario.seed,
+    )
+    session.add(cove)
+    session.flush()
+    return cove
 
 
 def _create_invoice_item(
@@ -491,6 +537,7 @@ def load_pedimento(
     client = _get_or_create_client(session, ped, scenario)
     supplier = _get_or_create_supplier(session, ped, scenario)
     invoice = _create_invoice(session, ped, client=client, supplier=supplier, scenario=scenario)
+    _create_cove(session, ped, invoice=invoice, scenario=scenario)
 
     pedimento = Pedimento(
         client_id=client.id,
@@ -583,6 +630,10 @@ def load_corpus(session: Session, corpus: ParsedCorpus, *, seed: int = 20260921)
         partidas_con_invoice_item=partidas_con_invoice_item,
         ground_truth_creados=ground_truth_creados,
         ground_truth_expected_true=gt_true,
+        # Uno por pedimento creado, siempre (`_create_cove` se llama junto con
+        # `_create_invoice` en `load_pedimento`) -- el corpus no distingue
+        # varias facturas por documento, así que tampoco varios COVE.
+        coves_creados=pedimentos_creados,
     )
 
 
@@ -647,6 +698,42 @@ def fix_missing_information(
     return corregidos
 
 
+def add_missing_coves(session: Session, corpus: ParsedCorpus, *, slug: str = SCENARIO_SLUG) -> int:
+    """Agrega el COVE a facturas de una carga YA HECHA que todavía no lo tenían.
+
+    Existe por la misma razón que `fix_missing_information`: la carga original
+    (antes de esta tarea) no creaba COVE, y corregirlo no requiere un
+    `--reset` completo -- pedimentos, facturas y ground_truth ya son
+    correctos, sólo falta esta fila. No toca ninguna factura que ya tenga su
+    COVE (idempotente).
+
+    Devuelve cuántos `Cove` se crearon. `0` si el escenario no existe o todas
+    las facturas ya lo tenían.
+    """
+    scenario = session.query(SyntheticScenario).filter_by(slug=slug).one_or_none()
+    if scenario is None:
+        return 0
+
+    creados = 0
+    for ped in corpus.pedimentos:
+        pedimento = (
+            session.query(Pedimento).filter_by(pedimento_number=ped.pedimento_number).one_or_none()
+        )
+        if pedimento is None:
+            continue
+        invoice = session.query(Invoice).filter_by(invoice_number=ped.document_id).one_or_none()
+        if invoice is None:
+            continue
+        ya_tiene = session.query(Cove).filter_by(invoice_id=invoice.id).one_or_none()
+        if ya_tiene is not None:
+            continue
+        _create_cove(session, ped, invoice=invoice, scenario=scenario)
+        creados += 1
+
+    session.flush()
+    return creados
+
+
 def delete_scenario_data(session: Session, *, slug: str = SCENARIO_SLUG) -> int:
     """Borra TODO lo que carga este módulo para un escenario, sin dejar restos (§24).
 
@@ -687,6 +774,7 @@ def delete_scenario_data(session: Session, *, slug: str = SCENARIO_SLUG) -> int:
     session.query(Product).filter_by(synthetic_scenario_id=sid).delete()
 
     session.query(InvoiceItem).filter_by(synthetic_scenario_id=sid).delete()
+    session.query(Cove).filter_by(synthetic_scenario_id=sid).delete()
     session.query(Invoice).filter_by(synthetic_scenario_id=sid).delete()
     session.query(Supplier).filter_by(synthetic_scenario_id=sid).delete()
     session.query(Client).filter_by(synthetic_scenario_id=sid).delete()
