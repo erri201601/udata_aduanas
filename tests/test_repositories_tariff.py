@@ -218,3 +218,47 @@ def test_un_termino_con_metacaracteres_no_rompe_la_consulta(
 
     assert catalogo.headings(on_date=FECHA, terms=["(especial"]) == []
     assert [c.code for c in catalogo.headings(on_date=FECHA, terms=["zzqxon"])] == ["9998"]
+
+
+# ── Los términos cuentan dentro de una fracción (Persona 1, 28-sep) ────────
+
+
+@pytest.mark.integration
+def test_una_partida_cajon_de_sastre_no_gana_por_acumular_terminos(
+    pg_session: sa.orm.Session,  # noqa: F811
+) -> None:
+    """Seis fracciones distintas con una palabra cada una no comprenden nada.
+
+    Para un cable de acero galvanizado, la 8479 —«Las demás máquinas y
+    aparatos mecánicos con función propia»— casaba CINCO de seis términos y
+    ganaba a la 7312, que es la correcta. Los cinco venían de fracciones sin
+    relación entre sí, y el motor resolvía que un cable era una máquina de
+    control numérico para galvanizado continuo.
+    """
+    # El cajón: cada fracción casa un término distinto.
+    _fraccion(pg_session, "99911001", "Máquinas de zzqxón.", 1)
+    _fraccion(pg_session, "99911002", "Máquinas de wwvkún.", 1)
+    # La correcta: una sola fracción casa los dos.
+    _fraccion(pg_session, "99921001", "Artículos de zzqxón y wwvkún.", 1)
+
+    candidatas = TariffCatalogRepository(pg_session).headings(
+        on_date=FECHA, terms=["zzqxon", "wwvkun"]
+    )
+
+    assert [c.code for c in candidatas] == ["9992"], "ganó la que acumula, no la que describe"
+
+
+@pytest.mark.integration
+def test_la_cobertura_es_la_de_la_mejor_fraccion_de_la_partida(
+    pg_session: sa.orm.Session,  # noqa: F811
+) -> None:
+    """Una partida comprende la mercancía cuando UNA de sus fracciones la
+    describe. Que otras fracciones suyas mencionen otras palabras no suma."""
+    _fraccion(pg_session, "99931001", "Objeto de zzqxón y wwvkún.", 1)
+    _fraccion(pg_session, "99931002", "Objeto sin relación alguna.", 1)
+
+    candidatas = TariffCatalogRepository(pg_session).headings(
+        on_date=FECHA, terms=["zzqxon", "wwvkun"]
+    )
+
+    assert [c.code for c in candidatas] == ["9993"]
