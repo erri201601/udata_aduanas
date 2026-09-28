@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 
 from database.models.regulatory import (
     CustomsOffice,
+    LegalChunkRecord,
     LegalDocument,
     LegalRule,
     LegalSource,
@@ -29,6 +30,8 @@ from database.models.regulatory import (
 )
 from database.repositories.chunks import PostgresChunkStore
 from rag.types import LegalChunk, hash_contenido
+
+from ingestion.dof.rgce import fracciones_de
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -336,6 +339,14 @@ def load_rgce_chunks(
     Mismo criterio que `ingestion.diputados.load.load_ley_aduanera_chunks`: sin
     `embedding` todavía, recuperable por término hasta que se vectorice. Las
     reglas `needs_validation` no llevan chunk, igual que no llevan fila.
+
+    Además del chunk de la regla completa, una regla con fracciones romanas
+    reales (`ingestion.dof.rgce.fracciones_de`) recibe un chunk POR fracción
+    -- mismo criterio que `rag.chunking.trocear` con los artículos de la Ley
+    Aduanera: se citan solas, así que tienen que poder recuperarse solas. Es
+    lo que permite vectorizar 1.1.6/4.5.31/7.3.3 pese a que la regla completa
+    no quepa en el contexto del embedder (Persona 1, 2026-09-28): cada
+    fracción, mucho más corta, sí cabe.
     """
     retrieved_at = retrieved_at or datetime.now(UTC)
     cargables, _ = _cargables(reglas)
@@ -344,19 +355,80 @@ def load_rgce_chunks(
         session, source, content_hash=content_hash, retrieved_at=retrieved_at
     )
 
-    chunks = [
-        LegalChunk(
+    def _chunk(article: str, texto: str, parsed: ParsedRule) -> LegalChunk:
+        return LegalChunk(
             source_id=source.id,
             document_id=document.id,
             document=document.title,
-            article=parsed.rule_number,
-            text=parsed.text,
-            content_hash=hash_contenido(parsed.text),
+            article=article,
+            text=texto,
+            content_hash=hash_contenido(texto),
             data_origin="OFFICIAL",
             valid_from=parsed.valid_from,
             valid_to=parsed.valid_to,
             url=RGCE_SOURCE_URL,
         )
-        for parsed in cargables
-    ]
+
+    chunks: list[LegalChunk] = []
+    for parsed in cargables:
+        chunks.append(_chunk(parsed.rule_number, parsed.text, parsed))
+        for romano, fragmento in fracciones_de(parsed.text):
+            chunks.append(_chunk(f"{parsed.rule_number} fracción {romano}", fragmento, parsed))
+
+    return PostgresChunkStore(session).add(chunks)
+
+
+def add_fraccion_chunks_for_long_rules(
+    session: Session,
+    *,
+    reglas: list[ParsedRule],
+    content_hash: str,
+    retrieved_at: datetime | None = None,
+) -> int:
+    """Agrega los chunks por fracción que le faltan a una carga YA HECHA.
+
+    Existe por la misma razón que `add_missing_coves`: 1.1.6, 4.5.31 y 7.3.3
+    ya tenían su chunk de regla completa (sin `embedding`, saltado por el
+    backfill) antes de que `fracciones_de` existiera -- esto no vuelve a
+    insertar ESE chunk (ya está, y re-enviarlo reventaría la unicidad), sólo
+    agrega los de fracción que faltan. Idempotente: una fracción ya
+    insertada no se repite.
+    """
+    retrieved_at = retrieved_at or datetime.now(UTC)
+    cargables, _ = _cargables(reglas)
+    source = get_or_create_dof_source(session)
+    document = get_or_create_rgce_document(
+        session, source, content_hash=content_hash, retrieved_at=retrieved_at
+    )
+
+    ya_existen = {
+        (article, valid_from)
+        for article, valid_from in session.query(
+            LegalChunkRecord.article, LegalChunkRecord.valid_from
+        ).filter(LegalChunkRecord.legal_document_id == document.id)
+    }
+
+    chunks: list[LegalChunk] = []
+    for parsed in cargables:
+        for romano, fragmento in fracciones_de(parsed.text):
+            article = f"{parsed.rule_number} fracción {romano}"
+            if (article, parsed.valid_from) in ya_existen:
+                continue
+            chunks.append(
+                LegalChunk(
+                    source_id=source.id,
+                    document_id=document.id,
+                    document=document.title,
+                    article=article,
+                    text=fragmento,
+                    content_hash=hash_contenido(fragmento),
+                    data_origin="OFFICIAL",
+                    valid_from=parsed.valid_from,
+                    valid_to=parsed.valid_to,
+                    url=RGCE_SOURCE_URL,
+                )
+            )
+
+    if not chunks:
+        return 0
     return PostgresChunkStore(session).add(chunks)

@@ -16,12 +16,15 @@ from database.models.regulatory import LegalChunkRecord, LegalDocument, LegalRul
 from ingestion.dof.load import (
     RGCE_SHORT_NAME,
     _cargables,
+    add_fraccion_chunks_for_long_rules,
     load_rgce,
     load_rgce_chunks,
 )
 from ingestion.dof.rgce import TRANSITORIO_CUARTO_MOTIVO, ParsedRule
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
+
+from tests.fixtures.rgce_2026_regla_larga_fragmento import REGLA_1_1_6_FRAGMENTO
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -35,17 +38,20 @@ HASH = "a" * 64
 NORMAL = "9.9.1"
 FEBRERO_REGLA = "9.9.2"
 EXCLUIDA = "9.9.3"
-NUMEROS_DE_PRUEBA = {NORMAL, FEBRERO_REGLA, EXCLUIDA}
+CON_FRACCIONES = "9.9.4"
+NUMEROS_DE_PRUEBA = {NORMAL, FEBRERO_REGLA, EXCLUIDA, CON_FRACCIONES}
 
 INICIO = date(2026, 1, 1)
 FIN = date(2026, 12, 31)
 FEBRERO = date(2026, 2, 2)
 
 
-def _regla(numero: str, *, desde: date | None = INICIO, **extra: object) -> ParsedRule:
+def _regla(
+    numero: str, *, desde: date | None = INICIO, texto: str | None = None, **extra: object
+) -> ParsedRule:
     return ParsedRule(
         rule_number=numero,
-        text=f"Texto de la regla {numero}.",
+        text=texto or f"Texto de la regla {numero}.",
         valid_from=desde,
         valid_to=FIN if desde else None,
         **extra,  # type: ignore[arg-type]
@@ -176,3 +182,86 @@ def test_los_chunks_siguen_la_misma_regla_de_exclusion_y_ligan_su_regla(
     assert set(chunks) == {NORMAL, FEBRERO_REGLA}
     assert all(c.legal_rule_id is not None for c in chunks.values())
     assert chunks[FEBRERO_REGLA].valid_from == FEBRERO
+
+
+@pytest.mark.integration
+def test_una_regla_con_fracciones_reales_recibe_un_chunk_por_fraccion(
+    pg_session: Session,
+) -> None:
+    """REGRESIÓN REAL (Persona 1, 2026-09-28): 1.1.6, 4.5.31 y 7.3.3 (hasta
+    46 094 caracteres) no caben en el embedder -- partidas por fracción, cada
+    fragmento sí cabe. Con el fragmento real de 1.1.6 (tres fracciones): un
+    chunk de la regla completa + uno por cada fracción."""
+    regla = _regla(CON_FRACCIONES, texto=REGLA_1_1_6_FRAGMENTO)
+    load_rgce(pg_session, reglas=[regla], content_hash=HASH)
+    n = load_rgce_chunks(pg_session, reglas=[regla], content_hash=HASH)
+
+    assert n == 4  # la regla completa + fracciones I, II, III
+    chunks = {
+        c.article: c
+        for c in pg_session.query(LegalChunkRecord)
+        .join(LegalDocument, LegalDocument.id == LegalChunkRecord.legal_document_id)
+        .filter(
+            LegalDocument.short_name == RGCE_SHORT_NAME,
+            LegalChunkRecord.article.like(f"{CON_FRACCIONES}%"),
+        )
+    }
+    assert set(chunks) == {
+        CON_FRACCIONES,
+        f"{CON_FRACCIONES} fracción I",
+        f"{CON_FRACCIONES} fracción II",
+        f"{CON_FRACCIONES} fracción III",
+    }
+    # La regla completa sí liga con legal_rules (mismo rule_number exacto);
+    # los chunks de fracción no -- mismo criterio ya aceptado para la Ley
+    # Aduanera (`rag.chunking.trocear`): el article de una fracción nunca
+    # coincide con ningún rule_number, así que quedan sin ligar a propósito.
+    assert chunks[CON_FRACCIONES].legal_rule_id is not None
+    assert chunks[f"{CON_FRACCIONES} fracción I"].legal_rule_id is None
+    assert len(chunks[f"{CON_FRACCIONES} fracción II"].text) < len(REGLA_1_1_6_FRAGMENTO)
+
+
+@pytest.mark.integration
+def test_add_fraccion_chunks_rellena_una_carga_anterior_sin_partir(
+    pg_session: Session,
+) -> None:
+    """El estado real antes de esta tarea: la regla y su chunk COMPLETO ya
+    estaban cargados (el backfill lo saltó por no caber en el embedder) --
+    `add_fraccion_chunks_for_long_rules` agrega sólo lo que falta, sin volver
+    a insertar el chunk completo (reventaría la unicidad)."""
+    regla = _regla(CON_FRACCIONES, texto=REGLA_1_1_6_FRAGMENTO)
+    load_rgce(pg_session, reglas=[regla], content_hash=HASH)
+    load_rgce_chunks(pg_session, reglas=[regla], content_hash=HASH)
+    # Simula el estado previo: sólo el chunk de la regla completa, sin las
+    # fracciones (como si `load_rgce_chunks` aún no supiera partir).
+    pg_session.query(LegalChunkRecord).filter(
+        LegalChunkRecord.article.like(f"{CON_FRACCIONES} fracción%")
+    ).delete(synchronize_session=False)
+    pg_session.flush()
+
+    creados = add_fraccion_chunks_for_long_rules(pg_session, reglas=[regla], content_hash=HASH)
+
+    assert creados == 3
+    articulos = {
+        c.article
+        for c in pg_session.query(LegalChunkRecord).filter(
+            LegalChunkRecord.article.like(f"{CON_FRACCIONES}%")
+        )
+    }
+    assert articulos == {
+        CON_FRACCIONES,
+        f"{CON_FRACCIONES} fracción I",
+        f"{CON_FRACCIONES} fracción II",
+        f"{CON_FRACCIONES} fracción III",
+    }
+
+
+@pytest.mark.integration
+def test_add_fraccion_chunks_es_idempotente(pg_session: Session) -> None:
+    regla = _regla(CON_FRACCIONES, texto=REGLA_1_1_6_FRAGMENTO)
+    load_rgce(pg_session, reglas=[regla], content_hash=HASH)
+    load_rgce_chunks(pg_session, reglas=[regla], content_hash=HASH)
+
+    creados = add_fraccion_chunks_for_long_rules(pg_session, reglas=[regla], content_hash=HASH)
+
+    assert creados == 0

@@ -10,6 +10,7 @@ Uso:
     python -m ingestion.dof.cli --target local  --anexo22
     python -m ingestion.dof.cli --target local  --rgce
     python -m ingestion.dof.cli --target shared --rgce --chunks
+    python -m ingestion.dof.cli --target shared --split-long-rules
 """
 
 from __future__ import annotations
@@ -86,6 +87,16 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--split-long-rules",
+        action="store_true",
+        help=(
+            "Sólo agrega chunks por fracción a reglas RGCE ya cargadas que no "
+            "cupieron en el embedder (1.1.6, 4.5.31, 7.3.3) -- no toca "
+            "regulatory.legal_rules ni el chunk de la regla completa, no es un "
+            "--reset. Idempotente."
+        ),
+    )
+    parser.add_argument(
         "--raw-only",
         action="store_true",
         help="Solo sube y verifica el RAW en --target; no toca la base.",
@@ -95,8 +106,10 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    if not args.raw_only and not args.anexo22 and not args.rgce:
-        raise SystemExit("--anexo22 o --rgce es obligatorio salvo con --raw-only")
+    if not args.raw_only and not args.anexo22 and not args.rgce and not args.split_long_rules:
+        raise SystemExit(
+            "--anexo22, --rgce o --split-long-rules es obligatorio salvo con --raw-only"
+        )
     if args.chunks and not args.rgce:
         raise SystemExit("--chunks sólo tiene efecto junto con --rgce")
     database_url = None if args.raw_only else _database_url(args.target)
@@ -146,7 +159,7 @@ def main(argv: list[str] | None = None) -> int:
             )
 
         reglas = None
-        if args.rgce:
+        if args.rgce or args.split_long_rules:
             # El meta del HTML dice iso-8859-1, pero los bytes son UTF-8 estricto
             # (verificado contra el documento real): decodificar como latin-1
             # convertiría cada acento en dos caracteres basura.
@@ -163,6 +176,23 @@ def main(argv: list[str] | None = None) -> int:
 
     assert database_url is not None  # solo llegamos aquí sin --raw-only
     engine = create_engine(database_url)
+
+    if args.split_long_rules:
+        assert reglas is not None
+        with Session(engine) as session:
+            n_fraccion_chunks = load.add_fraccion_chunks_for_long_rules(
+                session,
+                reglas=reglas,
+                content_hash=rgce_capture.content_hash,
+                retrieved_at=rgce_capture.retrieved_at,
+            )
+            session.commit()
+        print(
+            f"--split-long-rules ({args.target}): {n_fraccion_chunks} chunks de fracción agregados."
+        )
+        log.info("dof.rgce.cli.split_long_rules", target=args.target, creados=n_fraccion_chunks)
+        return 0
+
     with Session(engine) as session:
         if offices is not None and units is not None and claves is not None:
             assert regulations is not None

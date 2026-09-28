@@ -268,6 +268,60 @@ def reglas_citadas(texto: str) -> list[str]:
     return [n.rstrip(".") for n in _REGLA_CITADA_RE.findall(texto)]
 
 
+#: «I. », «XXX. » tras punto o dos puntos seguido de espacio, en cualquier
+#: posición del texto -- no al inicio de línea como `rag.chunking._FRACCION`,
+#: porque `extract_lines`/`parse_rule_bodies` unen cada regla en una sola
+#: línea continua (verificado: ninguna regla real trae "\n" en su `text`), así
+#: que no existe un "inicio de línea" real contra el que anclarse.
+_FRACCION_RGCE_RE = re.compile(r"(?<=[.:] )(?P<rom>[IVXLCDM]{1,7})\. (?=[A-ZÁÉÍÓÚÑ])")
+
+_ROMANO_VALOR = {"I": 1, "V": 5, "X": 10, "L": 50, "C": 100, "D": 500, "M": 1000}
+
+
+def _romano_a_entero(romano: str) -> int:
+    total = 0
+    for i, letra in enumerate(romano):
+        valor = _ROMANO_VALOR[letra]
+        if i + 1 < len(romano) and valor < _ROMANO_VALOR[romano[i + 1]]:
+            total -= valor
+        else:
+            total += valor
+    return total
+
+
+def fracciones_de(texto: str) -> list[tuple[str, str]]:
+    """(romano, fragmento) de cada fracción dentro del texto de UNA regla.
+
+    Existe para las reglas RGCE demasiado largas para el embedder (Persona 1,
+    2026-09-28: 1.1.6, 4.5.31, 7.3.3 -- la última mide 46 094 caracteres):
+    partidas por fracción, cada fragmento cabe y se puede citar solo, igual
+    que ya hace `rag.chunking._fracciones` con los artículos de la Ley
+    Aduanera -- pero ese reconoce el marcador por inicio de línea, que aquí no
+    existe (ver `_FRACCION_RGCE_RE`).
+
+    Sólo se acepta la partición si los romanos encontrados forman una
+    secuencia estrictamente consecutiva I, II, III… -- si no, se devuelve una
+    lista vacía en vez de arriesgar una partición incorrecta sobre un romano
+    que resultó ser otra cosa (una cita "Anexo IV" a mitad de frase, no un
+    encabezado de fracción). No es sólo para las tres reglas nombradas:
+    cualquier regla RGCE con fracciones reales se beneficia igual.
+    """
+    marcas = list(_FRACCION_RGCE_RE.finditer(texto))
+    if not marcas:
+        return []
+    numeros = [_romano_a_entero(m.group("rom")) for m in marcas]
+    if numeros != list(range(1, len(numeros) + 1)):
+        return []
+
+    fracciones = []
+    for i, marca in enumerate(marcas):
+        fin = marcas[i + 1].start() if i + 1 < len(marcas) else len(texto)
+        cuerpo = texto[marca.end() : fin].strip()
+        if cuerpo:
+            fracciones.append((marca.group("rom"), cuerpo))
+    return fracciones
+
+
 @dataclass(frozen=True)
 class ParsedRule:
     rule_number: str
