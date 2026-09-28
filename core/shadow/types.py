@@ -110,10 +110,12 @@ class ExpectedItem(BaseModel):
     El valor por omisión es `None` a propósito: hoy no existe la correlación
     fracción → NOM. No está en el Anexo 22 (verificado por Persona 2 el
     2026-09-08: el Apéndice 9 explica qué significa cada código, pero remite al
-    Anexo 2.2.1 de un Acuerdo distinto de la Secretaría de Economía para saber
-    qué fracciones lo exigen). Mientras esa fuente no esté cargada, quien
-    construya un `ExpectedItem` sin tocar este campo obtiene «no sé», que es la
-    verdad, en vez de «no exige ninguna», que sería inventar.
+    Anexo 2.4.1 de un Acuerdo distinto de la Secretaría de Economía para saber
+    qué fracciones lo exigen -- corregido de "2.2.1" el 2026-09-28: ese es el
+    anexo de permisos previos, no el de NOM; ver ADR 0003). Mientras esa
+    fuente no esté cargada, quien construya un `ExpectedItem` sin tocar este
+    campo obtiene «no sé», que es la verdad, en vez de «no exige ninguna»,
+    que sería inventar.
     """
 
     missing_technical_fields: tuple[str, ...] | None = None

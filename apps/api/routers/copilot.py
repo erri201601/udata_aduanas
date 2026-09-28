@@ -182,7 +182,7 @@ class Respuesta(BaseModel):
 
     Es la respuesta honesta a «¿por qué me devolviste la Ley Aduanera cuando
     pregunté por PROSEC?»: porque el decreto PROSEC, los cupos y el Anexo
-    2.2.1 no están cargados, y la búsqueda semántica siempre devuelve lo más
+    2.4.1 no están cargados, y la búsqueda semántica siempre devuelve lo más
     cercano de lo que hay. Sin esta lista, ocho pasajes citables y vigentes
     parecen una respuesta a cualquier cosa que se pregunte.
 
@@ -268,7 +268,7 @@ def _corpus_consultado(session: SessionDep, on_date: date) -> list[str]:
     """Qué instrumentos regían ese día y tenían pasajes donde buscar.
 
     Se lee de la base y no de una lista escrita aquí: el día que se cargue el
-    Anexo 2.2.1 aparece solo. Y sólo los que pueden fundamentar, que son
+    Anexo 2.4.1 aparece solo. Y sólo los que pueden fundamentar, que son
     exactamente los que la recuperación admite — enseñar un instrumento que el
     buscador descarta sería peor que no enseñar nada.
     """

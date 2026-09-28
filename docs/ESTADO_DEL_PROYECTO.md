@@ -448,7 +448,7 @@ equivocado en producción.
 | 3 | **RGCE 2026** | El parser lleva desde el 14-sep en la máquina de Persona 2 sin PR. El Sentinel ya distingue una resolución anual de una reforma, así que no hay nada bloqueándolo. |
 | 4 | **El texto de partida y subpartida de la LIGIE** | **3 683 de las 8 136 fracciones (45 %) tienen descripciones de menos de 25 caracteres** —`De acero inoxidable.`, sin decir de qué— y 2 104 empiezan por «Los demás». El sujeto vive en el texto de 4 dígitos, que no está en ninguna columna. Es la causa de fondo de que el motor no encuentre candidatas, y de los 6 FN de fracción. **Destino decidido el 22-sep: [ADR 0002](adr/0002-donde-vive-el-texto-de-partidas-y-subpartidas.md)** — tabla nueva `regulatory.tariff_headings`, y **nada de filas de 4 dígitos en `tariff_fractions`**. |
 | 5 | **Knowledge Graph** | Aprobado el 21-sep y en construcción. Es **proyección de Postgres, nunca fuente**: se reconstruye con MERGE por el id de la fila, y nada que fundamente jurídicamente puede citarse desde ahí. Es lo único que falta de INTELLIGENCE. |
-| 6 | **Las fuentes vacías** | `anam`, `banxico`, `cbp_cross`, `datamexico`, `ebti`, `sat`, `vucem`, `wco` y el Anexo 2.2.1 (fracción → NOM). Sin este último el Pedimento Espejo declara la NOM como no verificable en cada partida. |
+| 6 | **Las fuentes vacías** | `anam`, `banxico`, `cbp_cross`, `datamexico`, `ebti`, `sat`, `vucem`, `wco` y el Anexo 2.4.1 (fracción → NOM; corregido de "2.2.1" el 28-sep, ver [ADR 0003](adr/0003-correlacion-fraccion-nom.md)). Sin este último el Pedimento Espejo declara la NOM como no verificable en cada partida. |
 
 ### Deuda técnica conocida
 
@@ -564,7 +564,7 @@ rama suelta de `legal-chunks-legal-rule-id`.
 | 2 | **La cadena del proveedor** | 🔴 parte del mismo cargador. Sin `suppliers`, `invoices` e `invoice_item_id` ligado, la comprobación de país no corre sobre ninguno de los 15 pedimentos |
 | 3 | **Abrir el PR del parser de RGCE** | 🔴 lleva desde el 14-sep sin PR |
 | 4 | Texto de partida y subpartida de la LIGIE | después de la carga |
-| 5 | Reconocimiento de CBP CROSS · Anexo 2.2.1 | después |
+| 5 | Reconocimiento de CBP CROSS · Anexo 2.4.1 | después |
 
 ### Persona 3 — Ulises (AI + Full Stack)
 
