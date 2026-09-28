@@ -31,8 +31,13 @@ Engine y el resto de motores aún no están implementados.
 ## Requisitos
 
 Python 3.12+, Docker + Compose v2, Node 20+ (para `apps/web`).
-La instalación paso a paso está en
-[`infrastructure/scripts/00_INSTALACION.md`](infrastructure/scripts/00_INSTALACION.md).
+
+- **Dev server** (la máquina de Persona 1, con Tailscale y la API como
+  servicio): [`infrastructure/scripts/00_INSTALACION.md`](infrastructure/scripts/00_INSTALACION.md).
+- **Otra máquina, copiando la carpeta**:
+  [`docs/ARRANQUE_EN_OTRA_MAQUINA.md`](docs/ARRANQUE_EN_OTRA_MAQUINA.md).
+  Empieza por lo que sorprende: copiar la carpeta **no copia los datos**, que
+  viven en volúmenes de Docker.
 
 ## Arranque
 
