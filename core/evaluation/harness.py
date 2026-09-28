@@ -248,6 +248,16 @@ class Reporte(BaseModel):
     es_simulacion: bool
     """Algún caso es SYNTHETIC: el número NO es una medición (§33)."""
 
+    interrumpido: str | None = None
+    """Por qué la corrida se cortó antes de tiempo, o `None` si llegó al final.
+
+    Una corrida interrumpida NO es una corrida con menos casos: los que faltan
+    son los ÚLTIMOS, no una muestra. El 23-sep la base del equipo se apagó a
+    mitad de la medición y los 55 casos que quedaban eran los pedimentos
+    600011 a 600015 — un trozo contiguo del corpus, no un azar. Un porcentaje
+    calculado así se puede publicar, pero diciendo esto.
+    """
+
     verdad_de_modelo: bool = False
     """Algún caso trae verdad decidida por un modelo: esto NO es precisión.
 
@@ -312,14 +322,27 @@ def evaluar(
     tarifas: Tarifas,
     fecha_minima: date | None = None,
     limite: int | None = None,
+    errores_seguidos_para_abortar: int = 5,
 ) -> Reporte:
     """Corre los casos y arma el reporte. Un caso que falla no aborta la corrida.
 
     `limite` existe para el lote chico que va antes del conjunto completo: se
     cuentan como `casos` sólo los que se llegaron a mirar.
+
+    SI EL DESTINO SE CAE, SE DEJA DE PAGAR
+
+    Cada caso cuesta una llamada de extracción ANTES de clasificar. Cuando la
+    base deja de responder, la extracción sigue funcionando —no la toca— y el
+    harness seguiría comprando extracciones cuya clasificación no puede correr.
+    El 23-sep eso costó unos $1.50 en 55 casos seguidos que no midieron nada.
+
+    Cinco errores seguidos no son cinco casos raros: son un destino caído. Se
+    corta, se dice en el reporte, y lo ya medido se conserva.
     """
     resultados: list[ResultadoDeCaso] = []
     excluidos: Counter[str] = Counter()
+    seguidos = 0
+    interrumpido: str | None = None
     simulacion = False
     de_modelo = False
     costo = Decimal(0)
@@ -350,15 +373,25 @@ def evaluar(
             extraccion = extraer(documento)
             clasificacion = clasificar(extraccion.dna, caso.fecha)
         except Exception as exc:
+            motivo_error = f"{type(exc).__name__}: {exc}"[:300]
             resultados.append(
                 ResultadoDeCaso(
                     identificador=caso.identificador,
                     resultado="ERROR",
-                    motivo=f"{type(exc).__name__}: {exc}"[:300],
+                    motivo=motivo_error,
                     hs6_esperado=caso.hs6_esperado,
                 )
             )
+            seguidos += 1
+            if seguidos >= errores_seguidos_para_abortar:
+                interrumpido = (
+                    f"{seguidos} errores seguidos; el último: {motivo_error}. "
+                    "Se cortó para no seguir pagando extracciones que no se pueden medir."
+                )
+                break
             continue
+
+        seguidos = 0
 
         uso = extraccion.uso.model_copy(update={"embedding": clasificacion.embedding_tokens})
         costo += _costo(uso, tarifas)
@@ -402,6 +435,7 @@ def evaluar(
         costo_usd=costo.quantize(_DOS),
         tarifas_fuente=tarifas.fuente,
         es_simulacion=simulacion,
+        interrumpido=interrumpido,
         verdad_de_modelo=de_modelo,
         resultados=resultados,
     )

@@ -33,6 +33,7 @@ ningún modelo. El lote por defecto es chico a propósito.
 
 from __future__ import annotations
 
+from collections import Counter
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Final, cast
 
@@ -303,6 +304,23 @@ def _limites(r: Reporte) -> list[str]:
     return lineas
 
 
+def _errores(r: Reporte) -> list[str]:
+    """Por qué fallaron los casos que fallaron, agrupado.
+
+    El informe decía «55 con error» y se callaba la causa. Perseguirla costó
+    una investigación que el propio reporte podía haber ahorrado: eran
+    timeouts de conexión porque la base del equipo se apagó a mitad de la
+    corrida (23-sep).
+    """
+    fallos = [x for x in r.resultados if x.resultado == "ERROR"]
+    if not fallos:
+        return []
+    causas = Counter(x.motivo or "sin motivo" for x in fallos)
+    lineas = [f"ERRORES  {len(fallos)} casos no se pudieron medir"]
+    lineas += [f"  x{n:<4} {causa}" for causa, n in causas.most_common()]
+    return [*lineas, ""]
+
+
 def _desacuerdos(r: Reporte) -> list[str]:
     """Donde el motor y el corpus no coinciden. Lo más valioso de la corrida.
 
@@ -326,7 +344,14 @@ def _desacuerdos(r: Reporte) -> list[str]:
 def informe(r: Reporte) -> str:
     """El reporte completo: primero lo que no dice, después lo que dice."""
     a, cuando = r.hs_accuracy, r.acierto_cuando_responde
-    lineas = [
+    lineas = []
+    if r.interrumpido:
+        lineas += [
+            "⚠ CORRIDA INTERRUMPIDA — los casos que faltan son los ÚLTIMOS, no una muestra",
+            f"  {r.interrumpido}",
+            "",
+        ]
+    lineas += [
         f"FUENTE  {r.fuente}",
         f"CASOS   {r.casos} mirados · {r.evaluados} evaluados · {r.errores} con error",
         "",
@@ -343,6 +368,7 @@ def informe(r: Reporte) -> str:
         "",
         f"COSTO   ${r.costo_usd} · {r.tarifas_fuente}",
         "",
+        *_errores(r),
         *_desacuerdos(r),
     ]
     return "\n".join(lineas)

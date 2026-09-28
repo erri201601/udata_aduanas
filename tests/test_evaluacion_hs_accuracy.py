@@ -437,3 +437,69 @@ def test_por_omision_una_fuente_no_hereda_la_excepcion() -> None:
     )
 
     assert caso.mismo_catalogo_a_la_fecha is False
+
+
+# ── Si el destino se cae, se deja de pagar (23-sep) ──────────────────────────
+
+
+def _diez_casos() -> list[CasoDeEvaluacion]:
+    return [_caso_del_catalogo(identificador=f"p/{i}") for i in range(10)]
+
+
+def test_cinco_errores_seguidos_cortan_la_corrida() -> None:
+    """No son cinco casos raros: es un destino caído.
+
+    Cada caso paga una extracción ANTES de clasificar. Con la base apagada, la
+    extracción sigue funcionando y el harness compraría 55 extracciones que no
+    se pueden medir — costó unos $1.50 el 23-sep.
+    """
+
+    def clasificar_que_falla(_dna: ProductDnaDraft, _fecha: date) -> Clasificacion:
+        raise ConnectionError("connection timeout expired")
+
+    r = _correr(_diez_casos(), clasificar_que_falla)
+
+    assert r.errores == 5, "se cortó en el quinto, no siguió hasta el décimo"
+    assert r.interrumpido is not None
+    assert "connection timeout" in r.interrumpido
+
+
+def test_un_error_suelto_no_corta_nada() -> None:
+    """Un caso raro entre casos buenos no es una caída."""
+
+    fallados: list[str] = []
+
+    bueno = _clasificador("73231001")
+
+    def clasificar(dna: ProductDnaDraft, fecha: date) -> Clasificacion:
+        if not fallados:
+            fallados.append("x")
+            raise ValueError("un caso raro")
+        return bueno(dna, fecha)
+
+    r = _correr(_diez_casos(), clasificar)
+
+    assert r.errores == 1
+    assert r.interrumpido is None
+    assert r.evaluados == 9, "los nueve buenos se midieron"
+
+
+def test_una_corrida_completa_no_dice_que_se_interrumpio() -> None:
+    r = _correr(_diez_casos(), _clasificador("73231001"))
+
+    assert r.interrumpido is None
+    assert r.evaluados == 10
+
+
+def test_el_informe_dice_por_que_fallaron_los_casos() -> None:
+    """Decir «55 con error» y callar la causa obligó a una investigación."""
+    from apps.evaluacion.hs_accuracy import informe
+
+    def clasificar_que_falla(_dna: ProductDnaDraft, _fecha: date) -> Clasificacion:
+        raise ConnectionError("connection timeout expired")
+
+    texto = informe(_correr(_diez_casos(), clasificar_que_falla))
+
+    assert "ERRORES" in texto
+    assert "connection timeout expired" in texto
+    assert "INTERRUMPIDA" in texto
