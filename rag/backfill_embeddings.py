@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING
 import sqlalchemy as sa
 import structlog
 from apps.api.config import get_settings
+from core.llm.errors import ProviderResponseError
 from core.llm.registry import build_provider
 from database.models import LegalChunkRecord
 from sqlalchemy import create_engine
@@ -71,13 +72,56 @@ def backfill(session: Session, *, provider: HTTPModelProvider, commit_every: int
     filas = session.scalars(
         sa.select(LegalChunkRecord).where(LegalChunkRecord.embedding.is_(None))
     ).all()
+    vectorizados = 0
+    demasiado_largos: list[tuple[str, int]] = []
     for i, fila in enumerate(filas, start=1):
-        fila.embedding = provider.embed(fila.text)
+        try:
+            fila.embedding = provider.embed(fila.text)
+        except ProviderResponseError as exc:
+            if not _excede_el_contexto(exc):
+                raise
+            # Ni se trunca ni se parte aquí. Un vector de media norma haría
+            # que una búsqueda casara con lo que sí entró y no con lo que
+            # quedó fuera, sin que nadie pudiera notarlo: peor que no tener
+            # vector, porque el que falta se busca por término y éste
+            # mentiría en silencio. Se salta, se cuenta y se dice cuál.
+            demasiado_largos.append((fila.article or str(fila.id), len(fila.text)))
+            log.warning(
+                "backfill_embeddings.chunk_demasiado_largo",
+                articulo=fila.article,
+                caracteres=len(fila.text),
+            )
+            continue
+        vectorizados += 1
         if i % commit_every == 0:
             session.commit()
             log.info("backfill_embeddings.progreso", n=i, total=len(filas))
     session.commit()
-    return len(filas)
+
+    if demasiado_largos:
+        log.warning(
+            "backfill_embeddings.saltados",
+            cuantos=len(demasiado_largos),
+            de=len(filas),
+            detalle=[f"{a} ({n} caracteres)" for a, n in demasiado_largos],
+        )
+    return vectorizados
+
+
+#: Lo que responde OpenAI cuando el texto pasa del contexto del modelo de
+#: embeddings. Se reconoce por el mensaje porque el error llega con HTTP 400
+#: genérico, sin un código que lo distinga de otros 400.
+_EXCESO_DE_CONTEXTO = "maximum context length"
+
+
+def _excede_el_contexto(exc: ProviderResponseError) -> bool:
+    """¿El fallo es «este texto no cabe» y no otra cosa?
+
+    Sólo ese caso se salta. Un 429, una llave inválida o el proveedor caído
+    tienen que seguir tumbando la corrida: reintentar 500 chunks contra un
+    proveedor que no responde es pagar por nada.
+    """
+    return _EXCESO_DE_CONTEXTO in str(exc)
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
