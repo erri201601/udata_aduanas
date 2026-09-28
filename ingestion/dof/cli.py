@@ -1,12 +1,15 @@
-"""CLI de ingesta del Anexo 22: RAW -> PARSED -> VALIDATED -> DATABASE.
+"""CLI de ingesta del DOF (Anexo 22 y RGCE 2026): RAW -> PARSED -> DATABASE.
 
 Mismo contrato que `ingestion.snice.cli`: `--target` es obligatorio y mueve
 AMBOS destinos (base y MinIO) juntos, y el RAW se verifica en el destino
 antes de escribir una sola fila (regla 7 CLAUDE.md; Persona 1, 2026-09-08).
+Ambos RAW se suben siempre, se pida o no su carga; sólo se parsea y carga lo
+que el flag pide -- igual que `ingestion.diputados.cli`.
 
 Uso:
-    python -m ingestion.dof.cli --target local
-    python -m ingestion.dof.cli --target shared
+    python -m ingestion.dof.cli --target local  --anexo22
+    python -m ingestion.dof.cli --target local  --rgce
+    python -m ingestion.dof.cli --target shared --rgce --chunks
 """
 
 from __future__ import annotations
@@ -22,7 +25,7 @@ from apps.api.config import get_settings
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from ingestion.dof import anexo22, load
+from ingestion.dof import anexo22, load, rgce
 from ingestion.snice import raw
 
 if TYPE_CHECKING:
@@ -31,6 +34,7 @@ if TYPE_CHECKING:
 log = structlog.stdlib.get_logger("ingestion.dof.cli")
 
 ANEXO22_KEY = "dof/anexo22_20260115.pdf"
+RGCE_KEY = "dof/rgce_2026.html"
 
 
 def _database_url(target: str) -> str:
@@ -60,6 +64,28 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="'shared' escribe en la base y el MinIO del equipo — decisión explícita.",
     )
     parser.add_argument(
+        "--anexo22",
+        action="store_true",
+        help="Carga los 4 catálogos del Anexo 22 (aduanas, unidades, claves, identificadores).",
+    )
+    parser.add_argument(
+        "--rgce",
+        action="store_true",
+        help=(
+            "Carga las reglas de las RGCE 2026 a regulatory.legal_rules. Las 13 del "
+            "Transitorio Cuarto (vigencia en términos de otro decreto no almacenado) "
+            "se excluyen y se reportan: no se les inventa fecha."
+        ),
+    )
+    parser.add_argument(
+        "--chunks",
+        action="store_true",
+        help=(
+            "Con --rgce, además carga un chunk por regla en regulatory.legal_chunks "
+            "(§27, RAG) — sin embedding todavía: recuperable por término."
+        ),
+    )
+    parser.add_argument(
         "--raw-only",
         action="store_true",
         help="Solo sube y verifica el RAW en --target; no toca la base.",
@@ -69,73 +95,132 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
+    if not args.raw_only and not args.anexo22 and not args.rgce:
+        raise SystemExit("--anexo22 o --rgce es obligatorio salvo con --raw-only")
+    if args.chunks and not args.rgce:
+        raise SystemExit("--chunks sólo tiene efecto junto con --rgce")
     database_url = None if args.raw_only else _database_url(args.target)
     minio_target = _minio_target(args.target)
 
-    log.info("dof.anexo22.cli.start", target=args.target)
+    log.info("dof.cli.start", target=args.target)
 
-    with tempfile.TemporaryDirectory(prefix="anexo22_") as tmp:
+    with tempfile.TemporaryDirectory(prefix="dof_") as tmp:
         tmp_path = Path(tmp)
 
-        pdf_bytes = raw.fetch(load.ANEXO22_SOURCE_URL)
-        capture = raw.store_raw_bytes(
-            pdf_bytes,
+        anexo22_bytes = raw.fetch(load.ANEXO22_SOURCE_URL)
+        anexo22_capture = raw.store_raw_bytes(
+            anexo22_bytes,
             source_url=load.ANEXO22_SOURCE_URL,
             minio_key=ANEXO22_KEY,
             target=minio_target,
         )
-        pdf_path = tmp_path / "anexo22.pdf"
-        pdf_path.write_bytes(pdf_bytes)
+        anexo22_path = tmp_path / "anexo22.pdf"
+        anexo22_path.write_bytes(anexo22_bytes)
 
-        raw.verify_stored(target=minio_target, minio_key=ANEXO22_KEY)
-
-        if args.raw_only:
-            print(f"RAW OK ({args.target}): {capture.minio_key}  sha256={capture.content_hash}")
-            log.info("dof.anexo22.cli.done", target=args.target, raw_only=True)
-            return 0
-
-        lines = anexo22.extract_text(str(pdf_path))
-        headings = anexo22.find_appendix_headings(lines)
-
-        offices = anexo22.parse_customs_offices(anexo22.appendix_block(lines, headings, 1))
-        units = anexo22.parse_units_of_measure(anexo22.appendix_block(lines, headings, 7))
-        claves = anexo22.parse_pedimento_claves(anexo22.appendix_block(lines, headings, 2))
-        regulations = anexo22.parse_non_tariff_regulations(
-            anexo22.appendix_block(lines, headings, 9)
+        rgce_bytes = raw.fetch(load.RGCE_SOURCE_URL)
+        rgce_capture = raw.store_raw_bytes(
+            rgce_bytes,
+            source_url=load.RGCE_SOURCE_URL,
+            minio_key=RGCE_KEY,
+            target=minio_target,
         )
 
-    print(
-        f"Parseado: {len(offices)} aduanas/secciones, {len(units)} unidades de medida, "
-        f"{len(claves)} claves de pedimento (solo código), "
-        f"{len(regulations)} identificadores no arancelarios."
-    )
+        for key in (ANEXO22_KEY, RGCE_KEY):
+            raw.verify_stored(target=minio_target, minio_key=key)
+
+        if args.raw_only:
+            for capture in (anexo22_capture, rgce_capture):
+                print(f"RAW OK ({args.target}): {capture.minio_key}  sha256={capture.content_hash}")
+            log.info("dof.cli.done", target=args.target, raw_only=True)
+            return 0
+
+        offices = units = claves = regulations = None
+        if args.anexo22:
+            lines = anexo22.extract_text(str(anexo22_path))
+            headings = anexo22.find_appendix_headings(lines)
+            offices = anexo22.parse_customs_offices(anexo22.appendix_block(lines, headings, 1))
+            units = anexo22.parse_units_of_measure(anexo22.appendix_block(lines, headings, 7))
+            claves = anexo22.parse_pedimento_claves(anexo22.appendix_block(lines, headings, 2))
+            regulations = anexo22.parse_non_tariff_regulations(
+                anexo22.appendix_block(lines, headings, 9)
+            )
+
+        reglas = None
+        if args.rgce:
+            # El meta del HTML dice iso-8859-1, pero los bytes son UTF-8 estricto
+            # (verificado contra el documento real): decodificar como latin-1
+            # convertiría cada acento en dos caracteres basura.
+            reglas = rgce.parse_rules(rgce_bytes.decode("utf-8"))
+
+    if offices is not None and units is not None and claves is not None and regulations is not None:
+        print(
+            f"Parseado: {len(offices)} aduanas/secciones, {len(units)} unidades de medida, "
+            f"{len(claves)} claves de pedimento (solo código), "
+            f"{len(regulations)} identificadores no arancelarios."
+        )
+    if reglas is not None:
+        print(f"Parseado: {len(reglas)} reglas de las RGCE 2026.")
 
     assert database_url is not None  # solo llegamos aquí sin --raw-only
     engine = create_engine(database_url)
     with Session(engine) as session:
-        n_offices, n_units, n_claves, n_regs = load.load_anexo22(
-            session,
-            offices=offices,
-            units=units,
-            claves=claves,
-            regulations=regulations,
-            content_hash=capture.content_hash,
-            retrieved_at=capture.retrieved_at,
-        )
+        if offices is not None and units is not None and claves is not None:
+            assert regulations is not None
+            n_offices, n_units, n_claves, n_regs = load.load_anexo22(
+                session,
+                offices=offices,
+                units=units,
+                claves=claves,
+                regulations=regulations,
+                content_hash=anexo22_capture.content_hash,
+                retrieved_at=anexo22_capture.retrieved_at,
+            )
+            print(
+                f"OK ({args.target}): {n_offices} aduanas/secciones, {n_units} unidades, "
+                f"{n_claves} claves, {n_regs} identificadores insertados."
+            )
+            log.info(
+                "dof.anexo22.cli.done",
+                target=args.target,
+                offices=n_offices,
+                units=n_units,
+                claves=n_claves,
+                regulations=n_regs,
+            )
+
+        if reglas is not None:
+            n_reglas, excluidas = load.load_rgce(
+                session,
+                reglas=reglas,
+                content_hash=rgce_capture.content_hash,
+                retrieved_at=rgce_capture.retrieved_at,
+            )
+            print(
+                f"OK ({args.target}): {n_reglas} reglas RGCE insertadas en regulatory.legal_rules."
+            )
+            if excluidas:
+                print(
+                    f"EXCLUIDAS ({len(excluidas)}, needs_validation, sin valid_from inventado): "
+                    + ", ".join(r.rule_number for r in excluidas)
+                )
+            n_chunks = None
+            if args.chunks:
+                n_chunks = load.load_rgce_chunks(
+                    session,
+                    reglas=reglas,
+                    content_hash=rgce_capture.content_hash,
+                    retrieved_at=rgce_capture.retrieved_at,
+                )
+                print(f"OK ({args.target}): {n_chunks} chunks RGCE insertados.")
+            log.info(
+                "dof.rgce.cli.done",
+                target=args.target,
+                reglas=n_reglas,
+                excluidas=[r.rule_number for r in excluidas],
+                chunks=n_chunks,
+            )
         session.commit()
 
-    print(
-        f"OK ({args.target}): {n_offices} aduanas/secciones, {n_units} unidades, "
-        f"{n_claves} claves, {n_regs} identificadores insertados."
-    )
-    log.info(
-        "dof.anexo22.cli.done",
-        target=args.target,
-        offices=n_offices,
-        units=n_units,
-        claves=n_claves,
-        regulations=n_regs,
-    )
     return 0
 
 
