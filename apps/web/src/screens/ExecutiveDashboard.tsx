@@ -109,6 +109,12 @@ export function ExecutiveDashboard() {
               tono={datos.clasificaciones.requieren_revision > 0 ? 'atencion' : 'normal'}
             />
             <Cifra
+              valor={datos.clasificaciones.dictaminadas}
+              etiqueta="dictaminadas por una persona"
+              nota="La única verdad del sistema que no generamos nosotros."
+              tono={datos.clasificaciones.dictaminadas > 0 ? 'bien' : 'normal'}
+            />
+            <Cifra
               valor={datos.clasificaciones.sin_informacion}
               etiqueta="sin información suficiente"
               nota="El motor no pudo, y lo dice."
@@ -140,14 +146,20 @@ export function ExecutiveDashboard() {
           <h2 className="seccion">Riesgo detectado</h2>
           <div className="tablero">
             <Cifra valor={datos.hallazgos.total} etiqueta="hallazgos" />
+            {/* El reparto, no sólo la peor. Un CRITICAL entre ochenta y ocho y
+                ochenta y ocho CRITICAL se leían igual, y quien mira el tablero
+                puede creer que el alarmado es el sistema y no los pedimentos
+                que audita. */}
             <Cifra
-              valor={datos.hallazgos.peor_severidad ?? '—'}
-              etiqueta="peor severidad"
-              tono={
-                ['CRITICAL', 'HIGH'].includes(datos.hallazgos.peor_severidad ?? '')
-                  ? 'atencion'
-                  : 'normal'
+              valor={datos.hallazgos.por_severidad?.CRITICAL ?? 0}
+              etiqueta="críticos"
+              nota={
+                Object.entries(datos.hallazgos.por_severidad ?? {})
+                  .filter(([nivel]) => nivel !== 'CRITICAL')
+                  .map(([nivel, n]) => `${n} ${nivel.toLowerCase()}`)
+                  .join(' · ') || 'No hay más severidades.'
               }
+              tono={(datos.hallazgos.por_severidad?.CRITICAL ?? 0) > 0 ? 'atencion' : 'bien'}
             />
             <Cifra
               valor={impacto ?? '—'}

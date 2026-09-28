@@ -42,6 +42,11 @@ class SesionFalsa:
         self.sql.append(str(sentencia))
         return self._v.get(f"s{self._llamadas}")
 
+    def execute(self, sentencia: Any) -> Any:
+        """El reparto por severidad: filas, no un escalar."""
+        self.sql.append(str(sentencia))
+        return iter(self._v.get("severidades", ()))
+
 
 def _cliente(**valores: Any) -> TestClient:
     app = create_app()

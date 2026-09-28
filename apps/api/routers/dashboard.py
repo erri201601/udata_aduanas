@@ -60,6 +60,18 @@ class Clasificaciones(BaseModel):
     resueltas: int = 0
     requieren_revision: int = 0
     """Ni error ni éxito: es trabajo esperando a una persona."""
+    dictaminadas: int = 0
+    """Sobre las que YA se pronunció un clasificador.
+
+    Atraviesa a las demás en vez de excluirlas: una decisión puede estar
+    resuelta Y dictaminada, y por eso los cuatro números pueden sumar más que
+    el total. Forzar categorías exclusivas escondería justo el caso que más
+    interesa —la máquina resolvió y una persona lo confirmó o lo corrigió—.
+
+    Sin esto las cifras no sumaban —11 decisiones, 2 resueltas, 2 esperando— y
+    los 7 casos que faltaban eran justo los que más valen: la única verdad del
+    sistema que no generamos nosotros.
+    """
     sin_informacion: int = 0
     """El motor no pudo, y saberlo vale tanto como el código cuando sí puede."""
     con_traza: int = 0
@@ -83,6 +95,16 @@ class Hallazgos(BaseModel):
 
     total: int = 0
     peor_severidad: str | None = None
+    por_severidad: dict[str, int] = Field(default_factory=dict)
+    """Cuántos hay de cada severidad.
+
+    `peor_severidad` sola no dice nada: un CRITICAL entre ochenta y ocho y
+    ochenta y ocho CRITICAL se leen igual, y no son lo mismo. Enseñar el
+    reparto convierte una palabra que alarma en información que se puede usar
+    —y evita que quien mira el tablero crea que el alarmado es el sistema y no
+    los pedimentos que audita.
+    """
+
     accionables: int = 0
     """Con impacto cuantificado: se pueden llevar a un cliente."""
     solo_investigables: int = 0
@@ -164,6 +186,50 @@ def _por_partida() -> sa.Subquery:
     )
 
 
+def _la_decision_vigente() -> sa.ColumnElement[bool]:
+    """La última decisión de cada ficha, no todas las que hubo.
+
+    Clasificar otra vez el mismo producto no es otro caso: es el mismo caso
+    con una respuesta nueva. Las decisiones sin ficha pasan una a una —sin
+    `product_dna_id` no hay por qué agruparlas, y descartarlas perdería casos
+    en silencio.
+    """
+    otra = sa.orm.aliased(ClassificationDecision, name="otra_decision")
+    reciente = (
+        sa.select(sa.func.max(otra.created_at))
+        .where(
+            otra.product_dna_id == ClassificationDecision.product_dna_id,
+            otra.data_origin != "HUMAN_VALIDATED",
+        )
+        .scalar_subquery()
+    )
+    return sa.and_(
+        # Un veredicto humano no es una decisión del motor: describe lo que
+        # hizo una persona sobre ella. Contarlo aquí haría que un caso
+        # dictaminado desapareciera de «esperan» por la puerta equivocada —lo
+        # que lo saca es `requires_human_review`, que la revisión pone en
+        # falso, igual que en la bandeja (#131).
+        ClassificationDecision.data_origin != "HUMAN_VALIDATED",
+        sa.or_(
+            ClassificationDecision.product_dna_id.is_(None),
+            ClassificationDecision.created_at == reciente,
+        ),
+    )
+
+
+def _ya_dictaminada() -> sa.ColumnElement[bool]:
+    """¿Existe un veredicto humano que apunte a esta decisión?
+
+    Se pregunta por el veredicto y no por `requires_human_review`: ese campo
+    también es falso en las que el motor resolvió limpio y nadie miró, que es
+    otra cosa muy distinta.
+    """
+    veredicto = sa.orm.aliased(ClassificationDecision, name="veredicto")
+    return sa.exists(
+        sa.select(veredicto.id).where(veredicto.reviews_decision_id == ClassificationDecision.id)
+    )
+
+
 def _contar(session: SessionDep, modelo: type, *filtros: sa.ColumnElement) -> int:
     return session.scalar(sa.select(sa.func.count()).select_from(modelo).where(*filtros)) or 0
 
@@ -171,23 +237,39 @@ def _contar(session: SessionDep, modelo: type, *filtros: sa.ColumnElement) -> in
 @router.get("", summary="Cifras del sistema")
 def tablero(session: SessionDep) -> Dashboard:
     """Todo en una respuesta: un tablero que se pinta a trozos parpadea."""
+    # UN PRODUCTO ES UN CASO, NO UNA FILA POR CADA VEZ QUE SE CLASIFICÓ
+    #
+    # Contando decisiones, el tablero anunciaba 24 «esperando a una persona»
+    # mientras la bandeja enseñaba 9: cada re-clasificación del mismo producto
+    # —por una prueba, por un cambio del motor— dejaba otra fila pendiente.
+    # «Esperan a una persona» es trabajo, y el trabajo son casos.
+    #
+    # Se cuenta el estado VIGENTE de cada ficha, con el mismo criterio que la
+    # bandeja (#131). Quinta vez que aparece el patrón en el proyecto.
+    vigente = _la_decision_vigente()
     decisiones = Clasificaciones(
-        total=_contar(session, ClassificationDecision),
+        total=_contar(session, ClassificationDecision, vigente),
         resueltas=_contar(
-            session, ClassificationDecision, ClassificationDecision.status == "RESOLVED"
+            session, ClassificationDecision, vigente, ClassificationDecision.status == "RESOLVED"
         ),
+        # El mismo criterio que la bandeja: lo que sigue esperando es lo que
+        # NADIE ha dictaminado todavía. Con `status` a secas, un caso ya
+        # revisado seguiría contando como pendiente para siempre.
         requieren_revision=_contar(
             session,
             ClassificationDecision,
-            ClassificationDecision.status == "HUMAN_REVIEW_REQUIRED",
+            vigente,
+            ClassificationDecision.requires_human_review.is_(True),
         ),
         sin_informacion=_contar(
             session,
             ClassificationDecision,
+            vigente,
             ClassificationDecision.status == "INSUFFICIENT_INFORMATION",
         ),
+        dictaminadas=_contar(session, ClassificationDecision, vigente, _ya_dictaminada()),
         con_traza=_contar(
-            session, ClassificationDecision, ClassificationDecision.rgi_trace.isnot(None)
+            session, ClassificationDecision, vigente, ClassificationDecision.rgi_trace.isnot(None)
         ),
     )
 
@@ -227,6 +309,15 @@ def tablero(session: SessionDep) -> Dashboard:
     moneda = session.scalar(
         sa.select(RiskFinding.impact_amount_currency).where(vigentes, con_monto).limit(1)
     )
+    reparto = {
+        fila.severity: fila.cuantos
+        for fila in session.execute(
+            sa.select(RiskFinding.severity, sa.func.count().label("cuantos"))
+            .where(vigentes)
+            .group_by(RiskFinding.severity)
+        )
+        if fila.severity
+    }
     peor = session.scalar(
         sa.select(RiskFinding.severity)
         .where(vigentes)
@@ -267,6 +358,7 @@ def tablero(session: SessionDep) -> Dashboard:
         hallazgos=Hallazgos(
             total=total_hallazgos,
             peor_severidad=peor,
+            por_severidad=reparto,
             accionables=accionables,
             solo_investigables=total_hallazgos - accionables,
             impacto_cuantificado=suma,
