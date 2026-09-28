@@ -13,8 +13,8 @@ from unittest.mock import MagicMock
 
 import pytest
 import sqlalchemy as sa
-from database.models.regulatory import EMBEDDING_DIM
 from core.llm.errors import ProviderResponseError
+from database.models.regulatory import EMBEDDING_DIM
 from rag.backfill_embeddings import _database_url, backfill, main
 
 from tests.test_canonical_model import pg_session  # noqa: F401 — fixture reutilizada
