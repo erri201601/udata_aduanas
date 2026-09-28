@@ -14,6 +14,7 @@ from unittest.mock import MagicMock
 import pytest
 import sqlalchemy as sa
 from database.models.regulatory import EMBEDDING_DIM
+from core.llm.errors import ProviderResponseError
 from rag.backfill_embeddings import _database_url, backfill, main
 
 from tests.test_canonical_model import pg_session  # noqa: F401 — fixture reutilizada
@@ -249,3 +250,60 @@ def test_backfill_conserva_lo_confirmado_si_falla_a_mitad(pg_session: sa.orm.Ses
     ).all()
     assert sum(1 for f in filas if f.embedding is not None) == 2
     assert sum(1 for f in filas if f.embedding is None) == 3
+
+
+# ── Un chunk que no cabe no tumba la carga (Persona 1, 28-sep) ─────────────
+
+
+class _ProveedorConUnTextoQueNoCabe:
+    """Rechaza un texto concreto como lo hace OpenAI: HTTP 400 genérico."""
+
+    default_embedding_model = "fake-embedding"
+
+    def __init__(self, rechaza: str) -> None:
+        self._rechaza = rechaza
+        self.llamadas: list[str] = []
+
+    def embed(self, text: str) -> list[float]:
+        self.llamadas.append(text)
+        if text == self._rechaza:
+            raise ProviderResponseError(
+                "openai: HTTP 400 — Invalid 'input': maximum context length is 8192 tokens."
+            )
+        return _VECTOR_DE_MENTIRA
+
+
+def test_un_chunk_demasiado_largo_no_impide_vectorizar_los_demas() -> None:
+    """537 reglas de las RGCE se quedaron sin vector por 3 que no caben.
+
+    La regla 7.3.3 mide 46 094 caracteres. Con la excepción propagándose, un
+    solo chunk largo dejaba las otras 534 sin vectorizar — e invisibles para
+    la búsqueda semántica del Copilot.
+    """
+    sesion = MagicMock()
+    largo, corto = _chunk(embedding=None), _chunk(embedding=None)
+    largo.text = "x" * 46094
+    sesion.scalars.return_value.all.return_value = [largo, corto]
+
+    tocados = backfill(sesion, provider=_ProveedorConUnTextoQueNoCabe(largo.text))  # type: ignore[arg-type]
+
+    assert tocados == 1, "el corto sí se vectorizó"
+    assert corto.embedding == _VECTOR_DE_MENTIRA
+    assert largo.embedding is None, "el largo se salta, no se trunca"
+
+
+def test_un_fallo_que_no_sea_de_longitud_si_tumba_la_corrida() -> None:
+    """Un 429 o una llave inválida tienen que parar: reintentar 500 chunks
+    contra un proveedor que no responde es pagar por nada."""
+
+    class _ProveedorCaido:
+        default_embedding_model = "fake-embedding"
+
+        def embed(self, text: str) -> list[float]:
+            raise ProviderResponseError("openai: HTTP 429 — rate limit exceeded")
+
+    sesion = MagicMock()
+    sesion.scalars.return_value.all.return_value = [_chunk(embedding=None)]
+
+    with pytest.raises(ProviderResponseError):
+        backfill(sesion, provider=_ProveedorCaido())  # type: ignore[arg-type]
