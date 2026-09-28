@@ -1,6 +1,6 @@
 """Tablero ejecutivo (§32).
 
-Es lo primero que ve alguien de AJR, y por eso es donde más tienta redondear.
+Es lo primero que ve alguien del cliente, y por eso es donde más tienta redondear.
 No lo hace: cada cifra sale de contar filas reales, y las que no se pueden
 sostener no se inventan.
 

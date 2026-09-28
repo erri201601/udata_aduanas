@@ -1,6 +1,6 @@
 """Esquema `operational` — clientes, proveedores, productos y operaciones.
 
-Hoy todo aquí es `SYNTHETIC` (§10 maestro): no hay acceso a datos reales de AJR.
+Hoy todo aquí es `SYNTHETIC` (§10 maestro): no hay acceso a datos reales del cliente.
 Cada fila lleva `synthetic_scenario_id` + `seed` para ser reproducible, y jamás
 se presenta como real en la UI.
 

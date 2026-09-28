@@ -51,8 +51,8 @@ La laptop de Persona 1, `udata-nitro`. Se accede **sólo por Tailscale**.
 
 | Servicio | Puerto | Notas |
 |---|---|---|
-| API (FastAPI) | `100.86.182.104:8080` | servicio systemd `aduanero-api` |
-| PostgreSQL 16 + pgvector | `100.86.182.104:5433` | **no 5432** |
+| API (FastAPI) | `<IP-DEL-DEV-SERVER>:8080` | servicio systemd `aduanero-api` |
+| PostgreSQL 16 + pgvector | `<IP-DEL-DEV-SERVER>:5433` | **no 5432** |
 | Neo4j | `:7474` (browser) · `:7687` (bolt) | vacío, sin usar |
 | Redis | `:6379` | sin usar |
 | MinIO | `:9000` (API) · `:9001` (consola) | `aduanero-raw` con 5 documentos; `aduanero-docs` vacío |
@@ -65,8 +65,10 @@ IP de Tailscale). Nunca en `0.0.0.0`.
 
 ### Tailnet
 
-`udata.com.mx`. Tres nodos: `udata-nitro` (100.86.182.104), `carlos`
-(100.68.22.56), `yayo` (100.86.224.19).
+Tres nodos: el dev server, la máquina de Persona 3 y la de respaldos. Las IP
+no van aquí: el repositorio es público desde el 28-sep y una dirección del
+tailnet con su nombre de host es un mapa, no una configuración. Las entrega
+Persona 1 por canal seguro.
 
 ### Operación
 

@@ -135,7 +135,7 @@ más valioso del sistema: alimentan la evaluación del §39.
 
 Tras hacer pull de develop, corre `pip install -e ".[dev]"`.
 
-Datos reales disponibles en 100.86.182.104:5433 — 1445 fracciones, 2171 NICO,
+Datos reales disponibles en <IP-DEL-DEV-SERVER>:5433 — 1445 fracciones, 2171 NICO,
 y un escenario sintético con los cuatro estados de atributo.
 
 Cierra con el formato de reporte de §46.

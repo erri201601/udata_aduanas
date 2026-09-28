@@ -66,9 +66,9 @@ def test_la_base_del_equipo_sale_del_entorno_no_del_env(
     """La contraseña de la base compartida no vive en `.env` ni en el código."""
     from apps.api.config import url_de_postgres
 
-    monkeypatch.setenv("ADUANERO_SHARED_URL", "postgresql+psycopg://u:p@100.86.182.104:5433/a")
+    monkeypatch.setenv("ADUANERO_SHARED_URL", "postgresql+psycopg://u:p@dev-server.example:5433/a")
 
-    assert url_de_postgres("shared").endswith("@100.86.182.104:5433/a")
+    assert url_de_postgres("shared").endswith("@dev-server.example:5433/a")
 
 
 def test_sin_la_variable_no_se_inventa_un_destino(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -62,7 +62,7 @@ estructura, carga y versionado.
 
 `apps/web/` con React + TypeScript + Vite.
 
-Apunta a `http://100.86.182.104:8080` o `http://localhost:8080`. El CORS ya
+Apunta a `http://<IP-DEL-DEV-SERVER>:8080` o `http://localhost:8080`. El CORS ya
 está abierto para `localhost:5173`.
 
 Empieza por lo que **ya tiene endpoint real**: `GET /health/ready` devuelve el
@@ -80,7 +80,7 @@ visible (§33). Las fuentes jurídicas pueden marcarse `OFFICIAL SOURCE`. Que
 alguien confunda un pedimento simulado con uno real en una demo ante AJR es el
 peor fallo posible de este producto.
 
-Genera el cliente TypeScript desde `http://100.86.182.104:8080/openapi.json`
+Genera el cliente TypeScript desde `http://<IP-DEL-DEV-SERVER>:8080/openapi.json`
 en vez de escribir los tipos a mano.
 
 ---

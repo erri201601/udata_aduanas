@@ -44,10 +44,10 @@ class _ClienteFalso:
 
 def test_parse_minio_url_extrae_endpoint_usuario_secreto_y_esquema() -> None:
     endpoint, access_key, secret_key, secure = raw.parse_minio_url(
-        "http://aduanero_minio:s3cr3t@100.86.182.104:9000"
+        "http://aduanero_minio:s3cr3t@dev-server.example:9000"
     )
 
-    assert endpoint == "100.86.182.104:9000"
+    assert endpoint == "dev-server.example:9000"
     assert access_key == "aduanero_minio"
     assert secret_key == "s3cr3t"
     assert secure is False

@@ -35,7 +35,7 @@ de Persona 1: *"nunca exponer PostgreSQL directamente a Internet"*.
 - Cualquier documentación, script o cliente debe usar 8080 y 5433. Los tests en
   `tests/test_config.py` fijan estos valores para que nadie los "corrija".
 - Tailscale quedó instalado el 2026-09-02. El dev server es `udata-nitro`,
-  IP `100.86.182.104`. Persona 2 y 3 deben ser **invitados al tailnet** por
+  IP `<IP-DEL-DEV-SERVER>`. Persona 2 y 3 deben ser **invitados al tailnet** por
   Persona 1: instalar el cliente no basta.
 - Si la IP de Tailscale cambia, hay que actualizar `TEAM_BIND_ADDR` en `.env`,
   `docs/ACCESO_EQUIPO.md` y recrear los contenedores. El smoke test detecta la

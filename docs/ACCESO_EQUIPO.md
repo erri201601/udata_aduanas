@@ -1,88 +1,44 @@
 # ADUANERO OS — Accesos para el equipo
 
-**Para:** Persona 2 (Data Engineer) y Persona 3 (AI/Full Stack)  
+**Para:** Persona 2 (Data Engineer) y Persona 3 (AI/Full Stack)
 **Administra:** Persona 1
 
-> Las contraseñas **no viven en este archivo ni en Git** (§40 maestro).
-> Persona 1 las entrega por canal seguro (gestor de contraseñas / 1:1).
-> Los valores reales están en el `.env` de la laptop de Persona 1.
-
 ---
 
-## 1. Requisito previo: Tailscale
+## Aquí ya no están las coordenadas, y es a propósito
 
-No hay acceso sin Tailscale. Los servicios sólo escuchan en loopback y en la
-IP del tailnet — nunca en la LAN ni en Internet.
+Este documento tenía la IP del dev server, su nombre de host, los puertos de
+cada servicio y los usuarios de Postgres, Neo4j y MinIO. **El repositorio es
+público desde el 28 de septiembre de 2026**, y esa tabla no era una
+configuración: era un mapa.
 
-**La IP del dev server de Persona 1 es `100.86.182.104`** (host `udata-nitro`).
+Ninguna contraseña estuvo nunca aquí —eso se hizo bien desde el principio—
+pero un mapa con usuarios, puertos y direcciones le ahorra el reconocimiento a
+cualquiera que algún día llegue a la red. El rol de Postgres es superusuario.
 
-Persona 1 debe invitarte antes al tailnet; sin eso, instalar Tailscale no
-basta. Una vez invitado:
+**Cómo se piden ahora:** a Persona 1, por canal seguro. Entrega la dirección,
+el usuario y la contraseña juntos, y ninguno de los tres se escribe en el
+repositorio, ni en un chat, ni «temporalmente».
 
-```bash
-curl -fsSL https://tailscale.com/install.sh | sh
-sudo tailscale up          # abre el navegador para autenticarte
-tailscale status           # debes ver udata-nitro en la lista
-ping 100.86.182.104
-```
+**Requisito previo:** hay que estar invitado al tailnet. Sin eso no se alcanza
+nada: los servicios escuchan sólo en loopback y en la IP del tailnet, nunca en
+la LAN ni en Internet.
 
----
-
-## 2. PostgreSQL — la base donde se insertan los datos
-
-| Parámetro | Valor |
-|---|---|
-| Host | `100.86.182.104` (desde la laptop de P1 también vale `localhost`) |
-| **Puerto** | **5433** ← no 5432; el 5432 lo ocupa otro Postgres ajeno al proyecto |
-| Base | `aduanero` |
-| Usuario | `aduanero_app` |
-| Contraseña | pídesela a Persona 1 |
-| SSL | no requerido dentro de Tailscale |
-
-Cadena de conexión:
-
-```
-postgresql://aduanero_app:<PASSWORD>@100.86.182.104:5433/aduanero
-```
-
-SQLAlchemy / Python:
-
-```
-postgresql+psycopg://aduanero_app:<PASSWORD>@100.86.182.104:5433/aduanero
-```
-
-Prueba:
-
-```bash
-psql "postgresql://aduanero_app:<PASSWORD>@100.86.182.104:5433/aduanero" -c "\dn"
-```
-
-### Las herramientas la leen de `ADUANERO_SHARED_URL`, no de `.env`
-
-Hay una sola base y vive en la laptop de Persona 1. **Nadie levanta una
-segunda**: dos bases serían dos verdades, y cualquier medición dejaría de
-decir algo sobre el sistema.
-
-Los CLIs que se conectan desde otra máquina —la métrica del §26, la proyección
-del grafo— piden `--target shared` y leen la URL de la variable de entorno:
+**Cómo las usan las herramientas:** por variable de entorno en la sesión que
+las necesita, nunca en `.env` compartido ni en el código.
 
 ```bash
 umask 077
-cat > /tmp/.aduanero <<'EOF'
-export ADUANERO_SHARED_URL='postgresql+psycopg://aduanero_app:<PASSWORD>@100.86.182.104:5433/aduanero'
-EOF
-source /tmp/.aduanero && rm /tmp/.aduanero
+export ADUANERO_SHARED_URL='postgresql+psycopg://<USUARIO>:<PASSWORD>@<HOST>:<PUERTO>/<BASE>'
 python -m apps.evaluacion.deteccion_26 --target shared --escenarios
 ```
 
-La contraseña **no se escribe en `.env`, ni en el repositorio, ni en un chat**.
-Vive en la variable durante la sesión que la necesita y se va con ella.
+Desde la laptop de Persona 1 no hace falta: allí `--target local` **ya es** la
+base del equipo.
 
-Desde la laptop de Persona 1 esto no hace falta: ahí `--target local` **ya es**
-la base del equipo, y `shared` falla pidiendo una variable que en esa máquina
-no existe.
+---
 
-### Esquemas y quién escribe en cada uno
+## Qué hay en la base, y quién escribe en cada esquema
 
 | Esquema | Contenido | Escribe |
 |---|---|---|
@@ -110,52 +66,16 @@ no existe.
 
 ---
 
-## 3. Neo4j — Knowledge Graph (Persona 3)
+## Neo4j, Redis, MinIO y la API
 
-| Parámetro | Valor |
-|---|---|
-| Browser | `http://100.86.182.104:7474` |
-| Bolt | `bolt://100.86.182.104:7687` |
-| Usuario | `neo4j` |
-| Contraseña | pídesela a Persona 1 |
+Sus direcciones y usuarios salían aquí y se fueron por lo mismo. Lo que sí
+conviene que siga escrito, porque son decisiones y no coordenadas:
 
----
-
-## 4. Redis — cache y colas
-
-| Parámetro | Valor |
-|---|---|
-| Host / puerto | `100.86.182.104:6379` |
-| Contraseña | pídesela a Persona 1 (`requirepass` activo) |
-
-```
-redis://:<PASSWORD>@100.86.182.104:6379/0
-```
-
----
-
-## 5. MinIO — documentos (PDFs del DOF, fichas técnicas, imágenes)
-
-| Parámetro | Valor |
-|---|---|
-| API S3 | `http://100.86.182.104:9000` |
-| Consola web | `http://100.86.182.104:9001` |
-| Access key | `aduanero_minio` |
-| Secret key | pídesela a Persona 1 |
-| Buckets | `aduanero-raw` (versionado), `aduanero-docs` |
-
----
-
-## 6. API
-
-| Parámetro | Valor |
-|---|---|
-| Base URL | `http://100.86.182.104:8080` |
-| Health | `GET /health` |
-| Readiness | `GET /health/ready` |
-| OpenAPI | `http://100.86.182.104:8080/docs` |
-
-> El puerto **8080**, no 8000: el 8000 lo ocupa otro proyecto en la laptop de Persona 1.
+- La API usa el puerto **8080**, no 8000 (ADR 0001).
+- Postgres usa el **5433**, no 5432: el 5432 lo ocupa una instancia ajena al
+  proyecto en esa máquina.
+- MinIO guarda el RAW versionado. Nada se inserta NORMALIZED sin su RAW.
+- El grafo de Neo4j es **proyección** de Postgres, nunca fuente (§28).
 
 ---
 

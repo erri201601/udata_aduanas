@@ -1,5 +1,5 @@
 /**
- * Classification — la pantalla que se le enseña a AJR (§18, §32, §49).
+ * Classification — la pantalla que se le enseña al cliente (§18, §32, §49).
  *
  * Lo valioso no es el código que devuelve el sistema: es poder explicar cómo
  * se llegó a él. Un agente aduanal firma con su nombre, y no puede firmar una
