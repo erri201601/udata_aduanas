@@ -17,6 +17,7 @@ pasar de largo, no.
 from __future__ import annotations
 
 import re
+import unicodedata
 from decimal import Decimal
 from typing import TYPE_CHECKING, Protocol
 
@@ -562,7 +563,7 @@ class RGI6:
                 missing_information=(f"subpartidas de {partida.heading}",),
             )
 
-        elegida = _unica_o_mas_especifica(subs)
+        elegida = _unica_o_mas_especifica(subs, mercancia=context.description)
         if elegida is None:
             return RGIResult(
                 rule_id=self.rule_id,
@@ -594,7 +595,7 @@ class RGI6:
                 confidence=_confianza(context),
             )
 
-        fraccion = _unica_o_mas_especifica(fracciones)
+        fraccion = _unica_o_mas_especifica(fracciones, mercancia=context.description)
         if fraccion is None:
             return RGIResult(
                 rule_id=self.rule_id,
@@ -628,16 +629,63 @@ class RGI6:
 # ── Auxiliares ───────────────────────────────────────────────────────────────
 
 
-def _unica_o_mas_especifica(cands: Sequence[TariffCandidate]) -> TariffCandidate | None:
-    """El único candidato, o el más específico si no hay empate.
+#: Por debajo de esto una palabra no distingue nada: «de», «los», «para».
+_MINIMO_DISTINTIVO = 5
 
-    `None` significa que hay empate y alguien tiene que decidir.
+
+def _palabras(texto: str) -> set[str]:
+    """Las palabras del texto que pueden distinguir, sin acentos ni mayúsculas."""
+    plano = unicodedata.normalize("NFKD", texto.casefold()).encode("ascii", "ignore").decode()
+    return {p for p in re.findall(r"[^\W\d_]+", plano) if len(p) >= _MINIMO_DISTINTIVO}
+
+
+def _algo_la_sostiene(candidata: TariffCandidate, mercancia: str) -> bool:
+    """¿Hay algo en la mercancía que respalde lo que esta candidata añade?
+
+    Una candidata «más específica» lo es porque su TEXTO lleva calificativos,
+    no porque la mercancía los cumpla. Si ninguno de ellos aparece en lo que
+    consta del producto, elegirla es afirmar una característica que el
+    documento no dice.
+    """
+    return bool(_palabras(candidata.text) & _palabras(mercancia))
+
+
+def _unica_o_mas_especifica(
+    cands: Sequence[TariffCandidate], *, mercancia: str = ""
+) -> TariffCandidate | None:
+    """El único candidato, o el más específico si algo de la mercancía lo sostiene.
+
+    `None` significa que nadie puede decidir con lo que hay, y alguien tiene
+    que hacerlo.
+
+    LA ESPECIFICIDAD NO ES EVIDENCIA
+
+    `specificity` mide cuántos calificativos tiene el TEXTO de la fracción, no
+    que la mercancía los cumpla. Elegir por ella a secas hace que el motor
+    afirme lo que el documento no dice.
+
+    El caso que lo destapó (Persona 1, 28-sep, a partir de un dictamen
+    humano): una vajilla de cerámica vidriada competía entre
+
+        69120003  «De Talavera.»   specificity 2
+        69120099  «Los demás.»     specificity 0
+
+    y el motor elegía Talavera **cinco veces**, en una mercancía que no
+    menciona Talavera en ninguna parte. El agente aduanal y la declaración
+    coincidían en «Los demás».
+
+    Ahora la más específica sólo gana si alguna de sus palabras distintivas
+    aparece en la mercancía. Si no, se devuelve `None` y decide una persona:
+    una fracción equivocada cambia el arancel que paga el importador.
     """
     if len(cands) == 1:
         return cands[0]
     maximo = max(c.specificity for c in cands)
     lideres = [c for c in cands if c.specificity == maximo]
-    return lideres[0] if len(lideres) == 1 and maximo > 0 else None
+    if len(lideres) != 1 or maximo <= 0:
+        return None
+    lider = lideres[0]
+    return lider if _algo_la_sostiene(lider, mercancia) else None
 
 
 def _confianza(context: ClassificationContext, *, penalizacion: Decimal = Decimal("0")) -> Decimal:

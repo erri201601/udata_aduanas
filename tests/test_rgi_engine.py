@@ -437,3 +437,58 @@ def test_la_traza_explica_por_que_se_descarto_cada_alternativa() -> None:
     descartes = traza.rejected()
     assert descartes
     assert any("RGI-1" in d for d in descartes)
+
+
+# ── La especificidad no es evidencia (Persona 1, 28-sep) ───────────────────
+
+
+_TALAVERA = TariffCandidate(code="69120003", text="De Talavera.", level="FRACTION", specificity=2)
+_LOS_DEMAS = TariffCandidate(code="69120099", text="Los demás.", level="FRACTION", specificity=0)
+
+
+def test_la_mas_especifica_no_gana_si_nada_la_sostiene() -> None:
+    """Elegir «De Talavera» para una vajilla que no dice Talavera es afirmar
+    una característica que el documento no sostiene.
+
+    Pasó cinco veces contra la base: el agente aduanal y la declaración
+    coincidían en «Los demás», y el motor proponía Talavera.
+    """
+    from core.rgi_engine.rules import _unica_o_mas_especifica
+
+    elegida = _unica_o_mas_especifica(
+        [_TALAVERA, _LOS_DEMAS],
+        mercancia="VAJILLA DE CERAMICA VIDRIADA, NO PORCELANA, PARA SERVICIO DE MESA",
+    )
+
+    assert elegida is None, "sin respaldo, decide una persona"
+
+
+def test_la_mas_especifica_gana_cuando_la_mercancia_la_respalda() -> None:
+    """Si la mercancía SÍ dice Talavera, la específica es la correcta y el
+    motor no tiene por qué mandarla a revisión."""
+    from core.rgi_engine.rules import _unica_o_mas_especifica
+
+    elegida = _unica_o_mas_especifica(
+        [_TALAVERA, _LOS_DEMAS],
+        mercancia="VAJILLA DE TALAVERA DE PUEBLA, PINTADA A MANO",
+    )
+
+    assert elegida is not None
+    assert elegida.code == "69120003"
+
+
+def test_el_respaldo_ignora_acentos_y_mayusculas() -> None:
+    """La mercancía viene en mayúsculas y sin acentos; la tarifa los lleva."""
+    from core.rgi_engine.rules import _unica_o_mas_especifica
+
+    inoxidable = TariffCandidate(
+        code="73239305", text="De acero inoxidable.", level="FRACTION", specificity=2
+    )
+    otra = TariffCandidate(code="73239999", text="Los demás.", level="FRACTION", specificity=0)
+
+    elegida = _unica_o_mas_especifica(
+        [inoxidable, otra], mercancia="SARTEN DE ACERO INOXIDABLE PARA COCINA"
+    )
+
+    assert elegida is not None
+    assert elegida.code == "73239305"
