@@ -41,6 +41,7 @@ from database.models import (
     RiskFinding,
     ShadowReview,
 )
+from database.repositories.findings import de_la_ultima_revision
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
@@ -203,13 +204,32 @@ def tablero(session: SessionDep) -> Dashboard:
         or 0
     )
 
+    # EL TABLERO CUENTA EL ESTADO ACTUAL, NO LA SUMA DE LAS AUDITORÍAS
+    #
+    # `total_hallazgos` contaba TODOS los `RiskFinding`, y cada re-auditoría
+    # deja los suyos: con 106 revisiones acumuladas el tablero anunciaba 467
+    # hallazgos donde las revisiones vigentes tienen 89. Cinco veces la cifra
+    # real, y creciendo cada vez que alguien volvía a medir.
+    #
+    # Lo peor no era el número: era que el tablero se contradecía. La
+    # exposición YA se acotaba a la última revisión desde el #100, así que
+    # convivían un importe del estado actual y un conteo del histórico en la
+    # misma pantalla.
+    #
+    # Cuarta vez que aparece este patrón —#100 en la exposición, #120 en los
+    # hallazgos, #131 en la bandeja y ahora aquí—. Por eso el predicado vive en
+    # `database.repositories.findings` y se importa, en vez de reescribirse.
+    vigentes = de_la_ultima_revision()
     con_monto = sa.and_(RiskFinding.impact_amount.isnot(None), RiskFinding.impact_amount != 0)
-    total_hallazgos = _contar(session, RiskFinding)
-    accionables = _contar(session, RiskFinding, con_monto)
+    total_hallazgos = _contar(session, RiskFinding, vigentes)
+    accionables = _contar(session, RiskFinding, vigentes, con_monto)
     suma = session.scalar(sa.select(sa.func.sum(_por_partida().c.monto)))
-    moneda = session.scalar(sa.select(RiskFinding.impact_amount_currency).where(con_monto).limit(1))
+    moneda = session.scalar(
+        sa.select(RiskFinding.impact_amount_currency).where(vigentes, con_monto).limit(1)
+    )
     peor = session.scalar(
         sa.select(RiskFinding.severity)
+        .where(vigentes)
         .order_by(
             sa.case(
                 {s: i for i, s in enumerate(ORDEN_SEVERIDAD)},
@@ -227,10 +247,13 @@ def tablero(session: SessionDep) -> Dashboard:
         .limit(1)
     )
 
+    # Los hallazgos van acotados aquí también, o el pie compararía poblaciones
+    # distintas: «N de las filas contadas son simulación» con una N del
+    # histórico y un total del estado actual no dice nada.
     simuladas = sum(
         _contar(session, modelo, modelo.data_origin == "SYNTHETIC")  # type: ignore[attr-defined]
-        for modelo in (Product, Pedimento, ClassificationDecision, RiskFinding)
-    )
+        for modelo in (Product, Pedimento, ClassificationDecision)
+    ) + _contar(session, RiskFinding, vigentes, RiskFinding.data_origin == "SYNTHETIC")
     contadas = pedimentos + decisiones.total + total_hallazgos + _contar(session, Product)
 
     return Dashboard(

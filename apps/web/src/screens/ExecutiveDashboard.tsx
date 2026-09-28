@@ -78,7 +78,12 @@ export function ExecutiveDashboard() {
         </div>
       </header>
 
-      {datos?.todo_simulado && <SyntheticBanner />}
+      {/* La marca aparece si hay UNA fila simulada, no sólo si lo son todas.
+          Cuando entró el primer dictamen humano, `todo_simulado` pasó a falso
+          y el banner desapareció — con los 16 pedimentos igual de inventados
+          que antes. Una mezcla es justo cuando más hace falta la advertencia
+          (§10, §33). */}
+      {(datos?.filas_simuladas ?? 0) > 0 && <SyntheticBanner />}
 
       {error && (
         <div className="alerta" role="alert">
@@ -171,7 +176,8 @@ export function ExecutiveDashboard() {
           )}
 
           <p className="tablero__pie">
-            {datos.filas_simuladas} de las filas contadas son simulación. No se
+            {datos.filas_simuladas} de las filas contadas son simulación
+            {datos.todo_simulado ? ' — todas' : ', y el resto no'}. No se
             mezclan con datos reales en una misma cifra: una que sumara ambos
             dejaría de poder presentarse.
           </p>

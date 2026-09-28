@@ -32,10 +32,14 @@ class SesionFalsa:
     def __init__(self, **valores: Any) -> None:
         self._v = valores
         self._llamadas = 0
+        #: El SQL de cada consulta. La sesión falsa ignora los WHERE, así que
+        #: el acotamiento sólo se puede fijar mirando la sentencia.
+        self.sql: list[str] = []
 
     def scalar(self, sentencia: Any) -> Any:
         # El router hace las consultas en un orden fijo; se responde por turno.
         self._llamadas += 1
+        self.sql.append(str(sentencia))
         return self._v.get(f"s{self._llamadas}")
 
 
@@ -182,3 +186,36 @@ def test_el_tablero_cuenta_solo_la_ultima_revision_de_cada_pedimento() -> None:
     assert "DISTINCT ON" in sql.upper(), "una revisión por pedimento"
     assert "shadow_reviews.created_at DESC" in sql, "la más reciente"
     assert "shadow_review_id IS NULL" in sql, "los hallazgos sin revisión no se pierden"
+
+
+# ── El tablero cuenta el estado actual (Persona 1, 28-sep) ─────────────────
+
+
+def test_los_hallazgos_se_cuentan_de_la_revision_vigente() -> None:
+    """Cada re-auditoría deja sus hallazgos. Sin acotar, el tablero anunciaba
+    467 donde las revisiones vigentes tenían 89 — cinco veces la cifra real, y
+    creciendo cada vez que alguien volvía a medir."""
+    sesion = SesionFalsa()
+    app = create_app()
+    app.dependency_overrides[get_session] = lambda: sesion
+    with TestClient(app) as c:
+        c.get("/dashboard")
+
+    conteos = [q for q in sesion.sql if "count(" in q.lower() and "risk_findings" in q]
+    assert conteos, "no se contaron hallazgos"
+    assert all("shadow_reviews" in q for q in conteos), (
+        "algún conteo de hallazgos no se acota a la revisión vigente"
+    )
+
+
+def test_la_peor_severidad_tambien_sale_de_la_vigente() -> None:
+    """Una auditoría vieja con un CRITICAL ya corregido no puede seguir
+    marcando el tablero en rojo."""
+    sesion = SesionFalsa()
+    app = create_app()
+    app.dependency_overrides[get_session] = lambda: sesion
+    with TestClient(app) as c:
+        c.get("/dashboard")
+
+    severidad = [q for q in sesion.sql if "severity" in q and "count(" not in q.lower()]
+    assert severidad and all("shadow_reviews" in q for q in severidad)
