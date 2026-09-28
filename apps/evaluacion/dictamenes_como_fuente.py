@@ -32,6 +32,21 @@ El juicio es humano; los productos del corpus no. Por eso el caso conserva el
 `HUMAN_VALIDATED`, el reporte dejaría de avisar de que esto no es una
 medición de producción (§33), y eso sería mentir por omisión.
 
+UNA CONFIRMACIÓN NO MIDE AL MOTOR (Persona 1, 28-sep)
+
+El primer dictamen que llegó confirmaba la fracción que ya había dado la
+máquina: 69120003 contra 69120003. Contarlo como verdad y comparar al motor
+contra él daría 100 % SIEMPRE, fuera cual fuera la calidad del motor — se
+estaría midiendo contra su propia respuesta.
+
+Y no es sólo circularidad formal: quien revisa ve la respuesta de la máquina
+antes de juzgar, así que un «confirma» está anclado. Una CORRECCIÓN sí es
+evidencia independiente: dice algo que el motor no dijo.
+
+Por eso las confirmaciones se descartan por omisión y se cuentan aparte. El
+día que la bandeja pida el juicio ANTES de enseñar la respuesta de la máquina,
+dejarán de estar ancladas y esto se podrá revisar.
+
 NO SE LEE LO QUE DIJO LA MÁQUINA
 
 Al motor sólo le llega la descripción, igual que en las otras fuentes. El
@@ -46,6 +61,10 @@ import sqlalchemy as sa
 import structlog
 from core.evaluation.harness import CasoDeEvaluacion
 from database.models import ClassificationDecision, Product, ProductDna
+from pydantic import BaseModel, ConfigDict
+
+#: La decisión de máquina que revisa cada dictamen, para saber si lo confirma.
+_maquina = sa.alias(ClassificationDecision.__table__, "maquina")
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -63,12 +82,35 @@ DICTAMEN: Final = "HUMAN_VALIDATED"
 NOMENCLATURA: Final = "TIGIE"
 
 
+class Resumen(BaseModel):
+    """Qué había y qué se pudo usar. Va al reporte, no a un log que nadie lee."""
+
+    model_config = ConfigDict(frozen=True)
+
+    dictamenes: int = 0
+    casos: int = 0
+    sin_fraccion: int = 0
+    """Dictámenes que confirman que algo NO se puede clasificar: juicio válido,
+    pero no un código contra el que comparar."""
+    confirmaciones: int = 0
+    """Dictámenes que repiten la fracción de la máquina. No miden al motor."""
+    segundos: int | None = None
+    """Cuánto tardó en emitirse el lote entero, de principio a fin.
+
+    No se pone un umbral: ocho veredictos en 59 segundos pueden ser una prueba
+    del flujo o alguien que ya sabía la respuesta, y el código no puede
+    distinguirlo. Se enseña y quien lee concluye (Persona 1, 28-sep)."""
+
+
 class DictamenesHumanos:
     """`FuenteDeCasos` sobre los veredictos humanos, sin escribir nada."""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, *, incluir_confirmaciones: bool = False) -> None:
         self._session = session
+        self._incluir_confirmaciones = incluir_confirmaciones
         self.nombre = "DICTAMENES_HUMANOS"
+        self.resumen = Resumen()
+        """Qué se vio y qué se descartó. Se llena al recorrer `casos()`."""
 
     def casos(self) -> Iterator[CasoDeEvaluacion]:
         filas = self._session.execute(
@@ -79,15 +121,30 @@ class DictamenesHumanos:
                 ProductDna.summary,
                 Product.data_origin,
             )
+            .add_columns(
+                ClassificationDecision.created_at, _maquina.c.fraction_code.label("maquina")
+            )
             .join(ProductDna, ProductDna.id == ClassificationDecision.product_dna_id)
             .join(Product, Product.id == ProductDna.product_id)
+            .outerjoin(_maquina, _maquina.c.id == ClassificationDecision.reviews_decision_id)
             .where(ClassificationDecision.data_origin == DICTAMEN)
-            .order_by(ClassificationDecision.operation_date, ClassificationDecision.id)
+            .order_by(ClassificationDecision.created_at, ClassificationDecision.id)
         ).all()
 
         sin_fraccion = 0
+        confirmaciones = 0
         entregados = 0
+        momentos = [f.created_at for f in filas if f.created_at is not None]
         for f in filas:
+            if (
+                f.fraction_code
+                and f.fraction_code == f.maquina
+                and not self._incluir_confirmaciones
+            ):
+                # Confirma lo que dijo la máquina: medir contra esto daría
+                # 100 % siempre. No es verdad independiente.
+                confirmaciones += 1
+                continue
             if not f.fraction_code or not f.summary:
                 # Un dictamen puede confirmar que NO se puede clasificar. Eso es
                 # un juicio válido y no mide precisión de clasificación: no hay
@@ -112,9 +169,13 @@ class DictamenesHumanos:
                 mismo_catalogo_a_la_fecha=True,
             )
 
-        log.info(
-            "dictamenes.casos",
+        self.resumen = Resumen(
             dictamenes=len(filas),
             casos=entregados,
             sin_fraccion=sin_fraccion,
+            confirmaciones=confirmaciones,
+            segundos=(
+                int((max(momentos) - min(momentos)).total_seconds()) if len(momentos) > 1 else None
+            ),
         )
+        log.info("dictamenes.casos", **self.resumen.model_dump())

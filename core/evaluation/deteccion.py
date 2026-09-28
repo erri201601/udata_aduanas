@@ -67,11 +67,12 @@ control limpio para todos los demás detectores.
 
 from __future__ import annotations
 
-import math
 from collections import defaultdict
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import TYPE_CHECKING, Final
+
+from core.evaluation.intervalos import wilson
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
@@ -141,7 +142,6 @@ SIN_DETECTOR_CONSTRUIDO: Final = "el detector no existe"
 NO_PUDO_DETERMINARLO: Final = "el detector existe y no pudo"
 NO_LO_CAZO: Final = "el detector existe y no cazó"
 
-_Z: Final = 1.96  # 95 %
 _CIEN: Final = Decimal(100)
 _DOS: Final = Decimal("0.01")
 
@@ -234,7 +234,7 @@ class Conteo:
         Con seis casos sale enorme a propósito: enseñarlo es lo que impide
         presentar «66 %» como si midiera algo.
         """
-        return _wilson(self.tp, self.tp + self.fn)
+        return wilson(self.tp, self.tp + self.fn)
 
 
 @dataclass
@@ -303,15 +303,6 @@ def _ratio(parte: int, total: int) -> Decimal | None:
     if total <= 0:
         return None
     return (Decimal(parte) / Decimal(total) * _CIEN).quantize(_DOS)
-
-
-def _wilson(exitos: int, total: int) -> Decimal | None:
-    if total <= 0:
-        return None
-    p = exitos / total
-    denominador = 1 + _Z**2 / total
-    mitad = _Z * math.sqrt(p * (1 - p) / total + _Z**2 / (4 * total**2)) / denominador
-    return (Decimal(mitad) * _CIEN).quantize(_DOS)
 
 
 def evaluar(

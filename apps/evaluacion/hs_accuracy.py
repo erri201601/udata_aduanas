@@ -40,6 +40,7 @@ from typing import TYPE_CHECKING, Any, Final, cast
 import sqlalchemy as sa
 import structlog
 from core.evaluation import (
+    Acierto,
     Clasificacion,
     ExtraccionConUso,
     Reporte,
@@ -304,6 +305,18 @@ def _limites(r: Reporte) -> list[str]:
     return lineas
 
 
+def _con_margen(a: Acierto) -> str:
+    """El porcentaje, con cuántos casos lo respaldan y cuánto se puede fiar uno.
+
+    Sin la n y sin el margen, «100 %» de un caso se lee igual que «100 %» de
+    ochenta. Con el margen, el de un caso se descalifica solo.
+    """
+    if a.porcentaje is None:
+        return "— (sin casos comparables)"
+    margen = f" ±{a.margen_95}" if a.margen_95 is not None else ""
+    return f"{a.porcentaje}{margen}  ({a.aciertos}/{a.comparados})"
+
+
 def _errores(r: Reporte) -> list[str]:
     """Por qué fallaron los casos que fallaron, agrupado.
 
@@ -358,10 +371,8 @@ def informe(r: Reporte) -> str:
         *_limites(r),
         "",
         "AGREGADO",
-        f"  hs_accuracy            {a.porcentaje if a.porcentaje is not None else '—'} "
-        f"({a.aciertos}/{a.comparados})",
-        f"  acierto cuando responde {cuando.porcentaje if cuando.porcentaje is not None else '—'} "
-        f"({cuando.aciertos}/{cuando.comparados})",
+        f"  hs_accuracy             {_con_margen(a)}",
+        f"  acierto cuando responde {_con_margen(cuando)}",
         f"  información insuficiente {r.tasa_insuficiente if r.tasa_insuficiente is not None else '—'} %",
         f"  llegó a RGI 3c           {r.tasa_rgi_3c if r.tasa_rgi_3c is not None else '—'} %",
         f"  búsqueda degradada       {r.tasa_degradacion if r.tasa_degradacion is not None else '—'} %",
@@ -385,6 +396,16 @@ def main(argv: list[str] | None = None) -> int:
         help="Qué Postgres se lee. 'shared' es la base del equipo (ADUANERO_SHARED_URL).",
     )
     parser.add_argument("--escenario", default="corpus_espejo_v1", help="Slug del corpus.")
+    parser.add_argument(
+        "--fuente",
+        default="corpus",
+        choices=["corpus", "dictamenes"],
+        help=(
+            "De dónde sale la verdad. 'corpus' la decidió un modelo —mide "
+            "coincidencia—; 'dictamenes' la firmó una persona y es lo único que "
+            "mide precisión."
+        ),
+    )
     parser.add_argument("--lote", type=int, default=LOTE_INICIAL, help="Cuántos casos.")
     parser.add_argument(
         "--confirmar",
@@ -406,6 +427,7 @@ def main(argv: list[str] | None = None) -> int:
 
     from apps.api.config import UrlCompartidaAusenteError, url_de_postgres
     from apps.evaluacion.corpus_como_fuente import CorpusEspejo
+    from apps.evaluacion.dictamenes_como_fuente import DictamenesHumanos
     from apps.evaluacion.procedencia import linea_de_procedencia, procedencia
 
     try:
@@ -414,18 +436,37 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(str(error)) from error
 
     with SesionSql(sa.create_engine(url)) as sesion:
-        fuente = CorpusEspejo(
-            sesion,
-            escenario=args.escenario,
-            solo_evaluables=not args.incluir_fichas_recortadas,
+        fuente: Any = (
+            DictamenesHumanos(sesion)
+            if args.fuente == "dictamenes"
+            else CorpusEspejo(
+                sesion,
+                escenario=args.escenario,
+                solo_evaluables=not args.incluir_fichas_recortadas,
+            )
         )
         try:
+            # El resumen de la fuente se llena al recorrerla, y el camino del
+            # presupuesto no la recorre. Se lee aquí —una consulta, sin llamar
+            # a ningún modelo— porque saber cuántos dictámenes hay y cuántos
+            # sirven es justo lo que uno quiere ANTES de decidir si gasta.
+            if hasattr(fuente, "resumen"):
+                list(fuente.casos())
             resultado = ejecutar(fuente, sesion, lote=args.lote, confirmar=args.confirmar)
         finally:
             sesion.rollback()
 
     print(linea_de_procedencia(procedencia()))
-    print(f"ÁMBITO  {args.escenario} · base: {args.target}")
+    ambito = args.escenario if args.fuente == "corpus" else "dictámenes humanos"
+    print(f"ÁMBITO  {ambito} · base: {args.target}")
+    resumen = getattr(fuente, "resumen", None)
+    if resumen is not None:
+        tiempo = f" · emitidos en {resumen.segundos} s" if resumen.segundos is not None else ""
+        print(
+            f"        {resumen.dictamenes} dictámenes{tiempo} · {resumen.casos} medibles · "
+            f"{resumen.confirmaciones} confirman a la máquina · "
+            f"{resumen.sin_fraccion} sin fracción"
+        )
     print()
     if isinstance(resultado, Presupuesto):
         print(

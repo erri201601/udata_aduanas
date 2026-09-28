@@ -2,6 +2,7 @@
 
 from core.evaluation.harness import (
     NOMENCLATURA_ADMITIDA,
+    Acierto,
     CasoDeEvaluacion,
     Clasificacion,
     ExtraccionConUso,
@@ -17,6 +18,7 @@ from core.evaluation.ports import FuenteDeCasos
 
 __all__ = [
     "NOMENCLATURA_ADMITIDA",
+    "Acierto",
     "CasoDeEvaluacion",
     "Clasificacion",
     "ExtraccionConUso",

@@ -75,8 +75,9 @@ from datetime import date
 from decimal import Decimal
 from typing import TYPE_CHECKING, Final, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
+from core.evaluation.intervalos import wilson
 from core.product_dna.types import ProductDnaDraft, SourceDocument
 
 if TYPE_CHECKING:
@@ -221,6 +222,18 @@ class Acierto(BaseModel):
     comparados: int = 0
     porcentaje: Decimal | None = None
     """`None` sin comparados: desconocido, no cero."""
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def margen_95(self) -> Decimal | None:
+        """Media anchura del intervalo de Wilson, en puntos.
+
+        Un 100 % sobre un caso y un 100 % sobre ochenta se leen igual y no
+        valen igual (Persona 1, 28-sep). Con un caso el margen sale tan ancho
+        que descalifica el número solo, sin que quien lee tenga que acordarse
+        de la n. Es el mismo criterio que ya usa la métrica de detección.
+        """
+        return wilson(self.aciertos, self.comparados)
 
 
 class Reporte(BaseModel):
