@@ -450,6 +450,23 @@ equivocado en producción.
 
 ### Deuda técnica conocida
 
+- **El historial no se reescribe (Persona 1, 28-sep).** El repositorio pasó a
+  público ese día y salieron de él tres documentos que eran material comercial
+  sobre un tercero, no documentación técnica. Quedaron fuera del árbol vigente
+  —que es lo que ven un navegador, `raw` y los buscadores— y **se conservan
+  fuera del repositorio**, porque su análisis sigue siendo correcto.
+
+  Siguen alcanzables para quien sepa que existieron y busque a propósito.
+  **Decisión: se acepta.** Sacarlos del historial obligaría a reconstruir 181
+  commits, invalidaría los clones de todo el equipo y exigiría un trámite con
+  soporte de GitHub, a cambio de cerrar una puerta con la que nadie tropieza
+  navegando. Con cero forks y cero watchers al momento de decidirlo, el riesgo
+  se consideró menor que el coste.
+
+  **Lo que sí cambia para siempre:** el repositorio es público. Cualquier cosa
+  que se suba —commit, mensaje, comentario de PR— es visible al instante y con
+  ella no hay segunda oportunidad. Nada de credenciales, direcciones internas
+  ni nombres de terceros, ni siquiera de forma temporal.
 - **No hay datos reales, y no los va a haber por esta vía.** AJR no entregará
   más pedimentos (Persona 1, 23-sep): por eso el corpus espejo se generó por
   nuestra cuenta y los 16 pedimentos y 181 partidas están marcados `SYNTHETIC`.
