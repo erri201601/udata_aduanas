@@ -7,7 +7,7 @@
  */
 
 const RAW_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ?? 'http://100.86.182.104:8080'
+  import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'
 
 /** Base de la API, sin diagonal final. */
 export const API_BASE_URL = RAW_BASE_URL.replace(/\/+$/, '')

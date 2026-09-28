@@ -1,5 +1,5 @@
 /**
- * Tablero ejecutivo (§32) — lo primero que ve alguien de AJR.
+ * Tablero ejecutivo (§32) — lo primero que ve alguien del cliente.
  *
  * Es la pantalla donde más tienta el número bonito, y por eso es donde más
  * importa no ponerlo. Aquí no hay «ahorro potencial detectado»: sumar

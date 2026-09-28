@@ -290,7 +290,7 @@ def test_la_confianza_del_conjunto_es_la_del_eslabon_mas_debil() -> None:
             ),
             builder.human(
                 summary="Revisado por el agente aduanal.",
-                reviewer="ulises@udata.com.mx",
+                reviewer="revisor@example.com",
                 reviewed_at=datetime(2024, 3, 20, tzinfo=UTC),
                 confidence=Decimal("0.6000"),
             ),
@@ -371,7 +371,7 @@ def test_el_origen_humano_se_distingue_en_la_tabla() -> None:
     """`created_by` tiene que reflejar que lo validó una persona."""
     campos = builder.human(
         summary="Confirmado por el agente aduanal.",
-        reviewer="brandon@udata.com.mx",
+        reviewer="otro.revisor@example.com",
         reviewed_at=datetime(2024, 3, 20, tzinfo=UTC),
     ).to_record_fields()
 

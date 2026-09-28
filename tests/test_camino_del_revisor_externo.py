@@ -1,10 +1,10 @@
-"""El camino de entrada de un veredicto de AJR, de punta a punta (§39).
+"""El camino de entrada de un veredicto del cliente, de punta a punta (§39).
 
 QUÉ DEMUESTRA ESTE ARCHIVO
 
 Que un veredicto externo entra por la bandeja y sale convertido en un número
 real en `fraction_accuracy`. Hoy la métrica devuelve `null` —desconocida, no
-mala— porque nadie ha revisado; cuando lleguen los diez pedimentos de AJR no
+mala— porque nadie ha revisado; cuando lleguen los diez pedimentos del cliente no
 queremos descubrir entonces si el camino funciona.
 
 POR QUÉ NO ES UN TEST DE INTEGRACIÓN
@@ -43,7 +43,7 @@ Lo que faltaba era la prueba de que la cadena entera cierra.
 
 LO QUE ESTE CAMINO TODAVÍA NO PUEDE HACER
 
-Distinguir un veredicto de AJR de uno del propio equipo. Ver
+Distinguir un veredicto del cliente de uno del propio equipo. Ver
 `test_hoy_no_se_puede_saber_quien_emitio_un_veredicto`. El campo lo aprueba
 Persona 1: toca el Canonical Model.
 """
@@ -67,7 +67,7 @@ DNA = uuid.uuid4()
 
 #: Quién revisa cuando el veredicto viene de fuera. Hoy sólo llega al texto de
 #: `reasoning`; ver el hueco declarado al final del archivo.
-REVISOR_EXTERNO = "AJR/anayeli.mendoza"
+REVISOR_EXTERNO = "externo/revisor-1"
 
 
 def _decision_maquina(*, fraccion: str | None, minutos: int = 0) -> ClassificationDecision:
@@ -168,7 +168,7 @@ def _cliente(filas: list[ClassificationDecision]) -> tuple[TestClient, SesionFal
 def test_un_veredicto_externo_produce_un_numero_real() -> None:
     """EL TEST QUE PEDÍA PERSONA 1.
 
-    Antes de que llegue el primer pedimento de AJR ya consta que la cadena
+    Antes de que llegue el primer pedimento del cliente ya consta que la cadena
     cierra: bandeja → veredicto → porcentaje.
     """
     decision = _decision_maquina(fraccion="85285900")
@@ -178,7 +178,7 @@ def test_un_veredicto_externo_produce_un_numero_real() -> None:
         antes = c.get("/metrics/classification").json()
         assert antes["fraction_accuracy"]["porcentaje"] is None, "desconocida, no cero"
 
-        # AJR corrige: no era un monitor, era una computadora.
+        # El revisor externo corrige: no era un monitor, era una computadora.
         respuesta = c.post(
             f"/review/{decision.id}",
             json={
@@ -307,7 +307,7 @@ def test_hoy_no_se_puede_saber_quien_emitio_un_veredicto() -> None:
     `reviewer` viaja en la petición y acaba dentro del texto libre de
     `reasoning`. No hay columna, así que la métrica —que empareja por
     `data_origin = HUMAN_VALIDATED` y nada más— no puede separar un veredicto
-    de AJR de uno del propio equipo. Y medir el sistema con los veredictos de
+    del cliente de uno del propio equipo. Y medir el sistema con los veredictos de
     quien lo construyó lo mide contra sus propias suposiciones.
 
     Este test NO pide que se arregle aquí: fija el hueco para que se vea, y

@@ -31,7 +31,7 @@ lógica de clasificación, ni de RGI, ni de extracción.
 
 | | |
 |---|---|
-| Host | `100.86.182.104` (Tailscale) o `localhost` en el dev server |
+| Host | `<IP-DEL-DEV-SERVER>` (Tailscale) o `localhost` en el dev server |
 | **Puerto** | **5433** |
 | Base | `aduanero` |
 | Usuario | `aduanero_app` |
@@ -207,7 +207,7 @@ sin secretos · PR abierto contra `develop`.
 ## 6. Prohibido
 
 - `CREATE TABLE` o `ALTER TABLE` a mano contra la base compartida.
-- Aplicar la migración a `100.86.182.104:5433` antes de la aprobación de P1.
+- Aplicar la migración a `<IP-DEL-DEV-SERVER>:5433` antes de la aprobación de P1.
 - Tocar el PostgreSQL nativo del puerto 5432.
 - `FLOAT` para dinero, tasas o cantidades.
 - Inventar un valor de `data_origin`.
