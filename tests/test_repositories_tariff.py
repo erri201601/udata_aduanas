@@ -170,3 +170,51 @@ def test_si_nada_cubre_dos_terminos_se_devuelve_lo_que_cubre_uno(
     )
 
     assert [c.code for c in candidatas] == ["9995"], "nunca debe quedar vacío si algo casó"
+
+
+# ── La palabra empieza donde empieza (Persona 1, 23-sep) ────────────────────
+
+
+@pytest.mark.integration
+def test_un_termino_no_casa_dentro_de_otra_palabra(
+    pg_session: sa.orm.Session,  # noqa: F811
+) -> None:
+    """`ILIKE '%olla%'` casaba «cebollas», «enrolladas» y «Pollachius».
+
+    32 partidas, las 32 falsas. Ése es el motivo real de que existiera un
+    mínimo de longitud, que a cambio tiraba la palabra más discriminante de
+    una olla a presión.
+    """
+    _fraccion(pg_session, "99961001", "Cebollas zzqxón, frescas.", 1)
+
+    candidatas = TariffCatalogRepository(pg_session).headings(on_date=FECHA, terms=["bolla"])
+
+    assert candidatas == [], "casó dentro de «Cebollas»"
+
+
+@pytest.mark.integration
+def test_un_termino_si_casa_su_plural(
+    pg_session: sa.orm.Session,  # noqa: F811
+) -> None:
+    """Se ancla el inicio, no el final: la tarifa escribe «juegos», «ollas»,
+    «válvulas». Anclar los dos extremos dejaba «JUEGO» en cero coincidencias
+    donde hay 16."""
+    _fraccion(pg_session, "99971001", "Wwvkunes de mesa, de porcelana.", 1)
+
+    candidatas = TariffCatalogRepository(pg_session).headings(on_date=FECHA, terms=["wwvkun"])
+
+    assert [c.code for c in candidatas] == ["9997"], "el plural debe seguir casando"
+
+
+@pytest.mark.integration
+def test_un_termino_con_metacaracteres_no_rompe_la_consulta(
+    pg_session: sa.orm.Session,  # noqa: F811
+) -> None:
+    """Los términos salen de texto libre. Un `(` o un `*` sin escapar
+    convertirían el patrón en otra cosa, o harían fallar la consulta entera."""
+    _fraccion(pg_session, "99981001", "Artículo zzqxón (especial).", 1)
+
+    catalogo = TariffCatalogRepository(pg_session)
+
+    assert catalogo.headings(on_date=FECHA, terms=["(especial"]) == []
+    assert [c.code for c in catalogo.headings(on_date=FECHA, terms=["zzqxon"])] == ["9998"]

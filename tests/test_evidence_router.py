@@ -139,6 +139,23 @@ def test_responde_las_preguntas_que_si_puede(cliente: TestClient) -> None:
     assert cuerpo["requires_human_review"] is True
 
 
+def test_la_vigencia_real_se_contesta_cuando_la_fila_la_trae() -> None:
+    """REGRESIÓN REAL (hallazgo de Persona 1): `evidence_records` no tenía
+    `valid_from`/`valid_to`, así que esta pregunta salía siempre "UNKNOWN →
+    vigente" aunque la norma citada sí tuviera vigencia conocida. Con la
+    columna y el mapeo de vuelta (`_a_evidence`), el dossier debe mostrar la
+    fecha real, no UNKNOWN."""
+    evidencia = _evidencia("LEGAL_SOURCE")
+    evidencia.valid_from = date(2022, 6, 7)
+    evidencia.valid_to = None
+
+    with _cliente(decision=_decision(), evidencias=[evidencia]) as c:
+        cuerpo = c.get(f"/evidence/{DECISION_ID}").json()
+
+    assert "validity" not in cuerpo["unanswered"]
+    assert cuerpo["validity"] == ["LIGIE capítulo 84.: 2022-06-07 → vigente"]
+
+
 # ── Evidencias que no se pueden interpretar ─────────────────────────────────
 
 
