@@ -405,6 +405,25 @@ code {
 }
 
 .revision p { margin: 0.4rem 0 0; font-size: 0.87rem; color: var(--tenue); }
+
+/* El dictamen humano. Verde y no ámbar a propósito: no es una advertencia
+   pendiente, es trabajo ya hecho — y es lo único del sistema que no
+   generamos nosotros. */
+.dictamen {
+  padding: 0.95rem 1.25rem;
+  margin-bottom: 1.5rem;
+  background: rgba(52, 199, 123, 0.08);
+  border-left: 3px solid var(--bien, #34c77b);
+  border-radius: 0 8px 8px 0;
+}
+
+.dictamen p { margin: 0.45rem 0 0; font-size: 0.87rem; color: var(--tenue); }
+.dictamen__codigo {
+  margin-left: 0.35rem;
+  font-size: 1.05rem;
+  color: var(--bien, #34c77b);
+}
+.dictamen__pie { font-style: italic; opacity: 0.78; }
 .revision code { margin-right: 0.5rem; color: var(--aviso); }
 
 .seccion {
