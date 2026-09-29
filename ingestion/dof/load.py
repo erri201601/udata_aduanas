@@ -26,6 +26,7 @@ from database.models.regulatory import (
     LegalSource,
     NonTariffRegulation,
     PedimentoClave,
+    PedimentoIdentifier,
     UnitOfMeasure,
 )
 from database.repositories.chunks import PostgresChunkStore
@@ -38,6 +39,7 @@ if TYPE_CHECKING:
 
     from ingestion.dof.anexo22 import (
         ParsedCustomsOffice,
+        ParsedIdentifier,
         ParsedNonTariffRegulation,
         ParsedPedimentoClave,
         ParsedUnitOfMeasure,
@@ -159,6 +161,16 @@ def to_non_tariff_regulation_row(
     )
 
 
+def to_pedimento_identifier_row(
+    parsed: ParsedIdentifier, *, source: LegalSource, content_hash: str, retrieved_at: datetime
+) -> PedimentoIdentifier:
+    return PedimentoIdentifier(
+        code=parsed.code,
+        level=parsed.level,
+        **_row_kwargs(source, content_hash=content_hash, retrieved_at=retrieved_at),
+    )
+
+
 def load_anexo22(
     session: Session,
     *,
@@ -166,10 +178,12 @@ def load_anexo22(
     units: list[ParsedUnitOfMeasure],
     claves: list[ParsedPedimentoClave],
     regulations: list[ParsedNonTariffRegulation],
+    identifiers: list[ParsedIdentifier],
     content_hash: str,
     retrieved_at: datetime,
-) -> tuple[int, int, int, int]:
-    """Inserta los 4 catálogos. Devuelve (aduanas, unidades, claves, identificadores)."""
+) -> tuple[int, int, int, int, int]:
+    """Inserta los 5 catálogos. Devuelve (aduanas, unidades, claves,
+    identificadores no arancelarios, identificadores de pedimento)."""
     source = get_or_create_dof_source(session)
     get_or_create_anexo22_document(
         session, source, content_hash=content_hash, retrieved_at=retrieved_at
@@ -202,9 +216,18 @@ def load_anexo22(
                 retrieved_at=retrieved_at,
             )
         )
+    for parsed_identifier in identifiers:
+        session.add(
+            to_pedimento_identifier_row(
+                parsed_identifier,
+                source=source,
+                content_hash=content_hash,
+                retrieved_at=retrieved_at,
+            )
+        )
 
     session.flush()
-    return len(offices), len(units), len(claves), len(regulations)
+    return len(offices), len(units), len(claves), len(regulations), len(identifiers)
 
 
 RGCE_SHORT_NAME = "RGCE_2026"
