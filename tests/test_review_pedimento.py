@@ -236,6 +236,68 @@ def test_una_partida_sin_producto_igual_se_le_comprueba_el_pais() -> None:
     assert esperado.is_resolved is False, "no se clasificó nada"
 
 
+# ── El NICO esperado ─────────────────────────────────────────────────────────
+
+
+def test_una_fraccion_con_un_solo_nico_no_necesita_ficha_tecnica() -> None:
+    """6 555 de las 8 135 fracciones vigentes tienen un único NICO.
+
+    En esas no hay nada que elegir, y el Espejo puede esperarlo con la misma
+    certeza con la que espera la fracción. Antes devolvía `None` en todas y las
+    180 partidas del corpus arrastraban el mismo hueco —«saber si es el que
+    corresponde exige la ficha técnica»— que para estas fracciones no era
+    cierto: no hacía falta ninguna ficha, sólo mirar el catálogo.
+    """
+    from apps.api.routers.pedimentos import _nico_esperado
+
+    catalogo = _CatalogoFalso(("00",))
+    nico = _nico_esperado(catalogo, date(2026, 3, 15), "69111001")  # type: ignore[arg-type]
+
+    assert nico == "00"
+    assert catalogo.consultas == ["69111001"]
+
+
+def test_con_varios_nico_no_se_elige_uno() -> None:
+    """Elegir entre varios exige la ficha técnica: un NICO distingue por
+    materia, uso o presentación.
+
+    Suponerlo acusaría al pedimento de un NICO equivocado contra una
+    expectativa inventada, que es peor que declarar el hueco. Misma disciplina
+    que el descarte de la RGI 6: se resuelve sólo cuando queda uno.
+    """
+    from apps.api.routers.pedimentos import _nico_esperado
+
+    nico = _nico_esperado(
+        _CatalogoFalso(("01", "02", "99")),  # type: ignore[arg-type]
+        date(2026, 3, 15),
+        "73121001",
+    )
+
+    assert nico is None
+
+
+def test_sin_fraccion_esperada_no_se_consulta_el_nico() -> None:
+    """Si el motor no resolvió, no hay fracción de la que colgar un NICO.
+
+    Y no se pregunta: consultar con `None` devolvería los NICO de nada.
+    """
+    from apps.api.routers.pedimentos import _nico_esperado
+
+    catalogo = _CatalogoFalso(("00",))
+    assert _nico_esperado(catalogo, date(2026, 3, 15), None) is None  # type: ignore[arg-type]
+    assert catalogo.consultas == [], "ni siquiera se preguntó"
+
+
+def test_una_fraccion_sin_nico_cargado_no_inventa_uno() -> None:
+    """Catálogo vacío para esa fracción es un hueco nuestro, no un NICO."""
+    from apps.api.routers.pedimentos import _nico_esperado
+
+    assert (
+        _nico_esperado(_CatalogoFalso(()), date(2026, 3, 15), "69111001")  # type: ignore[arg-type]
+        is None
+    )
+
+
 def test_sin_producto_y_sin_proveedor_no_hay_espejo() -> None:
     from apps.api.routers.pedimentos import _construir_espejo
 

@@ -338,6 +338,31 @@ def _espejo_documental(
     }
 
 
+def _nico_esperado(
+    catalogo: TariffCatalogRepository, fecha: date, fraccion: str | None
+) -> str | None:
+    """El NICO que corresponde a la fracción esperada, SÓLO si no hay duda.
+
+    6 555 de las 8 135 fracciones vigentes tienen un único NICO. En esas no hay
+    nada que elegir: el catálogo lo dice y el Espejo puede esperarlo con la
+    misma certeza con la que espera la fracción.
+
+    Con varios se devuelve `None`. Elegir entre ellos exige la ficha técnica
+    —un NICO distingue por materia, uso o presentación— y suponerlo acusaría al
+    pedimento de un NICO equivocado con una expectativa inventada, que es peor
+    que declarar el hueco.
+
+    Misma disciplina que el descarte de la RGI 6: resolver sólo cuando queda
+    uno, y no por mayoría ni por orden.
+    """
+    if not fraccion:
+        return None
+    vigentes = catalogo.nicos(on_date=fecha, fraction_code=fraccion)
+    if vigentes is None or len(vigentes) != 1:
+        return None
+    return vigentes[0]
+
+
 def _construir_espejo(
     session: SessionDep,
     partida: PedimentoItem,
@@ -397,6 +422,12 @@ def _construir_espejo(
     return ExpectedItem(
         line_number=partida.line_number,
         fraction_code=outcome.code,
+        # El NICO de la fracción ESPERADA, no de la declarada. Sin esto el
+        # Espejo no tenía expectativa de NICO en ninguna partida y las 180 del
+        # corpus arrastraban el mismo hueco: «saber si es el que corresponde
+        # exige la ficha técnica». Para las fracciones de un solo NICO eso no
+        # era cierto — no hacía falta ninguna ficha, sólo mirar el catálogo.
+        nico_code=_nico_esperado(catalogo, fecha, outcome.code),
         # `is_resolved` sale del contrato de evidencia, no de que el motor haya
         # llegado a un código: una clasificación que no se sostiene no puede
         # usarse para acusar a nadie.
