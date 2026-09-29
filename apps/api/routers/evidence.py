@@ -138,6 +138,13 @@ def _a_evidence(fila: EvidenceRecord) -> Evidence | None:
         model_name=fila.model_name,
         prompt_version=fila.prompt_version,
         engine_version=fila.engine_version,
+        # La pareja de cada versión. Sin ellos, `which_rule` sólo podía hablar
+        # de versiones: «None (motor 0.1.0)» para el motor y «None v0.1» para
+        # el extractor. Es el mismo hueco que tuvieron `document_ref`,
+        # `data_origin` y la vigencia, y por la misma razón: el campo se
+        # escribía en el dominio y no había columna que leer.
+        rule_id=fila.rule_id,
+        prompt_id=fila.prompt_id,
         # Sin esto, `covers()` trataba TODA evidencia como si no fuera
         # temporal (nunca restringía fecha) y la pregunta del §49 —«¿cuándo
         # era vigente?»— salía siempre "UNKNOWN → vigente", aunque la norma

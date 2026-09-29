@@ -175,21 +175,40 @@ def _coincide(terms: Sequence[str]) -> sa.ColumnElement[bool]:
 
 
 def _coincidencias(terms: Sequence[str]) -> sa.ColumnElement[int]:
-    """Cuántos términos DISTINTOS casa la partida. Es el orden de pertinencia.
+    """Cuántos términos casa UNA MISMA fracción, en la mejor que tenga la partida.
 
-    Se cuenta por término y no por fila: `max(...)` dentro de cada término
-    responde «esta partida contiene esta palabra en alguna de sus fracciones»,
-    y sumar esos máximos da cuántas palabras de la consulta cubre. Sumar filas
-    en vez de términos premiaría a la partida con más fracciones, que es otra
-    cosa.
+    El orden de las agregaciones es lo que decide, y elegirlo mal tiene un
+    fallo concreto detrás.
 
-    Ordenar sólo por `specificity` —lo que se hacía antes— deja que una
-    partida que casa una palabra genérica adelante a la que casa todas.
+    ANTES: sumar, por cada término, si ALGUNA fracción de la partida lo casaba.
+    Eso mide «cuántas de estas palabras aparecen en algún sitio bajo esta
+    partida», que en una partida residual no significa nada. Para un cable de
+    acero galvanizado, la 8479 —«Las demás máquinas y aparatos mecánicos con
+    función propia»— casaba CINCO de seis términos y ganaba a la 7312, que es
+    la correcta y casaba cuatro. Pero los cinco venían de fracciones distintas
+    y sin relación entre sí:
+
+        ACERO → 84798107   ·   CABLE → 84794002   ·   FIBRA → 84793001
+        CONSTRUCCION → 84791001   ·   GALVANIZADO → 84798103
+
+    Ninguna de ellas describe un cable. El cajón de sastre ganaba por ser
+    heterogéneo, y el motor resolvía en RGI 1 que un cable de acero era una
+    máquina de control numérico para galvanizado continuo (Persona 1, 28-sep,
+    a partir del dictamen humano del caso).
+
+    AHORA: contar los términos que casa CADA fracción con su propio texto —el
+    suyo más el de su partida y su subpartida— y quedarse con el máximo. Una
+    partida comprende la mercancía cuando UNA de sus fracciones la describe,
+    no cuando seis fracciones distintas mencionan una palabra cada una.
+
+    Con el mismo cable: la 7312 pasa a 4 —los cuatro en la 73121007— y la 8479
+    baja de 5 a menos de 3, fuera de las candidatas.
     """
     utiles = _terminos_utiles(terms)
     if not utiles:
         return sa.literal(0)
-    return reduce(operator.add, (sa.func.max(sa.case((_casa(t), 1), else_=0)) for t in utiles))
+    por_fraccion = reduce(operator.add, (sa.case((_casa(t), 1), else_=0) for t in utiles))
+    return sa.func.max(por_fraccion)
 
 
 class TariffCatalogRepository:
@@ -343,6 +362,55 @@ class TariffCatalogRepository:
                 sa.or_(Nico.valid_to.is_(None), Nico.valid_to >= on_date),
             )
             .order_by(Nico.code)
+        ).all()
+        return tuple(filas)
+
+    def fraccion_existe(self, *, on_date: date, code: str) -> bool:
+        """¿La fracción de 8 dígitos está en la TIGIE vigente ese día?
+
+        Aquí y no en el router por lo mismo que los NICO y las unidades: es
+        catálogo. Y se pregunta CON FECHA porque una fracción derogada existió
+        de verdad: un veredicto sobre una operación de 2022 puede citar una que
+        hoy ya no está, y rechazarla por no estar vigente HOY sería evaluar una
+        operación histórica con la tarifa posterior (regla 5 de CLAUDE.md).
+        """
+        return (
+            self._session.scalar(
+                sa.select(TariffFraction.id)
+                .where(_vigentes(on_date), TariffFraction.code == code)
+                .limit(1)
+            )
+            is not None
+        )
+
+    def hay_fracciones(self, *, on_date: date) -> bool:
+        """¿Hay tarifa cargada para esa fecha? Sin ella no se puede acusar a nadie.
+
+        Misma disciplina que `hay_unidades`, y por el mismo motivo: un catálogo
+        vacío no demuestra que una fracción no exista, sólo que no lo sabemos.
+        Sin esta pregunta, el guardarraíl del veredicto humano rechazaba TODO en
+        cualquier entorno sin tarifa —lo descubrieron los tests de integración,
+        que trabajan sobre una base sin catálogo— y habría rechazado también en
+        una instalación nueva del cliente.
+        """
+        return (
+            self._session.scalar(sa.select(TariffFraction.id).where(_vigentes(on_date)).limit(1))
+            is not None
+        )
+
+    def hermanas_de(self, *, on_date: date, code: str) -> tuple[str, ...]:
+        """Las fracciones que SÍ existen en la subpartida de `code`, ese día.
+
+        Para poder decirle a quien teclea una fracción inexistente cuáles hay
+        en su lugar. Devuelve catálogo, no una propuesta: el sistema no sugiere
+        una fracción —eso lo decide la persona— sólo le enseña lo que existe.
+        """
+        if len(code) < 6:
+            return ()
+        filas = self._session.scalars(
+            sa.select(TariffFraction.code)
+            .where(_vigentes(on_date), TariffFraction.subheading == code[:6])
+            .order_by(TariffFraction.code)
         ).all()
         return tuple(filas)
 

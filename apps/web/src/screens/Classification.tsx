@@ -111,7 +111,50 @@ export function Classification({ decisionInicial = null }: Props = {}) {
             )}
           </div>
 
-          {detalle.requires_human_review && (
+          {/* El dictamen va ANTES del aviso de revisión: si alguien ya se
+              pronunció, enseñar primero «requiere que una persona lo revise»
+              deja invisible el trabajo del clasificador justo donde más
+              falta hace. */}
+          {detalle.dictamen && (
+            <div className="dictamen" role="note">
+              <strong>
+                Ya lo dictaminó una persona
+                {detalle.dictamen.fraction_code
+                  ? ': '
+                  : ', y coincide en que no se puede determinar.'}
+                {detalle.dictamen.fraction_code && (
+                  <code className="dictamen__codigo">
+                    {detalle.dictamen.fraction_code}
+                  </code>
+                )}
+              </strong>
+              {detalle.dictamen.reasoning && <p>{detalle.dictamen.reasoning}</p>}
+
+              {/* Un veredicto humano es autoridad sobre el CRITERIO, no sobre
+                  qué códigos existen. Un dígito mal teclado no se convierte en
+                  fracción por venir de una persona, y pintarlo en verde como
+                  «la única verdad que no generamos nosotros» es peor que no
+                  enseñarlo: le da el respaldo de la tarifa a algo que la
+                  tarifa no respalda. */}
+              {detalle.dictamen.en_catalogo === false && (
+                <p className="dictamen__fuera-de-catalogo">
+                  <strong>Esta fracción no está en la TIGIE vigente ese día.</strong>{' '}
+                  El veredicto se conserva tal como lo dejó la persona —no lo
+                  corregimos nosotros, porque elegir la fracción es justo lo que
+                  no nos toca— pero no se puede declarar hasta que quien lo
+                  firmó la confirme.
+                </p>
+              )}
+
+              <p className="dictamen__pie">
+                Se conservan las dos respuestas —la del motor y la de la
+                persona— a propósito: es lo único que permite medir en qué
+                porcentaje coinciden.
+              </p>
+            </div>
+          )}
+
+          {detalle.requires_human_review && !detalle.dictamen && (
             <div className="revision" role="note">
               <strong>Requiere revisión humana antes de declararse.</strong>
               {detalle.missing_information.length > 0 && (

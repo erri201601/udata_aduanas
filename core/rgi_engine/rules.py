@@ -17,6 +17,7 @@ pasar de largo, no.
 from __future__ import annotations
 
 import re
+import unicodedata
 from decimal import Decimal
 from typing import TYPE_CHECKING, Protocol
 
@@ -562,7 +563,7 @@ class RGI6:
                 missing_information=(f"subpartidas de {partida.heading}",),
             )
 
-        elegida = _unica_o_mas_especifica(subs)
+        elegida = _unica_o_mas_especifica(subs, mercancia=context.description)
         if elegida is None:
             return RGIResult(
                 rule_id=self.rule_id,
@@ -594,17 +595,66 @@ class RGI6:
                 confidence=_confianza(context),
             )
 
-        fraccion = _unica_o_mas_especifica(fracciones)
+        # ── Descarte por contradicción ──────────────────────────────────────
+        #
+        # Antes de intentar elegir, se quitan las que la mercancía hace
+        # imposibles: una fracción que dice «sin galvanizar» no puede ser la de
+        # un cable que consta galvanizado. Descartar es una afirmación mucho
+        # más barata de sostener que elegir, y se puede hacer sin saber cuál es
+        # la correcta.
+        #
+        # LA REGLA QUE HACE ESTO SEGURO: descartar sólo puede RESOLVER cuando
+        # queda exactamente una. Si quedan varias, se vuelve a la lista
+        # COMPLETA y al desempate de siempre, no a los supervivientes.
+        #
+        # No es una cautela teórica. Con el cable 6x19 de ⌀10 mm, descartar
+        # `73121008` («Sin galvanizar») y desempatar entre los supervivientes
+        # por `specificity` daría `73121007` —«constituidos por 7 alambres»—
+        # para una construcción de 114 alambres. Hoy el motor empata y se
+        # niega, que es la respuesta correcta. Una mejora que convierte una
+        # negativa honesta en una fracción equivocada no es una mejora.
+        afirmado = _raices(
+            " ".join([context.description, *(f.value or "" for f in context.known_facts())])
+        )
+        descartes = {c.code: m for c in fracciones if (m := _contradice(c, afirmado))}
+        vivas = [c for c in fracciones if c.code not in descartes]
+        motivos = " · ".join(f"{c}: el texto dice «sin {m}»" for c, m in descartes.items())
+
+        if len(vivas) == 1:
+            unica = vivas[0]
+            return RGIResult(
+                rule_id=self.rule_id,
+                status=RGIStatus.RESOLVED,
+                input_facts=hechos,
+                candidate_codes=(unica,),
+                reasoning_summary=(
+                    f"Partida {partida.heading} → subpartida {elegida.code} → "
+                    f"fracción {unica.code} («{unica.text}»). Es la única que la "
+                    f"mercancía no contradice; descartadas: {motivos}."
+                ),
+                source_ids=tuple(
+                    c.source_id for c in (partida, elegida, unica) if c.source_id is not None
+                ),
+                confidence=_confianza(context),
+            )
+
+        fraccion = _unica_o_mas_especifica(fracciones, mercancia=context.description)
         if fraccion is None:
             return RGIResult(
                 rule_id=self.rule_id,
                 status=RGIStatus.HUMAN_REVIEW_REQUIRED,
                 input_facts=hechos,
-                candidate_codes=tuple(fracciones),
+                candidate_codes=tuple(vivas or fracciones),
                 reasoning_summary=(
                     f"Varias fracciones de {elegida.code} son aplicables "
-                    f"({', '.join(f.code for f in fracciones)}). El motor no elige: una "
-                    f"fracción equivocada cambia el arancel que paga el importador."
+                    f"({', '.join(f.code for f in (vivas or fracciones))}). El motor no "
+                    f"elige: una fracción equivocada cambia el arancel que paga el "
+                    f"importador."
+                    + (
+                        f" Sí descartó {len(descartes)} por contradicción — {motivos}."
+                        if descartes
+                        else ""
+                    )
                 ),
                 missing_information=("desempate de fracción por un clasificador",),
             )
@@ -628,16 +678,107 @@ class RGI6:
 # ── Auxiliares ───────────────────────────────────────────────────────────────
 
 
-def _unica_o_mas_especifica(cands: Sequence[TariffCandidate]) -> TariffCandidate | None:
-    """El único candidato, o el más específico si no hay empate.
+#: Por debajo de esto una palabra no distingue nada: «de», «los», «para».
+_MINIMO_DISTINTIVO = 5
 
-    `None` significa que hay empate y alguien tiene que decidir.
+
+def _plano(texto: str) -> str:
+    """El texto sin acentos ni mayúsculas, para poder compararlo."""
+    return unicodedata.normalize("NFKD", texto.casefold()).encode("ascii", "ignore").decode()
+
+
+def _palabras(texto: str) -> set[str]:
+    """Las palabras del texto que pueden distinguir, sin acentos ni mayúsculas."""
+    return {p for p in re.findall(r"[^\W\d_]+", _plano(texto)) if len(p) >= _MINIMO_DISTINTIVO}
+
+
+#: Prefijo con el que se comparan dos palabras para decidir que hablan de lo
+#: mismo. «galvanizar» y «galvanizado» comparten «galvani»; «recubrimiento» y
+#: «recubrir», «recubri». Siete y no menos: con cinco, «acerado» y «acero»
+#: colisionarían con media tarifa.
+_RAIZ = 7
+
+#: «sin X» niega X. «con o sin X» NO lo niega: lo permite en los dos sentidos,
+#: y tratarlo como negación descartaría la fracción correcta de un cable
+#: lubricado por decir su texto «con o sin lubricación».
+_NIEGA = re.compile(r"(?<!con o )\bsin\s+([^\W\d_]+)")
+
+
+def _raices(texto: str) -> set[str]:
+    """Las raíces de las palabras distintivas de un texto."""
+    return {p[:_RAIZ] for p in _palabras(texto)}
+
+
+def _contradice(candidata: TariffCandidate, afirmado: set[str]) -> str | None:
+    """La palabra por la que esta candidata es imposible, o `None`.
+
+    Descartar es más seguro que elegir: una fracción que dice «sin galvanizar»
+    no puede ser la de una mercancía que consta galvanizada, y eso se afirma
+    sin saber cuál ES la correcta.
+
+    Sólo mira negaciones explícitas del texto legal contra lo que el documento
+    AFIRMA de la mercancía. No deduce: que una mercancía no mencione una
+    característica no significa que no la tenga, y tratar el silencio como
+    negación descartaría la correcta.
+    """
+    # Sobre el texto NORMALIZADO: la tarifa escribe «Sin galvanizar» con
+    # mayúscula inicial y «diámetro» con acento, y un patrón que no lo
+    # contemple no encuentra ni una sola negación.
+    for negada in _NIEGA.findall(_plano(candidata.text)):
+        negada = str(negada)
+        raices = _raices(negada)
+        if raices and raices & afirmado:
+            return negada
+    return None
+
+
+def _algo_la_sostiene(candidata: TariffCandidate, mercancia: str) -> bool:
+    """¿Hay algo en la mercancía que respalde lo que esta candidata añade?
+
+    Una candidata «más específica» lo es porque su TEXTO lleva calificativos,
+    no porque la mercancía los cumpla. Si ninguno de ellos aparece en lo que
+    consta del producto, elegirla es afirmar una característica que el
+    documento no dice.
+    """
+    return bool(_palabras(candidata.text) & _palabras(mercancia))
+
+
+def _unica_o_mas_especifica(
+    cands: Sequence[TariffCandidate], *, mercancia: str = ""
+) -> TariffCandidate | None:
+    """El único candidato, o el más específico si algo de la mercancía lo sostiene.
+
+    `None` significa que nadie puede decidir con lo que hay, y alguien tiene
+    que hacerlo.
+
+    LA ESPECIFICIDAD NO ES EVIDENCIA
+
+    `specificity` mide cuántos calificativos tiene el TEXTO de la fracción, no
+    que la mercancía los cumpla. Elegir por ella a secas hace que el motor
+    afirme lo que el documento no dice.
+
+    El caso que lo destapó (Persona 1, 28-sep, a partir de un dictamen
+    humano): una vajilla de cerámica vidriada competía entre
+
+        69120003  «De Talavera.»   specificity 2
+        69120099  «Los demás.»     specificity 0
+
+    y el motor elegía Talavera **cinco veces**, en una mercancía que no
+    menciona Talavera en ninguna parte. El agente aduanal y la declaración
+    coincidían en «Los demás».
+
+    Ahora la más específica sólo gana si alguna de sus palabras distintivas
+    aparece en la mercancía. Si no, se devuelve `None` y decide una persona:
+    una fracción equivocada cambia el arancel que paga el importador.
     """
     if len(cands) == 1:
         return cands[0]
     maximo = max(c.specificity for c in cands)
     lideres = [c for c in cands if c.specificity == maximo]
-    return lideres[0] if len(lideres) == 1 and maximo > 0 else None
+    if len(lideres) != 1 or maximo <= 0:
+        return None
+    lider = lideres[0]
+    return lider if _algo_la_sostiene(lider, mercancia) else None
 
 
 def _confianza(context: ClassificationContext, *, penalizacion: Decimal = Decimal("0")) -> Decimal:

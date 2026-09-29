@@ -221,7 +221,20 @@ export function PedimentoShadow() {
     return () => control.abort()
   }, [elegido])
 
-  const nadaComprobado = datos != null && datos.partidas > 0 && datos.conformes === 0
+  /* «Ninguna se pudo comprobar» es que NINGUNA produjo veredicto, no que
+     ninguna saliera conforme. Una partida DIVERGENTE sí se comprobó: se
+     comprobó y no cuadró. Mientras la condición fue `conformes === 0`, el
+     cartel rojo salía sobre un pedimento con 5 divergentes y 8 hallazgos con
+     importe al peso, diciendo que el sistema «no pudo afirmar nada» encima de
+     la pantalla donde acababa de afirmar ocho cosas. Se contradecía sola.
+
+     Es la sexta vez en este proyecto que se colapsan dos estados distintos en
+     una sola condición. Aquí los dos merecen decirse, y dicen cosas opuestas:
+     no haber podido comprobar nada, y haberlo comprobado sin encontrar una
+     sola partida correcta. */
+  const comprobadas = datos != null ? datos.divergentes + datos.conformes : 0
+  const nadaComprobado = datos != null && datos.partidas > 0 && comprobadas === 0
+  const ningunaConforme = datos != null && comprobadas > 0 && datos.conformes === 0
 
   return (
     <section className="pantalla">
@@ -276,6 +289,24 @@ export function PedimentoShadow() {
               <p>
                 Cero hallazgos aquí no significa que todo esté bien — significa que el sistema
                 no pudo afirmar nada. Abajo está el motivo de cada partida.
+              </p>
+            </div>
+          )}
+
+          {/* El otro estado, que NO es el anterior y antes se pintaba igual:
+              sí se comprobaron partidas, y ninguna resultó correcta. Eso no es
+              un hueco del sistema; es un resultado sobre el pedimento, y se
+              dice con otro tono porque significa lo contrario. */}
+          {ningunaConforme && (
+            <div className="alerta" role="note">
+              <strong>
+                De las {comprobadas} partidas que se pudieron comprobar, ninguna coincidió con
+                lo esperado.
+              </strong>
+              <p>
+                Las otras {datos.sin_verificar} no se pudieron comprobar, y no cuentan ni a
+                favor ni en contra. Cero conformes aquí es un resultado sobre el pedimento, no
+                una limitación del sistema.
               </p>
             </div>
           )}

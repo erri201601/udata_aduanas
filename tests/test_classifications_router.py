@@ -12,6 +12,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -156,11 +157,31 @@ class SesionFalsa:
     def get(self, _modelo: type, _id: uuid.UUID) -> Any:
         return self._decision
 
+    #: El veredicto humano que devuelve `.first()`. `None` = nadie revisó.
+    _veredicto: Any = None
+
+    #: ¿Existe en la tarifa la fracción del veredicto? Por defecto sí, para que
+    #: los tests que no hablan del catálogo sigan probando lo suyo.
+    _fraccion_en_catalogo: bool = True
+
+    #: ¿Hay tarifa cargada? Con `False` la pregunta no se puede contestar, y
+    #: `en_catalogo` debe salir `None` en vez de `False`.
+    _hay_tarifa: bool = True
+
+    def scalar(self, sentencia: Any) -> Any:
+        # «¿hay tarifa?» no filtra por código; «¿existe ESTE código?» sí.
+        if "tariff_fractions.code =" in str(sentencia):
+            return uuid.uuid4() if self._fraccion_en_catalogo else None
+        return uuid.uuid4() if self._hay_tarifa else None
+
     def scalars(self, sentencia: Any) -> Any:
         entidad = sentencia.column_descriptions[0]["entity"]
         resultado = type("R", (), {})()
         if entidad is ClassificationDecision:
             resultado.all = lambda: [self._decision] if self._decision else []
+            # La búsqueda del dictamen humano: `.first()`, y `None` porque en
+            # estos tests nadie ha revisado la decisión todavía.
+            resultado.first = lambda: self._veredicto
         elif entidad is ClassificationCandidate:
             resultado.all = lambda: _candidatos() if self._decision else []
         else:
@@ -312,3 +333,140 @@ def test_la_traza_del_test_coincide_con_la_que_escribe_el_repositorio() -> None:
     )
 
     assert sorted(_traza(outcome)[0]) == sorted(TRAZA[0])
+
+
+# ── La decisión enseña su dictamen (Persona 1, 29-sep) ─────────────────────
+
+
+def test_una_decision_ya_dictaminada_lo_dice() -> None:
+    """La pantalla decía «requiere que una persona lo revise» sobre un caso
+    que una persona YA había revisado.
+
+    El trabajo del clasificador quedaba invisible justo donde más falta hace:
+    al lado de lo que la máquina no pudo.
+    """
+    from datetime import UTC, datetime
+
+    veredicto = SimpleNamespace(
+        id=uuid.uuid4(),
+        fraction_code="73053199",
+        reasoning="Revisión humana de CESAR: corrige.",
+        created_at=datetime(2026, 9, 28, tzinfo=UTC),
+        # La comprobación contra el catálogo va con la fecha DE LA OPERACIÓN,
+        # no con hoy: una fracción derogada existió de verdad (regla 5).
+        operation_date=date(2026, 8, 3),
+    )
+    sesion = SesionFalsa(decision=_decision())
+    sesion._veredicto = veredicto
+    app = create_app()
+    app.dependency_overrides[get_session] = lambda: sesion
+
+    with TestClient(app) as c:
+        cuerpo = c.get(f"/classifications/{DECISION_ID}").json()
+
+    assert cuerpo["dictamen"] is not None
+    assert cuerpo["dictamen"]["fraction_code"] == "73053199"
+    assert "CESAR" in cuerpo["dictamen"]["reasoning"]
+
+
+def test_un_dictamen_con_fraccion_fuera_de_catalogo_lo_declara() -> None:
+    """REGRESIÓN REAL (ensayo de la demo del 29-sep).
+
+    `73239399` sobre un sartén de acero inoxidable: bajo esa subpartida sólo
+    existe `73239305`. Entró antes de que hubiera guardarraíl, así que el
+    guardarraíl del endpoint de revisión no la arregla — y la pantalla la
+    pintaba en verde como «la única verdad del sistema que no generamos
+    nosotros», con el respaldo visual de la tarifa y sin la tarifa detrás.
+
+    Se comprueba al LEER precisamente por eso: por las filas que ya están.
+    """
+    from datetime import UTC, datetime
+
+    veredicto = SimpleNamespace(
+        id=uuid.uuid4(),
+        fraction_code="73239399",
+        reasoning="Revisión humana de CESAR: corrige.",
+        created_at=datetime(2026, 9, 28, tzinfo=UTC),
+        operation_date=date(2026, 8, 3),
+    )
+    sesion = SesionFalsa(decision=_decision())
+    sesion._veredicto = veredicto
+    sesion._fraccion_en_catalogo = False
+    app = create_app()
+    app.dependency_overrides[get_session] = lambda: sesion
+
+    with TestClient(app) as c:
+        cuerpo = c.get(f"/classifications/{DECISION_ID}").json()
+
+    assert cuerpo["dictamen"]["en_catalogo"] is False
+    # Y el dictamen NO desaparece: el criterio de la persona sigue ahí.
+    assert cuerpo["dictamen"]["fraction_code"] == "73239399"
+
+
+def test_un_dictamen_sin_fraccion_no_se_comprueba_contra_el_catalogo() -> None:
+    """`en_catalogo` es `None`, no `False`.
+
+    Coincidir en que no se puede determinar no tiene nada que comprobar, y
+    marcarlo como fuera de catálogo lo leería como un error del revisor.
+    """
+    from datetime import UTC, datetime
+
+    veredicto = SimpleNamespace(
+        id=uuid.uuid4(),
+        fraction_code=None,
+        reasoning="Revisión humana de CESAR: confirma que no se puede determinar.",
+        created_at=datetime(2026, 9, 28, tzinfo=UTC),
+        operation_date=date(2026, 8, 3),
+    )
+    sesion = SesionFalsa(decision=_decision())
+    sesion._veredicto = veredicto
+    sesion._fraccion_en_catalogo = False
+    app = create_app()
+    app.dependency_overrides[get_session] = lambda: sesion
+
+    with TestClient(app) as c:
+        cuerpo = c.get(f"/classifications/{DECISION_ID}").json()
+
+    assert cuerpo["dictamen"]["en_catalogo"] is None
+
+
+def test_sin_tarifa_cargada_en_catalogo_es_nulo_y_no_falso() -> None:
+    """`None` es «no consta»; `False` es «comprobado y no está».
+
+    Con la tarifa sin cargar, decir `False` acusaría al revisor de un error que
+    sólo demuestra que nos falta el catálogo, y la pantalla pintaría el aviso
+    ámbar sobre un dictamen correcto.
+    """
+    from datetime import UTC, datetime
+
+    veredicto = SimpleNamespace(
+        id=uuid.uuid4(),
+        fraction_code="73239305",
+        reasoning="Revisión humana de CESAR: corrige.",
+        created_at=datetime(2026, 9, 28, tzinfo=UTC),
+        operation_date=date(2026, 8, 3),
+    )
+    sesion = SesionFalsa(decision=_decision())
+    sesion._veredicto = veredicto
+    sesion._hay_tarifa = False
+    sesion._fraccion_en_catalogo = False
+    app = create_app()
+    app.dependency_overrides[get_session] = lambda: sesion
+
+    with TestClient(app) as c:
+        cuerpo = c.get(f"/classifications/{DECISION_ID}").json()
+
+    assert cuerpo["dictamen"]["en_catalogo"] is None
+
+
+def test_sin_dictamen_el_campo_es_nulo_y_no_un_dictamen_vacio() -> None:
+    """`None` es «nadie se ha pronunciado». Un dictamen sin fracción es «una
+    persona miró y tampoco pudo determinarla». No son lo mismo."""
+    sesion = SesionFalsa(decision=_decision())
+    app = create_app()
+    app.dependency_overrides[get_session] = lambda: sesion
+
+    with TestClient(app) as c:
+        cuerpo = c.get(f"/classifications/{DECISION_ID}").json()
+
+    assert cuerpo["dictamen"] is None

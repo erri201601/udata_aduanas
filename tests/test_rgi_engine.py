@@ -237,6 +237,179 @@ def test_varias_fracciones_aplicables_no_se_deciden_al_azar() -> None:
     assert traza.requires_human_review
 
 
+# ── Descarte por contradicción (RGI 6) ───────────────────────────────────────
+#
+# El caso es real: el cable de acero galvanizado 6x19 de ⌀10 mm del corpus, y
+# las cinco fracciones de 7312.10 tal como están en la TIGIE.
+
+PARTIDA_7312 = TariffCandidate(
+    code="7312",
+    text="Cables, trenzas, eslingas y artículos similares, de hierro o acero",
+    level="HEADING",
+    source_id="src-ligie-73",
+    specificity=8,
+)
+SUB_731210 = TariffCandidate(
+    code="731210", text="Cables.", level="SUBHEADING", source_id="src-ligie-7312", specificity=1
+)
+FRAC_CABLE = [
+    TariffCandidate(
+        code="73121001",
+        text="Galvanizados, con diámetro mayor de 4 mm, constituidos por más de 5 alambres.",
+        level="FRACTION",
+        specificity=1,
+    ),
+    TariffCandidate(
+        code="73121005",
+        text="De acero sin recubrimiento, con o sin lubricación.",
+        level="FRACTION",
+        specificity=1,
+    ),
+    TariffCandidate(
+        code="73121007",
+        text=(
+            "Galvanizados, con un diámetro mayor a 4 mm pero inferior a 19 mm, "
+            "constituidos por 7 alambres."
+        ),
+        level="FRACTION",
+        specificity=3,
+    ),
+    TariffCandidate(
+        code="73121008",
+        text="Sin galvanizar, de diámetro menor o igual a 19 mm, constituidos por 7 alambres.",
+        level="FRACTION",
+        specificity=3,
+    ),
+    TariffCandidate(code="73121099", text="Los demás.", level="FRACTION", specificity=0),
+]
+
+
+def _contexto_cable(**cambios: object) -> ClassificationContext:
+    base: dict[str, object] = {
+        "description": "CABLE DE ACERO GALVANIZADO, CONSTRUCCION 6X19, DIAMETRO 10 MM",
+        "operation_date": OPERACION,
+        "facts": (
+            ProductFact(name="material", value="acero galvanizado", status="OBSERVED"),
+            ProductFact(name="construccion", value="6x19", status="OBSERVED"),
+            ProductFact(name="diametro_mm", value="10", status="OBSERVED"),
+        ),
+        "search_terms": ("cables de acero",),
+    }
+    base.update(cambios)
+    return ClassificationContext(**base)  # type: ignore[arg-type]
+
+
+def test_descartar_no_convierte_una_negativa_honesta_en_una_fraccion_equivocada() -> None:
+    """EL TEST QUE IMPORTA.
+
+    Es la razón de que el descarte sólo resuelva cuando queda UNA. El diseño
+    obvio —quitar la contradicha y desempatar entre las supervivientes por
+    `specificity`— daría `73121007` para este cable: su texto exige «7
+    alambres» y una construcción 6x19 son 114. El motor hoy empata y se niega,
+    que es la respuesta correcta.
+
+    Una mejora que convierte una negativa honesta en una fracción equivocada
+    no es una mejora: es un arancel mal pagado con apariencia de rigor.
+    """
+    cat = CatalogoFalso([PARTIDA_7312], [SUB_731210], FRAC_CABLE)
+    traza = classify(_contexto_cable(), catalog=cat, notes=NotasFalsas())
+
+    assert traza.final_status is RGIStatus.HUMAN_REVIEW_REQUIRED
+    assert traza.resolved_code is None
+    assert traza.requires_human_review
+
+
+def test_la_contradiccion_se_descarta_y_se_dice_por_que() -> None:
+    """«Sin galvanizar» no puede ser un cable que consta galvanizado.
+
+    Aunque no resuelva, el descarte es trabajo útil: el clasificador recibe
+    cuatro candidatas en vez de cinco, y con el motivo escrito.
+    """
+    cat = CatalogoFalso([PARTIDA_7312], [SUB_731210], FRAC_CABLE)
+    traza = classify(_contexto_cable(), catalog=cat, notes=NotasFalsas())
+
+    paso = traza.steps[-1]
+    assert "73121008" in paso.reasoning_summary
+    assert "galvanizar" in paso.reasoning_summary
+    # Y ya no se le ofrece como candidata viva.
+    assert "73121008" not in [c.code for c in paso.candidate_codes]
+
+
+def test_si_la_contradiccion_deja_una_sola_el_motor_si_resuelve() -> None:
+    """Cuando descartar deja exactamente una, hay un motivo para elegirla.
+
+    No es «la más específica»: es «la única que la mercancía no contradice»,
+    que es una afirmación que un agente aduanal puede firmar.
+    """
+    cat = CatalogoFalso(
+        [PARTIDA_7312],
+        [SUB_731210],
+        [
+            TariffCandidate(
+                code="73121001",
+                text="Galvanizados, con diámetro mayor de 4 mm.",
+                level="FRACTION",
+                specificity=1,
+            ),
+            TariffCandidate(
+                code="73121008",
+                text="Sin galvanizar, de diámetro menor o igual a 19 mm.",
+                level="FRACTION",
+                specificity=3,
+            ),
+        ],
+    )
+    traza = classify(_contexto_cable(), catalog=cat, notes=NotasFalsas())
+
+    assert traza.final_status is RGIStatus.RESOLVED
+    assert traza.resolved_code == "73121001"
+    assert "no contradice" in traza.steps[-1].reasoning_summary
+
+
+def test_con_o_sin_no_es_una_negacion() -> None:
+    """«con o sin lubricación» PERMITE las dos cosas.
+
+    Leerlo como negación descartaría la fracción correcta de una mercancía
+    lubricada. El paréntesis negativo del patrón existe por esto.
+    """
+    cat = CatalogoFalso(
+        [PARTIDA_7312],
+        [SUB_731210],
+        [
+            TariffCandidate(
+                code="73121005",
+                text="De acero, con o sin lubricación.",
+                level="FRACTION",
+                specificity=1,
+            ),
+        ],
+    )
+    contexto_lubricado = _contexto_cable(
+        facts=(ProductFact(name="acabado", value="lubricado", status="OBSERVED"),)
+    )
+    traza = classify(contexto_lubricado, catalog=cat, notes=NotasFalsas())
+
+    assert traza.resolved_code == "73121005"
+
+
+def test_el_silencio_de_la_ficha_no_es_una_negacion() -> None:
+    """Que la mercancía no mencione una característica no significa que no la
+    tenga. Tratar el silencio como negación descartaría la correcta.
+
+    Aquí la ficha no dice nada de galvanizado, así que «Sin galvanizar» sigue
+    siendo posible y no se descarta.
+    """
+    cat = CatalogoFalso([PARTIDA_7312], [SUB_731210], FRAC_CABLE)
+    mudo = _contexto_cable(
+        description="CABLE DE ACERO, CONSTRUCCION 6X19",
+        facts=(ProductFact(name="construccion", value="6x19", status="OBSERVED"),),
+    )
+    traza = classify(mudo, catalog=cat, notes=NotasFalsas())
+
+    assert traza.final_status is RGIStatus.HUMAN_REVIEW_REQUIRED
+    assert "73121008" in [c.code for c in traza.steps[-1].candidate_codes]
+
+
 def test_un_codigo_inventado_por_el_modelo_se_rechaza() -> None:
     """La máquina existe justamente para atrapar esto (§36).
 
@@ -437,3 +610,58 @@ def test_la_traza_explica_por_que_se_descarto_cada_alternativa() -> None:
     descartes = traza.rejected()
     assert descartes
     assert any("RGI-1" in d for d in descartes)
+
+
+# ── La especificidad no es evidencia (Persona 1, 28-sep) ───────────────────
+
+
+_TALAVERA = TariffCandidate(code="69120003", text="De Talavera.", level="FRACTION", specificity=2)
+_LOS_DEMAS = TariffCandidate(code="69120099", text="Los demás.", level="FRACTION", specificity=0)
+
+
+def test_la_mas_especifica_no_gana_si_nada_la_sostiene() -> None:
+    """Elegir «De Talavera» para una vajilla que no dice Talavera es afirmar
+    una característica que el documento no sostiene.
+
+    Pasó cinco veces contra la base: el agente aduanal y la declaración
+    coincidían en «Los demás», y el motor proponía Talavera.
+    """
+    from core.rgi_engine.rules import _unica_o_mas_especifica
+
+    elegida = _unica_o_mas_especifica(
+        [_TALAVERA, _LOS_DEMAS],
+        mercancia="VAJILLA DE CERAMICA VIDRIADA, NO PORCELANA, PARA SERVICIO DE MESA",
+    )
+
+    assert elegida is None, "sin respaldo, decide una persona"
+
+
+def test_la_mas_especifica_gana_cuando_la_mercancia_la_respalda() -> None:
+    """Si la mercancía SÍ dice Talavera, la específica es la correcta y el
+    motor no tiene por qué mandarla a revisión."""
+    from core.rgi_engine.rules import _unica_o_mas_especifica
+
+    elegida = _unica_o_mas_especifica(
+        [_TALAVERA, _LOS_DEMAS],
+        mercancia="VAJILLA DE TALAVERA DE PUEBLA, PINTADA A MANO",
+    )
+
+    assert elegida is not None
+    assert elegida.code == "69120003"
+
+
+def test_el_respaldo_ignora_acentos_y_mayusculas() -> None:
+    """La mercancía viene en mayúsculas y sin acentos; la tarifa los lleva."""
+    from core.rgi_engine.rules import _unica_o_mas_especifica
+
+    inoxidable = TariffCandidate(
+        code="73239305", text="De acero inoxidable.", level="FRACTION", specificity=2
+    )
+    otra = TariffCandidate(code="73239999", text="Los demás.", level="FRACTION", specificity=0)
+
+    elegida = _unica_o_mas_especifica(
+        [inoxidable, otra], mercancia="SARTEN DE ACERO INOXIDABLE PARA COCINA"
+    )
+
+    assert elegida is not None
+    assert elegida.code == "73239305"

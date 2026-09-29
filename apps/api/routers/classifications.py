@@ -16,6 +16,7 @@ Sólo lectura. Persistir decisiones es del orquestador.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Annotated
 
 import sqlalchemy as sa
@@ -24,8 +25,9 @@ from database.models import (
     ClassificationDecision,
     EvidenceRecord,
 )
+from database.repositories.tariff import TariffCatalogRepository
 from fastapi import APIRouter, HTTPException, Query, status
-from pydantic import Field
+from pydantic import BaseModel, Field
 from schemas.intelligence import (
     ClassificationCandidateRead,
     ClassificationDecisionRead,
@@ -44,6 +46,30 @@ LIMITE_MAXIMO = 200
 TIPOS_QUE_FUNDAMENTAN = frozenset({"LEGAL_SOURCE"})
 
 
+class DictamenRead(BaseModel):
+    """Lo que una persona decidió sobre una decisión del motor."""
+
+    decision_id: uuid.UUID
+    fraction_code: str | None = None
+    """`None` cuando el revisor confirmó que tampoco él puede determinarla:
+    coincidir en que no se puede es un resultado, no un hueco."""
+    reasoning: str | None = None
+    created_at: datetime
+
+    en_catalogo: bool | None = None
+    """¿La fracción del veredicto existe en la TIGIE vigente ese día?
+
+    `None` cuando el veredicto no trae fracción: coincidir en que no se puede
+    determinar no tiene nada que comprobar contra el catálogo.
+
+    Se comprueba al LEER, no sólo al escribir, porque el guardarraíl del
+    endpoint de revisión no arregla las filas que entraron antes de existir.
+    Hay una: `73239399` sobre un sartén de acero inoxidable, donde la única
+    fracción de esa subpartida es `73239305`. La pantalla lo dice en vez de
+    pintarla en verde como si la tarifa la respaldara.
+    """
+
+
 class ClassificationDetail(ClassificationDecisionRead):
     """Una decisión con todo lo necesario para defenderla.
 
@@ -54,6 +80,18 @@ class ClassificationDetail(ClassificationDecisionRead):
 
     candidates: list[ClassificationCandidateRead] = Field(default_factory=list)
     evidences: list[EvidenceRecordRead] = Field(default_factory=list)
+
+    dictamen: DictamenRead | None = None
+    """El veredicto humano sobre ESTA decisión, si alguien ya se pronunció.
+
+    Sin esto la pantalla enseñaba «Sin fracción — requiere que una persona lo
+    revise» sobre un caso que una persona YA había revisado, y el trabajo del
+    clasificador quedaba invisible justo donde más falta hace: al lado de lo
+    que la máquina no pudo.
+
+    Es `None` cuando nadie ha dictaminado, que no es lo mismo que un dictamen
+    vacío.
+    """
 
     trace_available: bool = False
     """¿Se conservó la traza paso a paso de esta decisión?
@@ -88,6 +126,23 @@ def listar_decisiones(
     return [ClassificationDecisionRead.model_validate(f, from_attributes=True) for f in filas]
 
 
+def _en_catalogo(session: SessionDep, veredicto: ClassificationDecision) -> bool | None:
+    """¿La fracción del veredicto está en la TIGIE vigente ese día?
+
+    `None` cuando no hay nada que comprobar —el veredicto no trae fracción— y
+    también cuando NO SE PUEDE comprobar, porque no hay tarifa cargada para esa
+    fecha. Los dos casos son «no consta», y son distintos de `False`, que es
+    «comprobado y no está». Devolver `False` con el catálogo vacío acusaría al
+    revisor de un error que sólo demuestra que nos falta el catálogo.
+    """
+    if not veredicto.fraction_code:
+        return None
+    catalogo = TariffCatalogRepository(session)
+    if not catalogo.hay_fracciones(on_date=veredicto.operation_date):
+        return None
+    return catalogo.fraccion_existe(on_date=veredicto.operation_date, code=veredicto.fraction_code)
+
+
 @router.get("/{decision_id}", summary="Una decisión con su traza y evidencias")
 def obtener_decision(decision_id: uuid.UUID, session: SessionDep) -> ClassificationDetail:
     decision = session.get(ClassificationDecision, decision_id)
@@ -114,9 +169,29 @@ def obtener_decision(decision_id: uuid.UUID, session: SessionDep) -> Classificat
         )
     ).all()
 
+    # El veredicto apunta a la decisión revisada, no al revés: se busca por
+    # `reviews_decision_id`, que es lo que garantiza que un dictamen diga
+    # siempre QUÉ revisó (#79).
+    veredicto = session.scalars(
+        sa.select(ClassificationDecision)
+        .where(ClassificationDecision.reviews_decision_id == decision_id)
+        .order_by(ClassificationDecision.created_at.desc())
+    ).first()
+
     detalle = ClassificationDetail.model_validate(decision, from_attributes=True)
     return detalle.model_copy(
         update={
+            "dictamen": (
+                DictamenRead(
+                    decision_id=veredicto.id,
+                    fraction_code=veredicto.fraction_code,
+                    reasoning=veredicto.reasoning,
+                    created_at=veredicto.created_at,
+                    en_catalogo=_en_catalogo(session, veredicto),
+                )
+                if veredicto is not None
+                else None
+            ),
             "candidates": [
                 ClassificationCandidateRead.model_validate(c, from_attributes=True)
                 for c in candidatos

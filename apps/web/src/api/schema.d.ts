@@ -369,6 +369,21 @@ export interface paths {
          *
          *     Lo más viejo primero a propósito: en una bandeja de trabajo, lo que lleva
          *     más tiempo esperando es lo que más urge, no lo que acaba de llegar.
+         *
+         *     UN CASO POR FICHA, NO UNO POR VEZ QUE SE CLASIFICÓ
+         *
+         *     Clasificar el mismo producto otra vez —por una prueba, por un cambio del
+         *     motor, por volver a medir— dejaba una decisión pendiente más. La bandeja
+         *     llegó a tener el mismo producto DIEZ veces mientras los casos que de verdad
+         *     importaban esperaban debajo. Quien revisa perdería la tarde en un solo
+         *     caso, y su veredicto describiría una decisión que el motor ya no toma.
+         *
+         *     Es el mismo criterio del #100 en el tablero y del #120 en los hallazgos: el
+         *     estado actual es el último evento, no la unión de todos. Tercera vez que
+         *     aparece el patrón.
+         *
+         *     Las decisiones sin ficha pasan una a una: sin `product_dna_id` no hay por
+         *     qué agruparlas, y descartarlas sería perder casos en silencio.
          */
         get: operations["pendientes_review_get"];
         put?: never;
@@ -517,6 +532,11 @@ export interface components {
              * @default 0
              */
             requieren_revision: number;
+            /**
+             * Dictaminadas
+             * @default 0
+             */
+            dictaminadas: number;
             /**
              * Sin Informacion
              * @default 0
@@ -785,6 +805,7 @@ export interface components {
             candidates?: components["schemas"]["ClassificationCandidateRead"][];
             /** Evidences */
             evidences?: components["schemas"]["EvidenceRecordRead"][];
+            dictamen?: components["schemas"]["DictamenRead"] | null;
             /**
              * Trace Available
              * @default false
@@ -901,6 +922,28 @@ export interface components {
          * @enum {string}
          */
         DataOrigin: "OFFICIAL" | "PUBLIC" | "LICENSED" | "SYNTHETIC" | "HUMAN_VALIDATED";
+        /**
+         * DictamenRead
+         * @description Lo que una persona decidió sobre una decisión del motor.
+         */
+        DictamenRead: {
+            /**
+             * Decision Id
+             * Format: uuid
+             */
+            decision_id: string;
+            /** Fraction Code */
+            fraction_code?: string | null;
+            /** Reasoning */
+            reasoning?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** En Catalogo */
+            en_catalogo?: boolean | null;
+        };
         /**
          * DivergenciaRead
          * @description Una diferencia concreta entre lo declarado y lo esperado.
@@ -1120,6 +1163,10 @@ export interface components {
             total: number;
             /** Peor Severidad */
             peor_severidad?: string | null;
+            /** Por Severidad */
+            por_severidad?: {
+                [key: string]: number;
+            };
             /**
              * Accionables
              * @default 0
@@ -1317,6 +1364,8 @@ export interface components {
             url?: string | null;
             /** Content Hash */
             content_hash?: string | null;
+            /** Distancia */
+            distancia?: number | null;
             /** Terminos Coincidentes */
             terminos_coincidentes?: string[];
         };
@@ -1917,6 +1966,8 @@ export interface components {
             busqueda_semantica_disponible: boolean;
             /** Degradado Por */
             degradado_por?: string | null;
+            /** Corpus Consultado */
+            corpus_consultado?: string[];
             /**
              * Chunks Vectorizados
              * @default 0
