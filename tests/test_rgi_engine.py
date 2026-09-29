@@ -237,6 +237,162 @@ def test_varias_fracciones_aplicables_no_se_deciden_al_azar() -> None:
     assert traza.requires_human_review
 
 
+# ── La partida se elige por lo que dice el texto (RGI 1 y 3a) ────────────────
+#
+# Caso real del corpus: una tubería de acero al carbono de ⌀ 508 mm terminaba
+# clasificada en la partida 8481 —artículos de grifería— porque las cuatro
+# candidatas empataban en `specificity` y la RGI 3 c) elegía la última por
+# orden de numeración.
+
+PARTIDAS_TUBERIA = [
+    TariffCandidate(
+        code="3926",
+        text="Las demás manufacturas de plástico y manufacturas de las demás materias.",
+        level="HEADING",
+        specificity=2,
+    ),
+    TariffCandidate(
+        code="7305",
+        text=(
+            "Los demás tubos de sección circular con diámetro exterior superior a 406.4 mm, "
+            "de hierro o acero."
+        ),
+        level="HEADING",
+        specificity=2,
+    ),
+    TariffCandidate(
+        code="7306", text="Los demás tubos y perfiles huecos.", level="HEADING", specificity=2
+    ),
+    TariffCandidate(
+        code="8481",
+        text="Artículos de grifería y órganos similares para tuberías, calderas o depósitos.",
+        level="HEADING",
+        specificity=2,
+    ),
+]
+
+
+def _contexto_tuberia(**cambios: object) -> ClassificationContext:
+    base: dict[str, object] = {
+        "description": "TUBERIA DE ACERO AL CARBONO SOLDADA, DIAMETRO EXTERIOR 508 MM",
+        "operation_date": OPERACION,
+        "facts": (
+            ProductFact(name="material", value="acero al carbono", status="OBSERVED"),
+            ProductFact(name="diametro_exterior_mm", value="508", status="OBSERVED"),
+        ),
+        "search_terms": ("tubos de acero",),
+    }
+    base.update(cambios)
+    return ClassificationContext(**base)  # type: ignore[arg-type]
+
+
+def test_una_tuberia_de_acero_no_acaba_en_griferia() -> None:
+    """EL TEST QUE IMPORTA.
+
+    Antes: las cuatro candidatas empataban en `specificity`, la RGI 3 a) no
+    distinguía y la RGI 3 c) elegía «la última por orden de numeración» — 8481,
+    artículos de grifería, para un tubo de acero. Y luego se atascaba bajando
+    por una partida que nunca debería haber elegido.
+
+    Ahora gana 7305, que fija un umbral medible —⌀ superior a 406.4 mm— que la
+    mercancía cumple con 508.
+    """
+    cat = CatalogoFalso(PARTIDAS_TUBERIA, [], [])
+    traza = classify(_contexto_tuberia(), catalog=cat, notes=NotasFalsas())
+
+    paso_3a = next(p for p in traza.steps if p.rule_id == "RGI-3a")
+    assert paso_3a.status is RGIStatus.RESOLVED
+    assert [c.code for c in paso_3a.candidate_codes] == ["7305"]
+    assert "condición medible" in paso_3a.reasoning_summary
+
+
+def test_el_acero_descarta_la_partida_de_plastico() -> None:
+    """Una mercancía que consta de acero no puede ser «manufactura de plástico».
+
+    Se descarta en la RGI 1, igual que una nota de exclusión, y se dice por qué.
+    """
+    cat = CatalogoFalso(PARTIDAS_TUBERIA, [], [])
+    traza = classify(_contexto_tuberia(), catalog=cat, notes=NotasFalsas())
+
+    paso_1 = traza.steps[0]
+    assert "3926" not in [c.code for c in paso_1.candidate_codes]
+    assert "3926 descartada" in paso_1.reasoning_summary
+    assert "plastico" in paso_1.reasoning_summary
+
+
+def test_una_partida_que_nombra_las_dos_materias_no_se_descarta() -> None:
+    """«De plástico reforzado con acero» no contradice a una mercancía de acero.
+
+    Descartarla sería quitar la partida correcta por nombrar otra materia de
+    paso.
+    """
+    cat = CatalogoFalso(
+        [
+            TariffCandidate(
+                code="3926",
+                text="Manufacturas de plástico reforzado con acero.",
+                level="HEADING",
+                specificity=2,
+            ),
+        ],
+        [],
+        [],
+    )
+    traza = classify(_contexto_tuberia(), catalog=cat, notes=NotasFalsas())
+
+    assert "3926" in [c.code for c in traza.steps[0].candidate_codes]
+
+
+def test_sin_material_en_la_ficha_no_se_descarta_por_materia() -> None:
+    """La descripción comercial no sirve para esto.
+
+    Un cable de acero con alma de fibra nombra dos materias en su descripción;
+    adivinar cuál manda descartaría la partida correcta. Sólo cuenta un hecho
+    sólido cuyo nombre hable de materia.
+    """
+    cat = CatalogoFalso(PARTIDAS_TUBERIA, [], [])
+    sin_material = _contexto_tuberia(
+        facts=(ProductFact(name="diametro_exterior_mm", value="508", status="OBSERVED"),)
+    )
+    traza = classify(sin_material, catalog=cat, notes=NotasFalsas())
+
+    assert "3926" in [c.code for c in traza.steps[0].candidate_codes]
+
+
+def test_una_condicion_que_la_mercancia_incumple_no_la_hace_ganar() -> None:
+    """Cumplir es lo que vale; tener una condición, no.
+
+    Con ⌀ 200 la tubería NO supera los 406.4 mm, así que 7305 no gana por ahí y
+    el motor vuelve al camino de siempre.
+    """
+    cat = CatalogoFalso(PARTIDAS_TUBERIA, [], [])
+    estrecha = _contexto_tuberia(
+        facts=(
+            ProductFact(name="material", value="acero al carbono", status="OBSERVED"),
+            ProductFact(name="diametro_exterior_mm", value="200", status="OBSERVED"),
+        )
+    )
+    traza = classify(estrecha, catalog=cat, notes=NotasFalsas())
+
+    paso_3a = next(p for p in traza.steps if p.rule_id == "RGI-3a")
+    assert paso_3a.status is RGIStatus.CONTINUE
+
+
+def test_sin_el_dato_la_condicion_no_cuenta_ni_a_favor_ni_en_contra() -> None:
+    """El silencio de la ficha no cumple ni incumple.
+
+    Sin diámetro, 7305 no gana por su umbral, y el motor no lo inventa.
+    """
+    cat = CatalogoFalso(PARTIDAS_TUBERIA, [], [])
+    mudo = _contexto_tuberia(
+        facts=(ProductFact(name="material", value="acero al carbono", status="OBSERVED"),)
+    )
+    traza = classify(mudo, catalog=cat, notes=NotasFalsas())
+
+    paso_3a = next(p for p in traza.steps if p.rule_id == "RGI-3a")
+    assert paso_3a.status is RGIStatus.CONTINUE
+
+
 # ── Descarte por contradicción (RGI 6) ───────────────────────────────────────
 #
 # El caso es real: el cable de acero galvanizado 6x19 de ⌀10 mm del corpus, y

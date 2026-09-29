@@ -18,8 +18,8 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from decimal import Decimal
-from typing import TYPE_CHECKING, Protocol
+from decimal import Decimal, InvalidOperation
+from typing import TYPE_CHECKING, Any, Protocol
 
 from core.rgi_engine.results import RGIResult
 from core.rgi_engine.states import RGIStatus
@@ -97,12 +97,23 @@ class RGI1:
         # partida aunque el texto encaje.
         sobreviven: list[TariffCandidate] = []
         excluidas: list[str] = []
+        # La materia de la ficha descarta igual que una nota: una mercancía que
+        # consta de acero no puede clasificarse en «las demás manufacturas de
+        # plástico». Sin esto, la tubería de acero del corpus llegaba a la RGI
+        # 3 c) con la 3926 todavía en la lista.
+        familia = _familia_de_la_mercancia(context)
         for c in encontrados:
             nota = notes.excludes(on_date=context.operation_date, heading=c.heading, terms=terminos)
             if nota:
                 excluidas.append(f"{c.code} excluida por nota: {nota}")
-            else:
-                sobreviven.append(c)
+                continue
+            materia = _material_contradice(c, familia)
+            if materia:
+                excluidas.append(
+                    f"{c.code} descartada: su texto es de {materia} y la ficha declara {familia}"
+                )
+                continue
+            sobreviven.append(c)
 
         fuentes = tuple(c.source_id for c in sobreviven if c.source_id is not None)
         razon_exclusiones = ("  Exclusiones: " + " · ".join(excluidas)) if excluidas else ""
@@ -252,6 +263,29 @@ class RGI3A:
                 input_facts=hechos,
                 candidate_codes=tuple(candidates),
                 reasoning_summary="No hay concurrencia de partidas que resolver.",
+            )
+
+        # Primero, la partida que fija un umbral medible QUE LA MERCANCÍA
+        # CUMPLE. Es más específica en el sentido que importa: el texto legal
+        # dice algo comprobable y la ficha lo comprueba. Contar calificativos
+        # —que es lo que hace `specificity`— no distingue una tubería de acero
+        # de un artículo de grifería, y en el corpus elegía grifería.
+        cumplen = [c for c in candidates if (lambda t: t[0] and not t[1])(_condiciones(c, context))]
+        if len(cumplen) == 1:
+            c = cumplen[0]
+            otras = [o for o in candidates if o.code != c.code]
+            return RGIResult(
+                rule_id=self.rule_id,
+                status=RGIStatus.RESOLVED,
+                input_facts=hechos,
+                candidate_codes=(c,),
+                reasoning_summary=(
+                    f"La partida {c.code} («{c.text}») fija una condición medible que la "
+                    f"mercancía cumple, y {', '.join(o.code for o in otras)} no. La RGI 3 a) "
+                    f"la prefiere por describirla de forma más específica."
+                ),
+                source_ids=tuple(x.source_id for x in (c,) if x.source_id is not None),
+                confidence=_confianza(context),
             )
 
         maximo = max(c.specificity for c in candidates)
@@ -732,6 +766,143 @@ def _contradice(candidata: TariffCandidate, afirmado: set[str]) -> str | None:
     return None
 
 
+#: Familias de materia que se excluyen entre sí. Una mercancía de acero no es
+#: de plástico, y eso se puede afirmar sin saber cuál es su partida.
+#:
+#: Es vocabulario, no criterio jurídico: no decide qué partida corresponde,
+#: sólo cuáles son imposibles. Deliberadamente corto — cada entrada de más es
+#: una forma nueva de descartar la partida correcta.
+_FAMILIAS: dict[str, frozenset[str]] = {
+    "ferroso": frozenset({"acero", "aceros", "hierro", "fundicion"}),
+    "aluminio": frozenset({"aluminio"}),
+    "cobre": frozenset({"cobre", "laton", "bronce"}),
+    "plastico": frozenset({"plastico", "plasticos", "polimero", "polimeros"}),
+    "caucho": frozenset({"caucho"}),
+    "ceramica": frozenset({"ceramica", "ceramicas", "porcelana"}),
+    "vidrio": frozenset({"vidrio"}),
+    "madera": frozenset({"madera"}),
+    "papel": frozenset({"papel", "carton"}),
+}
+
+
+def _familias(texto: str) -> set[str]:
+    """Qué familias de materia nombra un texto."""
+    palabras = set(re.findall(r"[^\W\d_]+", _plano(texto)))
+    return {f for f, terminos in _FAMILIAS.items() if terminos & palabras}
+
+
+def _familia_de_la_mercancia(context: ClassificationContext) -> str | None:
+    """La familia de materia que DECLARA la ficha, o `None`.
+
+    Sólo de un hecho sólido cuyo nombre hable de materia —`material`,
+    `chassis_material`—, nunca de la descripción comercial. Un cable de acero
+    con alma de fibra menciona dos materias en su descripción, y adivinar cuál
+    manda descartaría la partida correcta.
+
+    `None` si no consta o si la ficha nombra dos familias: entonces no hay una
+    afirmación contra la que contradecir.
+    """
+    vistas: set[str] = set()
+    for hecho in context.facts:
+        if not hecho.is_solid or "material" not in hecho.name.casefold():
+            continue
+        vistas |= _familias(hecho.value or "")
+    return next(iter(vistas)) if len(vistas) == 1 else None
+
+
+def _material_contradice(candidata: TariffCandidate, familia: str | None) -> str | None:
+    """La materia por la que esta candidata es imposible, o `None`.
+
+    Sólo descarta cuando la candidata nombra materia Y NINGUNA de las que
+    nombra es la de la mercancía. Una partida que nombra las dos —«de
+    plástico reforzado con acero»— no contradice nada.
+    """
+    if familia is None:
+        return None
+    nombradas = _familias(candidata.text)
+    if not nombradas or familia in nombradas:
+        return None
+    return ", ".join(sorted(nombradas))
+
+
+#: Una condición medible del texto legal: «diámetro exterior superior a 406.4
+#: mm». Tres partes — de qué habla, en qué sentido, y contra qué número.
+_CONDICION = re.compile(
+    r"([^\W\d_][^,;:()]{2,40}?)\s+"
+    r"(superior a|mayor de|mayor a|inferior a|menor de|menor o igual a|superior o igual a)\s+"
+    r"(\d+(?:[.,]\d+)?)",
+)
+
+#: Cómo se compara según el sentido. `True` = la mercancía CUMPLE la condición.
+_SENTIDOS: dict[str, Any] = {
+    "superior a": lambda v, u: v > u,
+    "mayor de": lambda v, u: v > u,
+    "mayor a": lambda v, u: v > u,
+    "superior o igual a": lambda v, u: v >= u,
+    "inferior a": lambda v, u: v < u,
+    "menor de": lambda v, u: v < u,
+    "menor o igual a": lambda v, u: v <= u,
+}
+
+
+def _numero(valor: str) -> Decimal | None:
+    """El valor de un hecho como número, si lo es."""
+    try:
+        return Decimal(valor.strip().replace(",", "."))
+    except (InvalidOperation, AttributeError):
+        return None
+
+
+#: Sufijos de unidad en los nombres de atributo. No distinguen de qué habla el
+#: atributo, sólo en qué se mide, así que no entran en el emparejamiento.
+_UNIDADES = frozenset({"mm", "cm", "kg", "gr", "ml", "pulgadas", "grados", "watts", "volts"})
+
+
+def _hecho_de(context: ClassificationContext, sujeto: str) -> Decimal | None:
+    """El valor numérico del hecho del que habla `sujeto`, o `None`.
+
+    Empareja «diámetro exterior superior a 406.4 mm» con `diametro_exterior_mm`
+    pidiendo que las palabras DISTINTIVAS del atributo —su nombre sin la
+    unidad— estén todas en el sujeto.
+
+    Y si encajan DOS atributos, no cuenta ninguno: con `diametro_mm` y
+    `diametro_exterior_mm` en la misma ficha, un sujeto que dice «diámetro
+    exterior» los admite a los dos, y elegir uno compararía el umbral legal
+    contra una medida distinta de la que nombra. Misma disciplina que en todo
+    lo demás: ante la duda, no se decide.
+    """
+    palabras = set(re.findall(r"[^\W\d_]+", _plano(sujeto)))
+    candidatos: list[Decimal] = []
+    for hecho in context.facts:
+        if not hecho.is_solid:
+            continue
+        nombre = set(re.findall(r"[^\W\d_]+", _plano(hecho.name))) - _UNIDADES
+        valor = _numero(hecho.value or "")
+        if nombre and nombre <= palabras and valor is not None:
+            candidatos.append(valor)
+    return candidatos[0] if len(candidatos) == 1 else None
+
+
+def _condiciones(candidata: TariffCandidate, context: ClassificationContext) -> tuple[int, int]:
+    """(cumplidas, incumplidas) de las condiciones medibles de esta candidata.
+
+    Una condición que no se puede evaluar —porque la ficha no trae ese dato—
+    no cuenta como ninguna de las dos. El silencio de la ficha no cumple ni
+    incumple nada.
+    """
+    cumplidas = incumplidas = 0
+    for sujeto, sentido, umbral in _CONDICION.findall(_plano(candidata.text)):
+        valor = _hecho_de(context, sujeto)
+        limite = _numero(umbral)
+        if valor is None or limite is None:
+            continue
+        if _SENTIDOS[sentido](valor, limite):
+            cumplidas += 1
+        else:
+            incumplidas += 1
+    return cumplidas, incumplidas
+
+
 def _algo_la_sostiene(candidata: TariffCandidate, mercancia: str) -> bool:
     """¿Hay algo en la mercancía que respalde lo que esta candidata añade?
 
@@ -744,7 +915,10 @@ def _algo_la_sostiene(candidata: TariffCandidate, mercancia: str) -> bool:
 
 
 def _unica_o_mas_especifica(
-    cands: Sequence[TariffCandidate], *, mercancia: str = ""
+    cands: Sequence[TariffCandidate],
+    *,
+    mercancia: str = "",
+    context: ClassificationContext | None = None,
 ) -> TariffCandidate | None:
     """El único candidato, o el más específico si algo de la mercancía lo sostiene.
 
@@ -773,6 +947,39 @@ def _unica_o_mas_especifica(
     """
     if len(cands) == 1:
         return cands[0]
+
+    # ── Antes que la especificidad: la condición que la mercancía CUMPLE ──
+    #
+    # SÓLO SE USA EN LA RGI 3 a), CON PARTIDAS. No en la RGI 6.
+    #
+    # El texto de una candidata de subpartida o fracción viene concatenado con
+    # el de sus descendientes, así que una condición de un hijo sube al padre.
+    # Probado en vivo: con esto activo en la RGI 6, la tubería de acero para
+    # conducción de fluidos resolvía a 73052001 —tubos de entubación para
+    # extracción de petróleo— porque el texto concatenado de esa subpartida
+    # arrastraba un umbral que la mercancía cumplía. La correcta es 73051291.
+    #
+    # Pasó de negarse honestamente a contestar mal. Mientras el texto de cada
+    # nivel no sea el suyo propio, esto no se puede usar para bajar.
+    #
+    # Una partida que fija un umbral medible y la mercancía lo cumple es más
+    # específica en el sentido que importa: el texto legal dice algo
+    # comprobable y la ficha lo comprueba. Eso es una razón que un agente
+    # aduanal firma; contar calificativos no lo es.
+    #
+    # El caso real: una tubería de acero de ⌀ 508 mm competía entre 7305
+    # —«diámetro exterior superior a 406.4 mm, de hierro o acero»—, 7306 y 8481
+    # —grifería—. Las tres empataban en especificidad y la RGI 3 c) elegía la
+    # última por numeración: 8481. Grifería, para un tubo.
+    #
+    # Sólo gana si es la ÚNICA con condición cumplida. Con dos, decide una
+    # persona: misma disciplina que el descarte por contradicción.
+    if context is not None:
+        con_condicion = [(c, _condiciones(c, context)) for c in cands]
+        cumplen = [c for c, (ok, mal) in con_condicion if ok and not mal]
+        if len(cumplen) == 1:
+            return cumplen[0]
+
     maximo = max(c.specificity for c in cands)
     lideres = [c for c in cands if c.specificity == maximo]
     if len(lideres) != 1 or maximo <= 0:
