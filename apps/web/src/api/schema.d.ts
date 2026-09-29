@@ -805,6 +805,7 @@ export interface components {
             candidates?: components["schemas"]["ClassificationCandidateRead"][];
             /** Evidences */
             evidences?: components["schemas"]["EvidenceRecordRead"][];
+            dictamen?: components["schemas"]["DictamenRead"] | null;
             /**
              * Trace Available
              * @default false
@@ -921,6 +922,26 @@ export interface components {
          * @enum {string}
          */
         DataOrigin: "OFFICIAL" | "PUBLIC" | "LICENSED" | "SYNTHETIC" | "HUMAN_VALIDATED";
+        /**
+         * DictamenRead
+         * @description Lo que una persona decidió sobre una decisión del motor.
+         */
+        DictamenRead: {
+            /**
+             * Decision Id
+             * Format: uuid
+             */
+            decision_id: string;
+            /** Fraction Code */
+            fraction_code?: string | null;
+            /** Reasoning */
+            reasoning?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /**
          * DivergenciaRead
          * @description Una diferencia concreta entre lo declarado y lo esperado.

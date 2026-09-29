@@ -111,7 +111,33 @@ export function Classification({ decisionInicial = null }: Props = {}) {
             )}
           </div>
 
-          {detalle.requires_human_review && (
+          {/* El dictamen va ANTES del aviso de revisión: si alguien ya se
+              pronunció, enseñar primero «requiere que una persona lo revise»
+              deja invisible el trabajo del clasificador justo donde más
+              falta hace. */}
+          {detalle.dictamen && (
+            <div className="dictamen" role="note">
+              <strong>
+                Ya lo dictaminó una persona
+                {detalle.dictamen.fraction_code
+                  ? ': '
+                  : ', y coincide en que no se puede determinar.'}
+                {detalle.dictamen.fraction_code && (
+                  <code className="dictamen__codigo">
+                    {detalle.dictamen.fraction_code}
+                  </code>
+                )}
+              </strong>
+              {detalle.dictamen.reasoning && <p>{detalle.dictamen.reasoning}</p>}
+              <p className="dictamen__pie">
+                Se conservan las dos respuestas —la del motor y la de la
+                persona— a propósito: es lo único que permite medir en qué
+                porcentaje coinciden.
+              </p>
+            </div>
+          )}
+
+          {detalle.requires_human_review && !detalle.dictamen && (
             <div className="revision" role="note">
               <strong>Requiere revisión humana antes de declararse.</strong>
               {detalle.missing_information.length > 0 && (

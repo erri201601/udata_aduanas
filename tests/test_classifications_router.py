@@ -12,6 +12,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -156,11 +157,17 @@ class SesionFalsa:
     def get(self, _modelo: type, _id: uuid.UUID) -> Any:
         return self._decision
 
+    #: El veredicto humano que devuelve `.first()`. `None` = nadie revisó.
+    _veredicto: Any = None
+
     def scalars(self, sentencia: Any) -> Any:
         entidad = sentencia.column_descriptions[0]["entity"]
         resultado = type("R", (), {})()
         if entidad is ClassificationDecision:
             resultado.all = lambda: [self._decision] if self._decision else []
+            # La búsqueda del dictamen humano: `.first()`, y `None` porque en
+            # estos tests nadie ha revisado la decisión todavía.
+            resultado.first = lambda: self._veredicto
         elif entidad is ClassificationCandidate:
             resultado.all = lambda: _candidatos() if self._decision else []
         else:
@@ -312,3 +319,47 @@ def test_la_traza_del_test_coincide_con_la_que_escribe_el_repositorio() -> None:
     )
 
     assert sorted(_traza(outcome)[0]) == sorted(TRAZA[0])
+
+
+# ── La decisión enseña su dictamen (Persona 1, 29-sep) ─────────────────────
+
+
+def test_una_decision_ya_dictaminada_lo_dice() -> None:
+    """La pantalla decía «requiere que una persona lo revise» sobre un caso
+    que una persona YA había revisado.
+
+    El trabajo del clasificador quedaba invisible justo donde más falta hace:
+    al lado de lo que la máquina no pudo.
+    """
+    from datetime import UTC, datetime
+
+    veredicto = SimpleNamespace(
+        id=uuid.uuid4(),
+        fraction_code="73053199",
+        reasoning="Revisión humana de CESAR: corrige.",
+        created_at=datetime(2026, 9, 28, tzinfo=UTC),
+    )
+    sesion = SesionFalsa(decision=_decision())
+    sesion._veredicto = veredicto
+    app = create_app()
+    app.dependency_overrides[get_session] = lambda: sesion
+
+    with TestClient(app) as c:
+        cuerpo = c.get(f"/classifications/{DECISION_ID}").json()
+
+    assert cuerpo["dictamen"] is not None
+    assert cuerpo["dictamen"]["fraction_code"] == "73053199"
+    assert "CESAR" in cuerpo["dictamen"]["reasoning"]
+
+
+def test_sin_dictamen_el_campo_es_nulo_y_no_un_dictamen_vacio() -> None:
+    """`None` es «nadie se ha pronunciado». Un dictamen sin fracción es «una
+    persona miró y tampoco pudo determinarla». No son lo mismo."""
+    sesion = SesionFalsa(decision=_decision())
+    app = create_app()
+    app.dependency_overrides[get_session] = lambda: sesion
+
+    with TestClient(app) as c:
+        cuerpo = c.get(f"/classifications/{DECISION_ID}").json()
+
+    assert cuerpo["dictamen"] is None

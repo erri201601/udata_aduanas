@@ -16,6 +16,7 @@ Sólo lectura. Persistir decisiones es del orquestador.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Annotated
 
 import sqlalchemy as sa
@@ -25,7 +26,7 @@ from database.models import (
     EvidenceRecord,
 )
 from fastapi import APIRouter, HTTPException, Query, status
-from pydantic import Field
+from pydantic import BaseModel, Field
 from schemas.intelligence import (
     ClassificationCandidateRead,
     ClassificationDecisionRead,
@@ -44,6 +45,17 @@ LIMITE_MAXIMO = 200
 TIPOS_QUE_FUNDAMENTAN = frozenset({"LEGAL_SOURCE"})
 
 
+class DictamenRead(BaseModel):
+    """Lo que una persona decidió sobre una decisión del motor."""
+
+    decision_id: uuid.UUID
+    fraction_code: str | None = None
+    """`None` cuando el revisor confirmó que tampoco él puede determinarla:
+    coincidir en que no se puede es un resultado, no un hueco."""
+    reasoning: str | None = None
+    created_at: datetime
+
+
 class ClassificationDetail(ClassificationDecisionRead):
     """Una decisión con todo lo necesario para defenderla.
 
@@ -54,6 +66,18 @@ class ClassificationDetail(ClassificationDecisionRead):
 
     candidates: list[ClassificationCandidateRead] = Field(default_factory=list)
     evidences: list[EvidenceRecordRead] = Field(default_factory=list)
+
+    dictamen: DictamenRead | None = None
+    """El veredicto humano sobre ESTA decisión, si alguien ya se pronunció.
+
+    Sin esto la pantalla enseñaba «Sin fracción — requiere que una persona lo
+    revise» sobre un caso que una persona YA había revisado, y el trabajo del
+    clasificador quedaba invisible justo donde más falta hace: al lado de lo
+    que la máquina no pudo.
+
+    Es `None` cuando nadie ha dictaminado, que no es lo mismo que un dictamen
+    vacío.
+    """
 
     trace_available: bool = False
     """¿Se conservó la traza paso a paso de esta decisión?
@@ -114,9 +138,28 @@ def obtener_decision(decision_id: uuid.UUID, session: SessionDep) -> Classificat
         )
     ).all()
 
+    # El veredicto apunta a la decisión revisada, no al revés: se busca por
+    # `reviews_decision_id`, que es lo que garantiza que un dictamen diga
+    # siempre QUÉ revisó (#79).
+    veredicto = session.scalars(
+        sa.select(ClassificationDecision)
+        .where(ClassificationDecision.reviews_decision_id == decision_id)
+        .order_by(ClassificationDecision.created_at.desc())
+    ).first()
+
     detalle = ClassificationDetail.model_validate(decision, from_attributes=True)
     return detalle.model_copy(
         update={
+            "dictamen": (
+                DictamenRead(
+                    decision_id=veredicto.id,
+                    fraction_code=veredicto.fraction_code,
+                    reasoning=veredicto.reasoning,
+                    created_at=veredicto.created_at,
+                )
+                if veredicto is not None
+                else None
+            ),
             "candidates": [
                 ClassificationCandidateRead.model_validate(c, from_attributes=True)
                 for c in candidatos
