@@ -423,6 +423,21 @@ code {
   font-size: 1.05rem;
   color: var(--bien, #34c77b);
 }
+/* Un dictamen cuya fracción no está en la tarifa sigue siendo trabajo hecho
+   —por eso el bloque se queda verde— pero el código no puede ir en verde con
+   él: eso le daría el respaldo del catálogo. Se marca en ámbar DENTRO del
+   bloque, que es exactamente lo que pasa: el criterio vale, el código no está
+   comprobado. */
+.dictamen__fuera-de-catalogo {
+  padding: 0.6rem 0.8rem;
+  margin-top: 0.75rem !important;
+  background: rgba(230, 162, 60, 0.1);
+  border-left: 3px solid var(--aviso, #e6a23c);
+  border-radius: 0 6px 6px 0;
+  color: var(--texto, inherit) !important;
+}
+.dictamen__fuera-de-catalogo strong { color: var(--aviso, #e6a23c); }
+
 .dictamen__pie { font-style: italic; opacity: 0.78; }
 .revision code { margin-right: 0.5rem; color: var(--aviso); }
 

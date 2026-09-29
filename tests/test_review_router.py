@@ -73,17 +73,42 @@ def _producto() -> Product:
 
 class SesionFalsa:
     def __init__(
-        self, *, decision: ClassificationDecision | None, ya_revisada: bool = False
+        self,
+        *,
+        decision: ClassificationDecision | None,
+        ya_revisada: bool = False,
+        fraccion_en_catalogo: bool = True,
+        hay_tarifa: bool = True,
+        hermanas: tuple[str, ...] = (),
     ) -> None:
         self._decision = decision
         self._ya_revisada = ya_revisada
+        #: Por defecto la fracción existe, para que los tests que no hablan del
+        #: catálogo sigan probando lo suyo. Los que sí, lo ponen en falso.
+        self._fraccion_en_catalogo = fraccion_en_catalogo
+        #: ¿Hay tarifa cargada? Con `False`, el guardarraíl no debe acusar a
+        #: nadie: un catálogo vacío no demuestra que la fracción no exista.
+        self._hay_tarifa = hay_tarifa
+        self._hermanas = hermanas
         self.agregadas: list[Any] = []
         self.commits = 0
         self.rollbacks = 0
         self.sql_bandeja: list[str] = []
 
-    def scalar(self, _sentencia: Any) -> Any:
-        # La única consulta escalar de `revisar`: ¿hay un veredicto que apunte aquí?
+    def scalar(self, sentencia: Any) -> Any:
+        # `revisar` hace DOS consultas escalares, y confundirlas hacía que
+        # todos los tests de este fichero fallaran a la vez: ¿existe la
+        # fracción del veredicto en la tarifa?, y ¿hay ya un veredicto que
+        # apunte a esta decisión? Se distinguen por la tabla.
+        sql = str(sentencia)
+        if "tariff_fractions" in sql:
+            # Dos consultas distintas sobre la misma tabla: «¿hay tarifa
+            # cargada?» no lleva filtro de código y «¿existe ESTE código?» sí.
+            # Confundirlas dejaría el guardarraíl sin poder probarse, porque un
+            # catálogo vacío no acusa a nadie.
+            if "tariff_fractions.code =" in sql:
+                return uuid.uuid4() if self._fraccion_en_catalogo else None
+            return uuid.uuid4() if self._hay_tarifa else None
         return uuid.uuid4() if self._ya_revisada else None
 
     def rollback(self) -> None:
@@ -100,7 +125,13 @@ class SesionFalsa:
         #: mirando la sentencia.
         self.sql_bandeja.append(str(sentencia))
         r = type("R", (), {})()
-        r.all = lambda: [self._decision] if self._decision else []
+        if "tariff_fractions" in str(sentencia):
+            # Las hermanas de una fracción que no existe: son códigos, no
+            # decisiones. Devolver la decisión aquí metía un objeto en el
+            # mensaje de error.
+            r.all = lambda: list(self._hermanas)
+        else:
+            r.all = lambda: [self._decision] if self._decision else []
         return r
 
     def add(self, fila: Any) -> None:
@@ -228,6 +259,121 @@ def test_corregir_sin_fraccion_se_rechaza(cliente: TestClient) -> None:
     r = cliente.post(f"/review/{DECISION_ID}", json={"veredicto": "CORRIGE", "reviewer": "ulises"})
 
     assert r.status_code == 422
+
+
+def test_una_fraccion_que_no_existe_en_la_tarifa_se_rechaza() -> None:
+    """REGRESIÓN REAL (ensayo de la demo del 29-sep).
+
+    Se aceptó `73239399` para un sartén de acero inoxidable. Bajo esa
+    subpartida la única fracción es `73239305`. La decisión quedó guardada,
+    contada en el tablero como dictaminada y pintada en verde en Classification
+    —«la única verdad del sistema que no generamos nosotros»— con una fracción
+    que no está en la TIGIE.
+
+    Un clasificador es la autoridad sobre el CRITERIO, no sobre qué códigos
+    existen: un dígito mal teclado no se convierte en fracción por venir de una
+    persona (regla 2 de CLAUDE.md).
+    """
+    app = create_app()
+    sesion = SesionFalsa(decision=_decision(), fraccion_en_catalogo=False, hermanas=("73239305",))
+    app.dependency_overrides[get_session] = lambda: sesion
+
+    with TestClient(app) as c:
+        r = c.post(
+            f"/review/{DECISION_ID}",
+            json={"veredicto": "CORRIGE", "reviewer": "cesar", "fraction_code": "73239399"},
+        )
+
+    assert r.status_code == 422
+    detalle = r.json()["detail"]
+    assert "73239399" in detalle
+    # Y enseña lo que SÍ existe, para que quien teclea pueda corregirse.
+    assert "73239305" in detalle
+    # Nada se guardó: un veredicto a medias es peor que ninguno.
+    assert sesion.agregadas == []
+
+
+def test_el_rechazo_enseña_el_catalogo_no_propone_una_fraccion() -> None:
+    """Si la subpartida está vacía, lo dice; no busca una parecida.
+
+    Proponer un código sería el sistema eligiendo la fracción, que es justo lo
+    que esta comprobación existe para impedir.
+    """
+    app = create_app()
+    sesion = SesionFalsa(decision=_decision(), fraccion_en_catalogo=False, hermanas=())
+    app.dependency_overrides[get_session] = lambda: sesion
+
+    with TestClient(app) as c:
+        r = c.post(
+            f"/review/{DECISION_ID}",
+            json={"veredicto": "CORRIGE", "reviewer": "cesar", "fraction_code": "99999999"},
+        )
+
+    assert r.status_code == 422
+    assert "ninguna" in r.json()["detail"]
+
+
+def test_confirmar_una_fraccion_que_ya_no_existe_tambien_se_rechaza() -> None:
+    """El guardarraíl no es sólo para CORRIGE.
+
+    Confirmar copia la fracción de la original, y si ésa no está en el catálogo
+    el veredicto humano le daría el respaldo que no tiene.
+    """
+    app = create_app()
+    sesion = SesionFalsa(decision=_decision(), fraccion_en_catalogo=False, hermanas=())
+    app.dependency_overrides[get_session] = lambda: sesion
+
+    with TestClient(app) as c:
+        r = c.post(f"/review/{DECISION_ID}", json={"veredicto": "CONFIRMA", "reviewer": "cesar"})
+
+    assert r.status_code == 422
+    assert sesion.agregadas == []
+
+
+def test_coincidir_en_que_no_se_puede_no_se_comprueba_contra_el_catalogo() -> None:
+    """Un veredicto sin fracción no tiene nada que comprobar.
+
+    Si la comprobación se aplicara igual, el revisor que coincide en que la
+    mercancía no se puede clasificar recibiría un 422, y coincidir en eso es un
+    resultado legítimo del sistema.
+    """
+    original = _decision()
+    original.fraction_code = None
+    app = create_app()
+    sesion = SesionFalsa(decision=original, fraccion_en_catalogo=False)
+    app.dependency_overrides[get_session] = lambda: sesion
+
+    with TestClient(app) as c:
+        r = c.post(f"/review/{DECISION_ID}", json={"veredicto": "CONFIRMA", "reviewer": "cesar"})
+
+    assert r.status_code == 201
+    assert sesion.agregadas[0].fraction_code is None
+
+
+def test_sin_tarifa_cargada_el_veredicto_no_se_rechaza() -> None:
+    """Un catálogo vacío no demuestra que la fracción no exista.
+
+    Lo descubrieron los tests de integración, que corren sobre una base sin
+    tarifa: la primera versión de este guardarraíl rechazaba TODOS los
+    veredictos, los diez del camino del revisor externo. Y habría hecho lo
+    mismo en una instalación nueva del cliente, que es mucho peor que el defecto
+    que vino a arreglar.
+
+    Misma disciplina que `hay_unidades` para el Anexo 22: sin catálogo no se
+    acusa a nadie.
+    """
+    app = create_app()
+    sesion = SesionFalsa(decision=_decision(), hay_tarifa=False, fraccion_en_catalogo=False)
+    app.dependency_overrides[get_session] = lambda: sesion
+
+    with TestClient(app) as c:
+        r = c.post(
+            f"/review/{DECISION_ID}",
+            json={"veredicto": "CORRIGE", "reviewer": "cesar", "fraction_code": "73239399"},
+        )
+
+    assert r.status_code == 201
+    assert sesion.agregadas[0].fraction_code == "73239399"
 
 
 def test_la_correccion_registra_quien_la_hizo(cliente: TestClient) -> None:
