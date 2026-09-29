@@ -190,6 +190,12 @@ class Evidence(BaseModel):
             "document_refs": refs,
             "content_hashes": hashes,
             "engine_version": self.engine_version,
+            # `rule_id` y `prompt_id` acompañan a su versión. Emitir la versión
+            # sin el identificador dejaba al dossier contestando «¿con qué
+            # regla?» con «None (motor 0.1.0)»: la forma de una respuesta sin
+            # el contenido, que es peor que declararla sin responder.
+            "rule_id": self.rule_id,
+            "prompt_id": self.prompt_id,
             "model_provider": self.model_provider,
             "model_name": self.model_name,
             "prompt_version": self.prompt_version,

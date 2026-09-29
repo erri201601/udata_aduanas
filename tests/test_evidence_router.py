@@ -156,6 +156,64 @@ def test_la_vigencia_real_se_contesta_cuando_la_fila_la_trae() -> None:
     assert cuerpo["validity"] == ["LIGIE capítulo 84.: 2022-06-07 → vigente"]
 
 
+def test_con_que_regla_no_se_contesta_con_none() -> None:
+    """REGRESIÓN REAL (encontrada en el ensayo de la demo del 29-sep).
+
+    `evidence_records` no tenía columna `rule_id`, así que el motor lo escribía
+    en el dominio y se perdía al guardar. La rama «si hay evidencia
+    determinista» se cumplía igual y el dossier contestaba «¿con qué regla?»
+    con «None (motor 0.1.0)», una vez por paso del RGI — seis veces en la
+    decisión que se enseña en la demo.
+
+    Que salga UNKNOWN y en `unanswered` es peor respuesta y mejor dossier: es
+    la diferencia entre un hueco que se puede cubrir y uno disfrazado.
+    """
+    sin_id = _evidencia("DETERMINISTIC")
+    sin_id.rule_id = None
+
+    with _cliente(decision=_decision(), evidencias=[sin_id]) as c:
+        cuerpo = c.get(f"/evidence/{DECISION_ID}").json()
+
+    assert "None" not in cuerpo["which_rule"]
+    assert "which_rule" in cuerpo["unanswered"]
+    assert cuerpo["is_complete"] is False
+
+
+def test_con_que_regla_se_contesta_cuando_la_fila_lo_trae() -> None:
+    """La otra mitad: con la columna poblada, la pregunta sí se contesta.
+
+    Sin esta pareja, el arreglo de arriba se podría «pasar» dejando
+    `which_rule` siempre sin responder, que era justo lo que no queríamos.
+    """
+    con_id = _evidencia("DETERMINISTIC")
+    con_id.rule_id = "RGI-3c"
+
+    with _cliente(decision=_decision(), evidencias=[con_id]) as c:
+        cuerpo = c.get(f"/evidence/{DECISION_ID}").json()
+
+    assert cuerpo["which_rule"] == "RGI-3c (motor 0.1.0)"
+    assert "which_rule" not in cuerpo["unanswered"]
+
+
+def test_el_prompt_del_extractor_no_se_cuela_como_regla() -> None:
+    """Un `prompt_id` contesta la pregunta sólo si no hay ninguna regla.
+
+    Listar los dos juntos metería «product_dna/extract v0.1» en la respuesta
+    sobre qué regla determinó la fracción, y no la determinó.
+    """
+    regla = _evidencia("DETERMINISTIC")
+    regla.rule_id = "RGI-1"
+    modelo = _evidencia("MODEL_OUTPUT")
+    modelo.prompt_id = "product_dna/extract"
+    modelo.prompt_version = "0.1"
+
+    with _cliente(decision=_decision(), evidencias=[regla, modelo]) as c:
+        cuerpo = c.get(f"/evidence/{DECISION_ID}").json()
+
+    assert cuerpo["which_rule"] == "RGI-1 (motor 0.1.0)"
+    assert "product_dna/extract" not in cuerpo["which_rule"]
+
+
 # ── Evidencias que no se pueden interpretar ─────────────────────────────────
 
 
