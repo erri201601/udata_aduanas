@@ -10,9 +10,9 @@ Sin PostgreSQL: la sesión se sustituye con `dependency_overrides`.
 from __future__ import annotations
 
 import uuid
-from types import SimpleNamespace
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import pytest
