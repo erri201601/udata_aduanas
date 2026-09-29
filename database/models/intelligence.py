@@ -74,6 +74,18 @@ class EvidenceRecord(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Base)
         ARRAY(sa.Text), nullable=False, server_default="{}"
     )
     engine_version: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    # QUÉ regla, no sólo con qué versión de motor. `engine_version` existía
+    # desde el principio y `rule_id` no, así que el dossier del §49 componía
+    # la respuesta a «¿con qué regla?» con lo que tenía: «None (motor 0.1.0)»,
+    # repetido una vez por paso del RGI. Ni era una respuesta ni se declaraba
+    # como hueco, que es la única de las dos cosas que sirve en una auditoría.
+    # Nullable porque las filas anteriores no tienen de dónde sacarlo: la
+    # traza de la decisión lleva las reglas en orden, pero emparejarlas por
+    # posición con las evidencias sería reconstruir fundamento, no leerlo.
+    rule_id: Mapped[str | None] = mapped_column(sa.String(16), nullable=True)
+    # El equivalente para la evidencia de modelo: `prompt_version` sin
+    # `prompt_id` identifica la versión de un prompt que no consta cuál es.
+    prompt_id: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     model_provider: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     model_name: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     prompt_version: Mapped[str | None] = mapped_column(sa.Text, nullable=True)

@@ -120,11 +120,23 @@ def answer_all(
     if why is UNKNOWN:
         sin_responder.append("why")
 
-    # ¿CON QUÉ REGLA?
-    if reglas:
-        which_rule = " · ".join(f"{e.rule_id} (motor {e.engine_version})" for e in reglas)
-    elif modelos:
-        which_rule = " · ".join(f"{e.prompt_id} v{e.prompt_version}" for e in modelos)
+    # ¿CON QUÉ REGLA? Se contesta con las que SE IDENTIFICAN, no con todas.
+    #
+    # Tener evidencia determinista no es lo mismo que saber qué regla la
+    # produjo. Mientras `rule_id` no se persistió, la rama de arriba se
+    # cumplía siempre y componía «None (motor 0.1.0) · None (motor 0.1.0) · …»,
+    # una vez por paso del RGI: la única pregunta del §49 que un auditor no
+    # puede dejar pasar, contestada con la forma de una respuesta y sin su
+    # contenido. Un hueco declarado se puede cubrir; uno disfrazado, no.
+    # La precedencia se mantiene: el prompt de un extractor NO es una regla, es
+    # con lo que se contesta cuando no hay ninguna. Listar los dos juntos
+    # colaría «product_dna/extract v0.1» en la respuesta sobre qué regla
+    # decidió la fracción.
+    deterministas = [f"{e.rule_id} (motor {e.engine_version})" for e in reglas if e.rule_id]
+    del_modelo = [f"{e.prompt_id} v{e.prompt_version}" for e in modelos if e.prompt_id]
+    identificadas = deterministas or del_modelo
+    if identificadas:
+        which_rule = " · ".join(identificadas)
     else:
         which_rule = UNKNOWN
         sin_responder.append("which_rule")

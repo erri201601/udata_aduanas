@@ -367,6 +367,36 @@ def test_una_evidencia_no_temporal_mapea_vigencia_nula() -> None:
     assert campos["valid_to"] is None
 
 
+def test_la_regla_y_el_prompt_llegan_al_mapeo_de_la_tabla() -> None:
+    """Regresión real: `rule_id` y `prompt_id` se emitían en el dominio y no
+    existían como columna, así que se perdían al guardar. El dossier seguía
+    entrando por la rama «hay evidencia determinista» y contestaba «¿con qué
+    regla?» con «None (motor 0.1.0)».
+
+    Se comprueban aquí, en el mapeo, y no sólo en el router: si el motor deja
+    de emitirlos, este test cae antes de que el síntoma reaparezca en pantalla.
+    """
+    regla = builder.deterministic(
+        summary="Ninguna regla anterior distinguió. Se aplica la última.",
+        rule_id="RGI-3c",
+        engine_version="0.1.0",
+    ).to_record_fields()
+
+    assert regla["rule_id"] == "RGI-3c"
+    assert regla["engine_version"] == "0.1.0"
+
+    modelo = builder.model_output(
+        summary="El modelo dedujo el material del chasis.",
+        model_provider="anthropic",
+        model_name="claude-sonnet-5",
+        prompt_id="product_dna/extract",
+        prompt_version="0.1",
+    ).to_record_fields()
+
+    assert modelo["prompt_id"] == "product_dna/extract"
+    assert modelo["prompt_version"] == "0.1"
+
+
 def test_el_origen_humano_se_distingue_en_la_tabla() -> None:
     """`created_by` tiene que reflejar que lo validó una persona."""
     campos = builder.human(
