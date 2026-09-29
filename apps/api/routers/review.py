@@ -66,6 +66,7 @@ from typing import Annotated, Final, Literal
 
 import sqlalchemy as sa
 from database.models import ClassificationDecision, Product
+from database.repositories.tariff import TariffCatalogRepository
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from schemas.intelligence import ClassificationDecisionRead
@@ -312,6 +313,41 @@ def revisar(
         )
 
     codigo = peticion.fraction_code if peticion.veredicto == "CORRIGE" else original.fraction_code
+
+    # La fracción del veredicto se comprueba contra la tarifa. Un clasificador
+    # es la autoridad sobre el CRITERIO, no sobre qué códigos existen, y un
+    # dígito mal teclado no se convierte en fracción por venir de una persona.
+    #
+    # Pasó de verdad: se aceptó `73239399` para un sartén de acero inoxidable.
+    # Bajo esa subpartida sólo existe `73239305`, y la decisión quedó guardada,
+    # contada en el tablero y pintada en verde en la pantalla de Classification
+    # —como «la única verdad del sistema que no generamos nosotros»— con una
+    # fracción que no está en la TIGIE.
+    #
+    # Se comprueba con la fecha DE LA OPERACIÓN, no con hoy: una fracción
+    # derogada existió, y un veredicto sobre una operación de 2022 puede citarla
+    # legítimamente (regla 5).
+    #
+    # Y sólo se acusa si HAY tarifa cargada: un catálogo vacío no demuestra que
+    # la fracción no exista, sólo que no lo sabemos. Sin esta condición el
+    # guardarraíl rechazaba todos los veredictos en cualquier entorno sin
+    # tarifa —incluida una instalación nueva del cliente.
+    if codigo:
+        catalogo = TariffCatalogRepository(session)
+        hay_tarifa = catalogo.hay_fracciones(on_date=original.operation_date)
+        if hay_tarifa and not catalogo.fraccion_existe(
+            on_date=original.operation_date, code=codigo
+        ):
+            hermanas = catalogo.hermanas_de(on_date=original.operation_date, code=codigo)
+            # Se enseña lo que hay, no se propone una. Elegir por la persona
+            # sería justo lo que esta comprobación existe para impedir.
+            existen = ", ".join(hermanas) if hermanas else "ninguna"
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                f"la fracción {codigo} no existe en la TIGIE vigente al "
+                f"{original.operation_date.isoformat()}. En la subpartida "
+                f"{codigo[:6]} existen: {existen}",
+            )
 
     revision = ClassificationDecision(
         product_id=original.product_id,

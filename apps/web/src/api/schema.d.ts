@@ -941,6 +941,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** En Catalogo */
+            en_catalogo?: boolean | null;
         };
         /**
          * DivergenciaRead

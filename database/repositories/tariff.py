@@ -365,6 +365,55 @@ class TariffCatalogRepository:
         ).all()
         return tuple(filas)
 
+    def fraccion_existe(self, *, on_date: date, code: str) -> bool:
+        """¿La fracción de 8 dígitos está en la TIGIE vigente ese día?
+
+        Aquí y no en el router por lo mismo que los NICO y las unidades: es
+        catálogo. Y se pregunta CON FECHA porque una fracción derogada existió
+        de verdad: un veredicto sobre una operación de 2022 puede citar una que
+        hoy ya no está, y rechazarla por no estar vigente HOY sería evaluar una
+        operación histórica con la tarifa posterior (regla 5 de CLAUDE.md).
+        """
+        return (
+            self._session.scalar(
+                sa.select(TariffFraction.id)
+                .where(_vigentes(on_date), TariffFraction.code == code)
+                .limit(1)
+            )
+            is not None
+        )
+
+    def hay_fracciones(self, *, on_date: date) -> bool:
+        """¿Hay tarifa cargada para esa fecha? Sin ella no se puede acusar a nadie.
+
+        Misma disciplina que `hay_unidades`, y por el mismo motivo: un catálogo
+        vacío no demuestra que una fracción no exista, sólo que no lo sabemos.
+        Sin esta pregunta, el guardarraíl del veredicto humano rechazaba TODO en
+        cualquier entorno sin tarifa —lo descubrieron los tests de integración,
+        que trabajan sobre una base sin catálogo— y habría rechazado también en
+        una instalación nueva del cliente.
+        """
+        return (
+            self._session.scalar(sa.select(TariffFraction.id).where(_vigentes(on_date)).limit(1))
+            is not None
+        )
+
+    def hermanas_de(self, *, on_date: date, code: str) -> tuple[str, ...]:
+        """Las fracciones que SÍ existen en la subpartida de `code`, ese día.
+
+        Para poder decirle a quien teclea una fracción inexistente cuáles hay
+        en su lugar. Devuelve catálogo, no una propuesta: el sistema no sugiere
+        una fracción —eso lo decide la persona— sólo le enseña lo que existe.
+        """
+        if len(code) < 6:
+            return ()
+        filas = self._session.scalars(
+            sa.select(TariffFraction.code)
+            .where(_vigentes(on_date), TariffFraction.subheading == code[:6])
+            .order_by(TariffFraction.code)
+        ).all()
+        return tuple(filas)
+
     def unidad_existe(self, *, on_date: date, code: str) -> bool:
         """¿La unidad declarada está en el Apéndice 7 del Anexo 22, ese día?
 
