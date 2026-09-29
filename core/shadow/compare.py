@@ -362,7 +362,7 @@ def _lagunas(expected: ExpectedItem, declared: DeclaredItem | None = None) -> li
         razones.append(
             "no se conoce qué NOM exige la fracción "
             f"{expected.fraction_code or 'esperada'}: falta cargar la correlación "
-            "fracción → NOM (Anexo 2.2.1 del Acuerdo de la SE)"
+            "fracción → NOM (Anexo 2.4.1 del Acuerdo de la SE)"
         )
     if expected.required_identifiers is None:
         razones.append(

@@ -151,7 +151,7 @@ def test_las_omisiones_del_28_estan_escritas() -> None:
     doc = proyeccion.__doc__ or ""
     for ausente in ("NOM", "PROSECSector", "Treaty", "RegulatoryEvent", "Manufacturer"):
         assert ausente in doc, f"falta decir por qué no está {ausente}"
-    assert "Anexo 2.2.1" in doc, "hay que decir qué fuente desbloquea cada uno"
+    assert "Anexo 2.4.1" in doc, "hay que decir qué fuente desbloquea cada uno"
 
 
 def test_el_grafo_no_fundamenta_nada() -> None:
