@@ -302,6 +302,44 @@ class NonTariffRegulation(
     description: Mapped[str] = mapped_column(sa.Text, nullable=False)
 
 
+class PedimentoIdentifier(
+    UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base
+):
+    """Identificador de pedimento (Apéndice 8, Anexo 22 RGCE).
+
+    No es lo mismo que `NonTariffRegulation` (Apéndice 9, "identificadores de
+    regulaciones y restricciones no arancelarias"): son dos catálogos
+    distintos del mismo Anexo 22, con sus propias claves de 2 caracteres.
+
+    `level` es la columna "Nivel" del documento (`G`/`P` en las 164 de 174
+    entradas que la traen; 10 no la tienen -- ver el propio texto real,
+    p. ej. "A1", "C2", "S1": encadenan directo a "Para <clave> señalar:" sin
+    pasar por una columna de nivel). NULL ahí es lo que el documento trae,
+    no un hueco de parseo.
+
+    `description`/`supuestos_de_aplicacion`/`complemento_1..3` NO se cargan:
+    mismo motivo que dejó a `PedimentoClave.label` sin cargar (ver su
+    docstring) -- el layout de columnas múltiples se intercala en el mismo
+    renglón de texto sin separador confiable, y aquí es peor: la descripción
+    corta de cada clave también se envuelve a la línea siguiente, mezclada
+    con fragmentos de "Supuestos de Aplicación" de esa misma fila. `code` y
+    `level` sí se extraen con garantía, porque los dos viven siempre en la
+    PRIMERA línea de la entrada, antes de que empiece esa mezcla.
+    """
+
+    __tablename__ = "pedimento_identifiers"
+    __table_args__ = (
+        sa.Index("ix_pedimento_identifiers_vigencia", "code", "level", "valid_from", "valid_to"),
+        sa.UniqueConstraint(
+            "code", "level", "valid_from", name="uq_pedimento_identifiers_code_level_valid_from"
+        ),
+        {"schema": _SCHEMA},
+    )
+
+    code: Mapped[str] = mapped_column(sa.String(2), nullable=False)
+    level: Mapped[str | None] = mapped_column(sa.String(1), nullable=True)
+
+
 class RegulatoryEvent(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base):
     """Salida del DOF Regulatory Watcher: una publicación relevante y su alcance."""
 

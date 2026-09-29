@@ -1,11 +1,12 @@
 """RAW -> PARSED del Anexo 22 (Instructivo para el llenado del pedimento).
 
 Fuente: RGCE 2026, publicado en el DOF el 15-ene-2026. Este módulo cubre los
-4 catálogos de referencia que Persona 1 aprobó cargar (Opción B, 2026-09-08):
-aduanas/secciones, unidades de medida, claves de pedimento e identificadores
-de regulaciones no arancelarias. El resto del Anexo 22 (Apéndice 8 completo,
-el texto legal de cada clave de pedimento, y la correlación fracción -> NOM,
-que este documento no trae) queda como deuda documentada.
+5 catálogos de referencia: aduanas/secciones, unidades de medida, claves de
+pedimento, identificadores de regulaciones no arancelarias (Apéndice 9) e
+identificadores de pedimento (Apéndice 8, código + nivel -- Persona 1,
+2026-09-29). El resto (el texto legal de cada clave de pedimento y de cada
+identificador, y la correlación fracción -> NOM, que este documento no trae)
+queda como deuda documentada.
 
 `pdftotext -layout` linealiza el PDF en texto plano intentando conservar las
 columnas por posición de caracter. Funciona sin pérdida quando cada fila usa
@@ -276,4 +277,56 @@ def parse_non_tariff_regulations(lines: list[str]) -> list[ParsedNonTariffRegula
         current_section_parts.append(line.strip())
 
     flush()
+    return filas
+
+
+# ── Apéndice 8: Identificadores ──────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class ParsedIdentifier:
+    code: str
+    level: str | None
+
+
+# Exige el guión: sin él, un numeral romano jerárquico dentro de un
+# "Complemento" ("III.   Procedimientos...") calzaría igual que un código real
+# (regresión real: "II" -- código legítimo, "Inventario inicial de..." -- y
+# "III." -- numeral, no código -- sólo se distinguen por esto).
+_IDENTIFICADOR_APENDICE_RE = re.compile(r"^([A-Z][A-Z0-9])\s*-\s*(.+)$")
+# "G"/"P" (General/Particular, visto en el documento real) rodeada de espacio
+# simple, en cualquier posición de la línea -- no siempre al final: la
+# columna "Supuestos de Aplicación" sigue en la MISMA línea física.
+_NIVEL_RE = re.compile(r"\s([GP])\s")
+
+
+def parse_identifiers(lines: list[str]) -> list[ParsedIdentifier]:
+    """Apéndice 8: sólo `code` + `level`, igual criterio que `PedimentoClave`.
+
+    La descripción corta de cada clave se envuelve a la línea siguiente
+    mezclada con fragmentos de "Supuestos de Aplicación"/"Complemento 1-3"
+    de la misma fila (layout de 6 columnas, peor que las 2 del Apéndice 2)
+    -- no hay heurística de texto que las separe sin arriesgar prosa
+    corrupta. `code` y `level` sí se extraen con garantía: los dos viven
+    siempre en la primera línea de la entrada, antes de que empiece esa
+    mezcla (174 entradas verificadas contra el documento real, sin
+    duplicados de `(code, level)`).
+
+    10 de las 174 no traen `level` -- códigos con una estructura distinta
+    ("A1", "C2", "D1", "S1"... encadenan directo a "Para <clave> señalar:"
+    sin pasar por G/P) -- quedan con `level=None`, lo que el documento
+    trae, no un hueco de parseo.
+    """
+    filas: list[ParsedIdentifier] = []
+    for raw in lines:
+        line = raw.rstrip("\n")
+        if not line.strip() or _NOISE_RE.search(line):
+            continue
+        if len(line) - len(line.lstrip()) >= 3:
+            continue
+        m = _IDENTIFICADOR_APENDICE_RE.match(line)
+        if not m:
+            continue
+        nivel = _NIVEL_RE.search(m.group(2))
+        filas.append(ParsedIdentifier(code=m.group(1), level=nivel.group(1) if nivel else None))
     return filas

@@ -147,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
             log.info("dof.cli.done", target=args.target, raw_only=True)
             return 0
 
-        offices = units = claves = regulations = None
+        offices = units = claves = regulations = identifiers = None
         if args.anexo22:
             lines = anexo22.extract_text(str(anexo22_path))
             headings = anexo22.find_appendix_headings(lines)
@@ -157,6 +157,7 @@ def main(argv: list[str] | None = None) -> int:
             regulations = anexo22.parse_non_tariff_regulations(
                 anexo22.appendix_block(lines, headings, 9)
             )
+            identifiers = anexo22.parse_identifiers(anexo22.appendix_block(lines, headings, 8))
 
         reglas = None
         if args.rgce or args.split_long_rules:
@@ -165,11 +166,18 @@ def main(argv: list[str] | None = None) -> int:
             # convertiría cada acento en dos caracteres basura.
             reglas = rgce.parse_rules(rgce_bytes.decode("utf-8"))
 
-    if offices is not None and units is not None and claves is not None and regulations is not None:
+    if (
+        offices is not None
+        and units is not None
+        and claves is not None
+        and regulations is not None
+        and identifiers is not None
+    ):
         print(
             f"Parseado: {len(offices)} aduanas/secciones, {len(units)} unidades de medida, "
             f"{len(claves)} claves de pedimento (solo código), "
-            f"{len(regulations)} identificadores no arancelarios."
+            f"{len(regulations)} identificadores no arancelarios, "
+            f"{len(identifiers)} identificadores de pedimento (Apéndice 8)."
         )
     if reglas is not None:
         print(f"Parseado: {len(reglas)} reglas de las RGCE 2026.")
@@ -196,18 +204,21 @@ def main(argv: list[str] | None = None) -> int:
     with Session(engine) as session:
         if offices is not None and units is not None and claves is not None:
             assert regulations is not None
-            n_offices, n_units, n_claves, n_regs = load.load_anexo22(
+            assert identifiers is not None
+            n_offices, n_units, n_claves, n_regs, n_ids = load.load_anexo22(
                 session,
                 offices=offices,
                 units=units,
                 claves=claves,
                 regulations=regulations,
+                identifiers=identifiers,
                 content_hash=anexo22_capture.content_hash,
                 retrieved_at=anexo22_capture.retrieved_at,
             )
             print(
                 f"OK ({args.target}): {n_offices} aduanas/secciones, {n_units} unidades, "
-                f"{n_claves} claves, {n_regs} identificadores insertados."
+                f"{n_claves} claves, {n_regs} identificadores no arancelarios, "
+                f"{n_ids} identificadores de pedimento insertados."
             )
             log.info(
                 "dof.anexo22.cli.done",
@@ -216,6 +227,7 @@ def main(argv: list[str] | None = None) -> int:
                 units=n_units,
                 claves=n_claves,
                 regulations=n_regs,
+                identifiers=n_ids,
             )
 
         if reglas is not None:
