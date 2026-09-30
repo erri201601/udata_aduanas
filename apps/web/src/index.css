@@ -1468,3 +1468,68 @@ code {
 .subir__huella { font-size: 0.72rem !important; word-break: break-all; }
 .subir__huella span { opacity: 0.75; margin-right: 0.35rem; }
 .subir__resultado code { margin-right: 0.4rem; }
+
+/* ── La pantalla explica sus propios números ─────────────────────────────── */
+
+/* Plegado: quien entiende la nomenclatura no lo necesita cada vez, y quien no
+   la entiende no puede seguir el resto de la pantalla sin esto. */
+.glosario {
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+  padding: 0.75rem 1.1rem;
+  margin-bottom: 1.25rem;
+  box-shadow: var(--sombra);
+}
+
+.glosario summary { cursor: pointer; font-size: 0.85rem; font-weight: 600; }
+.glosario__niveles { list-style: none; margin: 0.9rem 0 0; padding: 0; display: grid; gap: 0.4rem; }
+
+.glosario__niveles li {
+  display: grid;
+  grid-template-columns: 7rem 7rem 1fr;
+  gap: 0.75rem;
+  align-items: baseline;
+  font-size: 0.8rem;
+}
+
+.glosario__niveles code { color: var(--acento); font-weight: 600; }
+.glosario__niveles span { color: var(--tenue); }
+.glosario__pie {
+  margin: 0.9rem 0 0;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--borde);
+  font-size: 0.75rem;
+  color: var(--tenue);
+  line-height: 1.5;
+}
+
+/* Qué pregunta la regla y qué significa su estado. Van tenues y en cursiva
+   para que no compitan con el razonamiento, que es lo que hay que leer. */
+.paso__glosa {
+  margin: 0.15rem 0 0;
+  font-size: 0.76rem;
+  font-style: italic;
+  color: var(--tenue);
+  line-height: 1.5;
+}
+
+.paso__glosa--estado { opacity: 0.8; }
+
+.paso__confianza {
+  margin: 0.6rem 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: baseline;
+  font-size: 0.76rem;
+  color: var(--tenue);
+  line-height: 1.5;
+}
+
+.paso__confianza-valor {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--texto);
+  white-space: nowrap;
+}

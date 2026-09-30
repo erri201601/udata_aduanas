@@ -13,7 +13,9 @@
 
 import { useState } from 'react'
 
+import { ComoSeLeeUnCodigo } from '../components/ComoSeLeeUnCodigo'
 import { SyntheticBanner } from '../components/DataOriginBadge'
+import { QUE_ES_EL_ESTADO, QUE_PREGUNTA, comoLeerLaConfianza } from '../components/glosas'
 import { EvidenceKindBadge } from '../components/EvidenceKindBadge'
 import { fundamenta } from '../components/evidenceKinds'
 import { useClassification, useClassifications } from '../hooks/useClassifications'
@@ -87,6 +89,8 @@ export function Classification({ decisionInicial = null }: Props = {}) {
 
       {detalle && (
         <>
+          <ComoSeLeeUnCodigo />
+
           <div className={`veredicto veredicto--${detalle.status.toLowerCase()}`}>
             {detalle.fraction_code ? (
               <>
@@ -184,19 +188,49 @@ export function Classification({ decisionInicial = null }: Props = {}) {
                   >
                     <div className="paso__cabecera">
                       <span className="paso__regla">{paso.rule_id}</span>
-                      <span className={`paso__estado paso__estado--${(paso.status ?? '').toLowerCase()}`}>
+                      <span
+                        className={`paso__estado paso__estado--${(paso.status ?? '').toLowerCase()}`}
+                        title={QUE_ES_EL_ESTADO[paso.status ?? ''] ?? ''}
+                      >
                         {paso.status}
                       </span>
                       {ultimo && <span className="ruta__marca">resolvió</span>}
                     </div>
 
+                    {/* Qué PREGUNTA esta regla. Sin esto, «RGI-3a» no le dice
+                        nada a quien no clasifica a diario, y la traza entera
+                        se lee como jerga en vez de como un razonamiento. */}
+                    {QUE_PREGUNTA[paso.rule_id ?? ''] && (
+                      <p className="paso__glosa">{QUE_PREGUNTA[paso.rule_id ?? '']}</p>
+                    )}
+
+                    {QUE_ES_EL_ESTADO[paso.status ?? ''] && (
+                      <p className="paso__glosa paso__glosa--estado">
+                        {QUE_ES_EL_ESTADO[paso.status ?? '']}
+                      </p>
+                    )}
+
                     {paso.reasoning_summary && (
                       <p className="paso__razon">{paso.reasoning_summary}</p>
                     )}
 
+                    {/* La confianza, con su lectura. Un 0.45 a secas se
+                        entiende como «45 % de probabilidad de acertar», que es
+                        lo contrario de lo que significa. */}
+                    {paso.confidence != null && (
+                      <p className="paso__confianza">
+                        <span className="paso__confianza-valor">
+                          Confianza {Number(paso.confidence).toFixed(2)}
+                        </span>
+                        <span>{comoLeerLaConfianza(paso.confidence, paso.rule_id)}</span>
+                      </p>
+                    )}
+
                     {paso.candidate_codes && paso.candidate_codes.length > 0 && (
                       <p className="paso__candidatos">
-                        Consideró:{' '}
+                        Consideró {paso.candidate_codes.length}
+                        {paso.candidate_codes.length === 1 ? ' posición' : ' posiciones'} de la
+                        tarifa:{' '}
                         {paso.candidate_codes.map((c) => (
                           <code key={c}>{c}</code>
                         ))}
