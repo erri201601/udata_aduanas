@@ -1,5 +1,9 @@
 /**
- * Copilot (§32) — consulta al corpus jurídico.
+ * AduLex (§32) — consulta al corpus jurídico.
+ *
+ * El fichero, la ruta de la API y los tipos siguen diciendo «copilot»: es el
+ * nombre del §32 del maestro y renombrarlo tocaría el contrato de la API sin
+ * que el usuario gane nada. Lo que se llama AduLex es la pantalla.
  *
  * ESTA PANTALLA NO REDACTA LA RESPUESTA, Y ES UNA DECISIÓN
  *
@@ -125,7 +129,7 @@ export function Copilot() {
     <section className="pantalla">
       <header className="pantalla__encabezado">
         <div>
-          <h1>Copilot</h1>
+          <h1>AduLex</h1>
           <p className="pantalla__sub">Qué dice la norma que regía ese día, con su cita</p>
         </div>
       </header>
@@ -232,7 +236,7 @@ export function Copilot() {
           </ul>
 
           <p className="tablero__pie">
-            El Copilot no redacta la respuesta: enseña la norma. Parafrasear la ley es como se
+            AduLex no redacta la respuesta: enseña la norma. Parafrasear la ley es como se
             producen las citas inventadas, y aquí se prefiere que quien lee saque la conclusión
             sobre el texto — no sobre un resumen de él.
           </p>
