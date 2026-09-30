@@ -155,6 +155,50 @@ def test_acertar_la_subpartida_y_fallar_la_fraccion_se_distingue() -> None:
 # ── Lo que no se compara ────────────────────────────────────────────────────
 
 
+def test_abstenerse_no_cuenta_como_fallar() -> None:
+    """EL TEST QUE IMPORTA (hallazgo del 30-sep, el día de la demo).
+
+    El motor no dio fracción y la persona sí. Eso no es un error del motor: es
+    §8.2 funcionando —«sin información suficiente, HUMAN_REVIEW_REQUIRED»— y
+    contarlo como fallo mide cobertura y lo presenta como puntería.
+
+    Con datos reales la diferencia era esto:
+
+        antes   fraction_accuracy  0.00 % sobre 13
+        ahora   0 de 1 comparado, 12 abstenciones
+        y hs_accuracy pasó de 7.69 % a 100 % sobre un caso
+
+    Es la misma regla que el fichero ya aplicaba cuando quien no declaraba era
+    la persona. Faltaba al revés.
+    """
+    maquina = _decision(fraccion=None)
+    with _cliente([maquina, _veredicto("73239305", maquina)]) as c:
+        m = c.get("/metrics/classification").json()
+
+    assert m["fraction_accuracy"]["comparados"] == 0, "no hay con qué comparar"
+    assert m["fraction_accuracy"]["aciertos"] == 0
+    assert m["fraction_accuracy"]["abstenciones"] == 1
+    assert m["fraction_accuracy"]["porcentaje"] is None, "desconocido, no cero"
+
+
+def test_la_abstencion_no_diluye_el_porcentaje_de_los_que_si_contesto() -> None:
+    """Dos casos: en uno contestó y acertó, en el otro se abstuvo.
+
+    El porcentaje es 100 % sobre uno, no 50 % sobre dos. Y la abstención se
+    declara al lado para que nadie lea el 100 % como cobertura.
+    """
+    acerto = _decision(fraccion="84713001")
+    callo = _decision(fraccion=None, dna=uuid.uuid4(), minutos=1)
+    filas = [acerto, callo, _veredicto("84713001", acerto), _veredicto("73239305", callo)]
+    with _cliente(filas) as c:
+        m = c.get("/metrics/classification").json()
+
+    assert m["fraction_accuracy"]["aciertos"] == 1
+    assert m["fraction_accuracy"]["comparados"] == 1
+    assert m["fraction_accuracy"]["abstenciones"] == 1
+    assert Decimal(m["fraction_accuracy"]["porcentaje"]) == Decimal("100.00")
+
+
 def test_sin_nico_declarado_no_se_compara() -> None:
     """Contarlo como fallo castigaría al motor por un dato que nadie dio."""
     maquina = _decision(fraccion="84713001", nico="00")

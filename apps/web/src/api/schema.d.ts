@@ -477,6 +477,11 @@ export interface components {
              * @default 0
              */
             comparados: number;
+            /**
+             * Abstenciones
+             * @default 0
+             */
+            abstenciones: number;
             /** Porcentaje */
             porcentaje?: string | null;
         };
