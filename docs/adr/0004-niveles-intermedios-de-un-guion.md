@@ -125,14 +125,20 @@ y `TariffCandidate` (`core/rgi_engine/context.py`):
 
 ```python
 class TariffCandidate(BaseModel):
-    code: str                 # NUNCA nulo
+    code: str  # NUNCA nulo
     text: str
-    level: str                 # "CHAPTER | HEADING | SUBHEADING | FRACTION | NICO" — cerrado, sin hueco para "grupo"
+    level: (
+        str  # "CHAPTER | HEADING | SUBHEADING | FRACTION | NICO" — cerrado, sin hueco para "grupo"
+    )
     ...
+
     @property
-    def chapter(self) -> str: return self.code[:2]
+    def chapter(self) -> str:
+        return self.code[:2]
+
     @property
-    def heading(self) -> str:  return self.code[:4]
+    def heading(self) -> str:
+        return self.code[:4]
 ```
 
 Un grupo de guion no tiene código real. Cualquier diseño que permita que un
