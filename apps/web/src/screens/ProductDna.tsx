@@ -12,6 +12,7 @@
 
 import { AttributeStatusBadge, ConfidenceMeter } from '../components/AttributeStatusBadge'
 import { ClassifyButton } from '../components/ClassifyButton'
+import { SubirImagen } from '../components/SubirImagen'
 import { SyntheticBanner } from '../components/DataOriginBadge'
 import { useProductDna, useProducts } from '../hooks/useProductDna'
 import type { AttributeStatus, ProductAttributeRead } from '../api/client'
@@ -58,6 +59,8 @@ export function ProductDna({ onClasificado }: Props = {}) {
       </header>
 
       <SyntheticBanner />
+
+      {activo && <SubirImagen productId={activo} onExtraido={recargar} />}
 
       {activo && onClasificado && (
         <ClassifyButton

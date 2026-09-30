@@ -1429,3 +1429,42 @@ code {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
+
+/* ── Subir una imagen para extraer el DNA (§16) ──────────────────────────── */
+
+.subir {
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+  padding: 1.1rem 1.25rem;
+  margin-bottom: 1.5rem;
+  box-shadow: var(--sombra);
+}
+
+.subir__accion { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.subir__pista { margin: 0; font-size: 0.78rem; color: var(--tenue); line-height: 1.5; flex: 1 1 18rem; }
+
+.subir__estado {
+  margin: 0.9rem 0 0;
+  font-size: 0.82rem;
+  color: var(--tenue);
+}
+
+.subir .alerta { margin: 0.9rem 0 0; }
+
+.subir__resultado {
+  margin-top: 0.9rem;
+  padding: 0.85rem 1rem;
+  background: rgba(46, 168, 107, 0.09);
+  border-left: 3px solid var(--ok);
+  border-radius: 0 8px 8px 0;
+}
+
+.subir__resultado p { margin: 0.4rem 0 0; font-size: 0.83rem; color: var(--tenue); line-height: 1.5; }
+
+/* La huella del archivo: fea y larga a propósito. Es lo único que prueba, meses
+   después, que el atributo salió de esa foto. Esconderla por estética quitaría
+   justo el dato que hace defendible lo demás. */
+.subir__huella { font-size: 0.72rem !important; word-break: break-all; }
+.subir__huella span { opacity: 0.75; margin-right: 0.35rem; }
+.subir__resultado code { margin-right: 0.4rem; }
