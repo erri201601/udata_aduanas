@@ -108,6 +108,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/products/{product_id}/dna/from-image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Extrae el Product DNA de una imagen (§16)
+         * @description Cierra el primer eslabón del §48: «usuario carga ficha técnica + imagen».
+         *
+         *     EL CRUDO SE GUARDA ANTES DE MIRARLO (§12, regla 7)
+         *
+         *     La imagen sube a MinIO con su `content_hash` ANTES de pasar por el modelo.
+         *     Si el orden fuera el otro, un fallo del proveedor dejaría atributos sin
+         *     documento del que dijeran venir, y esa es exactamente la situación que el
+         *     pipeline existe para que no ocurra: lo único irreversible es el crudo.
+         *
+         *     EL ORIGEN LO HEREDA DEL PRODUCTO
+         *
+         *     El DNA de un producto sintético es `SYNTHETIC` aunque la foto sea real y el
+         *     modelo real. Inventar un sexto valor para «lo que subió un usuario»
+         *     rompería los cinco cerrados del §9, y el dato que describe no cambia de
+         *     naturaleza por cómo se extrajo.
+         */
+        post: operations["dna_desde_imagen_products__product_id__dna_from_image_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/products/{product_id}/classify": {
         parameters: {
             query?: never;
@@ -516,6 +550,14 @@ export interface components {
              * @default 0
              */
             auditados_completos: number;
+        };
+        /** Body_dna_desde_imagen_products__product_id__dna_from_image_post */
+        Body_dna_desde_imagen_products__product_id__dna_from_image_post: {
+            /**
+             * Imagen
+             * @description Foto o ficha del producto
+             */
+            imagen: string;
         };
         /**
          * Clasificaciones
@@ -980,6 +1022,29 @@ export interface components {
              * @default false
              */
             is_simulation: boolean;
+        };
+        /**
+         * DnaDesdeImagenResponse
+         * @description Lo que se extrajo de la imagen, y de dónde salió.
+         */
+        DnaDesdeImagenResponse: {
+            /**
+             * Product Dna Id
+             * Format: uuid
+             */
+            product_dna_id: string;
+            /** Version */
+            version: number;
+            /** Atributos */
+            atributos: number;
+            /** Summary */
+            summary?: string | null;
+            /** Missing Information */
+            missing_information?: string[];
+            /** Minio Key */
+            minio_key: string;
+            /** Content Hash */
+            content_hash: string;
         };
         /**
          * DocumentoVigilado
@@ -2435,6 +2500,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProductDnaDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dna_desde_imagen_products__product_id__dna_from_image_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                product_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_dna_desde_imagen_products__product_id__dna_from_image_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DnaDesdeImagenResponse"];
                 };
             };
             /** @description Validation Error */
