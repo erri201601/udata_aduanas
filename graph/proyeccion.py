@@ -44,7 +44,7 @@ empieza a calcular dinero fuera del motor.
 
 LO QUE EL §28 LISTA Y AQUÍ NO ESTÁ, Y QUÉ LO DESBLOQUEA
 
-  NOM              falta la correlación fracción → NOM (Anexo 2.2.1 del
+  NOM              falta la correlación fracción → NOM (Anexo 2.4.1 del
                    Acuerdo de la SE); hoy no existe la fuente
   PROSECSector     falta cargar los decretos PROSEC
   Treaty           falta cargar los tratados y sus reglas de origen

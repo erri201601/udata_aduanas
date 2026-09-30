@@ -117,7 +117,7 @@ La tabla `intelligence.ground_truth_records` ya existe.
 
 ## Después (no ahora)
 
-- **Anexo 2.2.1 del Acuerdo de la SE** — la correlación fracción → NOM que
+- **Anexo 2.4.1 del Acuerdo de la SE** — la correlación fracción → NOM que
   verificaste que NO está en el Anexo 22. Es fuente aparte: otro emisor
   (Secretaría de Economía, no SHCP), otro instrumento, vigencia propia.
 - **Resto de la tarifa** — hoy hay 2 capítulos de 97.

@@ -110,7 +110,7 @@ class ExpectedItem(BaseModel):
     El valor por omisión es `None` a propósito: hoy no existe la correlación
     fracción → NOM. No está en el Anexo 22 (verificado por Persona 2 el
     2026-09-08: el Apéndice 9 explica qué significa cada código, pero remite al
-    Anexo 2.2.1 de un Acuerdo distinto de la Secretaría de Economía para saber
+    Anexo 2.4.1 de un Acuerdo distinto de la Secretaría de Economía para saber
     qué fracciones lo exigen). Mientras esa fuente no esté cargada, quien
     construya un `ExpectedItem` sin tocar este campo obtiene «no sé», que es la
     verdad, en vez de «no exige ninguna», que sería inventar.
