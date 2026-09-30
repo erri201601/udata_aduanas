@@ -1,15 +1,34 @@
+/* Tema claro (30-sep, decisión de Persona 1 tras probarlo en Panorama).
+ *
+ * Los nombres de los tokens no cambian: toda la consola ya pintaba con ellos,
+ * así que cambiar los VALORES la mueve entera sin tocar mil reglas. Lo que sí
+ * hubo que retocar a mano es el puñado de sitios con color escrito a pelo y
+ * los semánticos, que en oscuro podían ser claros y sobre blanco no contrastan.
+ *
+ * `--realce` y `--realce-fuerte` son nuevos: en oscuro un hover se hacía
+ * aclarando el fondo con un hex fijo, y sobre claro hay que oscurecerlo. Tener
+ * el token evita que el siguiente los vuelva a escribir a mano.
+ */
 :root {
-  --fondo: #0f1115;
-  --panel: #171a21;
-  --borde: #262b36;
-  --texto: #e6e8ec;
-  --tenue: #8d95a5;
-  --acento: #4f8cff;
-  --ok: #2ea86b;
-  --mal: #e5484d;
-  --aviso: #f5a524;
+  --fondo: #f2f4f7;
+  --panel: #ffffff;
+  --borde: #e3e7ee;
+  --texto: #1c2434;
+  --tenue: #6b7488;
+  --realce: #eef1f6;
+  --realce-fuerte: #e4e9f2;
 
-  color-scheme: dark;
+  /* Más oscuros que en el tema anterior: aquí van como TEXTO sobre blanco y
+     sobre tintes pálidos, donde un color luminoso deja de leerse. */
+  --acento: #2f6fdb;
+  --ok: #1a8f57;
+  --mal: #c8393d;
+  --aviso: #b9730a;
+  --bien: #1a8f57;
+
+  --sombra: 0 1px 2px rgba(20, 30, 50, 0.05);
+
+  color-scheme: light;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
 
@@ -65,10 +84,10 @@ code {
   cursor: pointer;
 }
 
-.menu__item:hover { background: #1e222b; color: var(--texto); }
+.menu__item:hover { background: var(--realce); color: var(--texto); }
 
 .menu__item--activo {
-  background: #1e2532;
+  background: var(--realce-fuerte);
   color: var(--texto);
   box-shadow: inset 2px 0 0 var(--acento);
 }
@@ -205,15 +224,15 @@ code {
 
 .badge-origen--synthetic {
   background: var(--aviso);
-  color: #1a1200;
+  color: #fff;
 }
 
 .badge-origen--official,
 .badge-origen--public,
 .badge-origen--licensed {
   background: rgba(79, 140, 255, 0.15);
-  border: 1px solid rgba(79, 140, 255, 0.5);
-  color: #9dbcff;
+  border: 1px solid rgba(47, 111, 219, 0.4);
+  color: var(--acento);
 }
 
 .aviso-sintetico {
@@ -645,7 +664,7 @@ code {
   padding: 0.14rem 0.4rem;
   border-radius: 3px;
   background: var(--aviso);
-  color: #1a1200;
+  color: #fff;
   font-size: 0.64rem;
   font-weight: 700;
   letter-spacing: 0.05em;
@@ -724,7 +743,7 @@ code {
   font-variant-numeric: tabular-nums;
 }
 
-.pregunta--sin-responder .pregunta__num { background: var(--aviso); color: #1a1200; }
+.pregunta--sin-responder .pregunta__num { background: var(--aviso); color: #fff; }
 
 .pregunta__cuerpo h3 { margin: 0 0 0.4rem; font-size: 0.92rem; }
 .pregunta__cuerpo p { margin: 0; font-size: 0.89rem; line-height: 1.55; max-width: 70ch; }
@@ -840,24 +859,26 @@ code {
 
 /* ── Tablero ejecutivo ──────────────────────────────────────────────────── */
 
+/* Tarjetas separadas, no celdas fusionadas por líneas de 1px. Sobre claro,
+   la rejilla pegada se leía como una tabla y hacía competir a todas las cifras
+   entre sí; con aire, cada una se lee sola. */
 .tablero {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(11.5rem, 1fr));
-  gap: 1px;
-  background: var(--borde);
-  border: 1px solid var(--borde);
-  border-radius: 8px;
-  overflow: hidden;
+  gap: 1rem;
   margin-bottom: 1.5rem;
 }
 
 .tablero__cifra {
   background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+  box-shadow: var(--sombra);
   padding: 1.1rem 1.25rem;
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  border-top: 2px solid transparent;
+  border-top: 2px solid var(--borde);
 }
 
 /* Lo pendiente pesa igual que lo hecho: un tablero que sólo cuenta éxitos
@@ -1279,6 +1300,135 @@ code {
 /* El tipo de divergencia, en palabras. El nombre técnico va en el `title`:
    quien audita necesita poder citarlo, pero no leerlo primero. */
 .divergencia__tipo { font-size: 0.78rem; color: var(--tenue); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TARJETAS, KPI Y BARRAS — nacieron en Panorama, valen para toda la consola
+   ═══════════════════════════════════════════════════════════════════════════
+
+   Se probaron aisladas en `.panorama` el 30-sep y Persona 1 decidió llevarlas
+   a las diez pantallas. Ya no llevan colores propios: usan los tokens de la
+   raíz, así que un cambio de tema las mueve con el resto.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Las cifras grandes ──────────────────────────────────────────────────── */
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.kpi {
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+  padding: 1.1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  box-shadow: var(--sombra);
+}
+
+/* La etiqueta ARRIBA y en pequeño: se lee antes QUÉ es que CUÁNTO vale. Al
+   revés, el número queda huérfano hasta que el ojo baja a buscar su nombre. */
+.kpi__etiqueta {
+  font-size: 0.78rem;
+  color: var(--tenue);
+  letter-spacing: 0.01em;
+}
+
+.kpi__valor {
+  font-size: 2.1rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.05;
+}
+
+.kpi__nota { font-size: 0.72rem; color: var(--tenue); line-height: 1.4; }
+.kpi--atencion .kpi__valor { color: var(--aviso); }
+.kpi--bien .kpi__valor { color: var(--ok); }
+
+.kpis--interno { grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); margin: 0; }
+.kpis--interno .kpi { border: 0; box-shadow: none; padding: 0; background: transparent; }
+.kpis--interno .kpi__valor { font-size: 1.5rem; }
+
+/* ── Las tarjetas con contenido ──────────────────────────────────────────── */
+
+.rejilla {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.tarjeta {
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+  padding: 1.25rem 1.4rem 1.1rem;
+  box-shadow: var(--sombra);
+}
+
+.tarjeta__titulo {
+  margin: 0 0 1rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+/* El pie es donde vive la honestidad de estas pantallas. Va tenue pero NO se
+   esconde: quitarlo dejaría un tablero bonito que se puede malinterpretar. */
+.tarjeta__pie {
+  margin: 1rem 0 0;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--borde);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--tenue);
+}
+
+/* ── Barras horizontales ─────────────────────────────────────────────────── */
+
+.barras { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.55rem; }
+
+.barras__fila {
+  display: grid;
+  grid-template-columns: 9.5rem 1fr 2.5rem;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.82rem;
+}
+
+.barras__etiqueta {
+  color: var(--tenue);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.barras__pista {
+  background: var(--realce);
+  border-radius: 3px;
+  height: 1.15rem;
+  overflow: hidden;
+}
+
+.barras__barra {
+  display: block;
+  height: 100%;
+  background: var(--acento);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.barras__barra--atencion { background: var(--aviso); }
+.barras__barra--bien { background: var(--ok); }
+
+.barras__valor {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
 
 /* ── Subir una imagen para extraer el DNA (§16) ──────────────────────────── */
 

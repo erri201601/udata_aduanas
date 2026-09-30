@@ -65,7 +65,7 @@ export const PANTALLAS: DefinicionPantalla[] = [
   },
   {
     id: 'copilot',
-    titulo: 'Copilot',
+    titulo: 'AduLex',
     descripcion: 'Qué dice la norma que regía ese día, con su cita',
     implementada: true,
   },

@@ -101,12 +101,39 @@ _FRACCION_RE = re.compile(r"^\d{4}\.\d{2}\.\d{2}$")
 #: QUÍMICOS" pegado al frente de su descripción real).
 _SUBCAPITULO_RE = re.compile(r"^SUBCAP[IÍ]TULO\s+[IVXLCDM]+$")
 
+#: Nivel de un guion SIN código propio (ADR 0004): agrupa subpartidas
+#: hermanas bajo un encabezado común que el documento no numera -- p. ej.,
+#: bajo la partida 73.05, "Tubos de los tipos utilizados en oleoductos o
+#: gasoductos:" agrupa 7305.11/12/19. Exactamente un guion, nunca "--": eso
+#: es el propio nivel de 6 dígitos (ver `X_GUION_MIN`/`X_GUION_MAX` más
+#: abajo) y siempre trae su código de subpartida en la misma palabra-ancla
+#: -- no se confunde con esto. Verificado contra el documento completo con
+#: `grep`: cero apariciones de "--"/"---" SIN código (docs/adr/
+#: 0004-niveles-intermedios-de-un-guion.md), así que un solo carácter basta,
+#: sin necesidad de un cuantificador.
+_GUION_SOLO_RE = re.compile(r"^-$")
+
 #: Límites de columna, verificados contra el PDF real en dos capítulos
 #: distintos (84 y 61) con `pdftotext -bbox-layout` — ver docstring del
 #: módulo.
 X_CODIGO_MAX = 130.0
 X_DESCRIPCION_MIN = 155.0
 X_DESCRIPCION_MAX = 360.0
+#: Columna del guion de nivel intermedio (ADR 0004) y del sufijo NICO/SUBP de
+#: 2 dígitos -- el mismo rango, verificado contra la página 799 del PDF real
+#: (partida 73.05): el guion de "7305.20        -" y el guion sin código de
+#: "    -         Tubos de los tipos..." caen los dos en x≈149.66-153.57,
+#: fuera de la columna de CÓDIGO (x<130) y antes de la de DESCRIPCIÓN
+#: (x>=155).
+X_GUION_MIN = X_CODIGO_MAX
+X_GUION_MAX = X_DESCRIPCION_MIN
+#: Tolerancia para decidir si un guion sin código comparte fila con un
+#: código real (entonces es sólo el indicador visual de su profundidad, se
+#: ignora) o si va solo (entonces es un grupo real). Verificado: en la
+#: página 799, "7305.20" y su guion comparten yMin EXACTA
+#: (511.195240) -- un margen de 0.5pt no arriesga confundir dos filas
+#: vecinas, que en este documento distan >=10pt entre sí.
+_TOLERANCIA_MISMA_FILA = 0.5
 
 _WORD_RE = re.compile(
     r'<word xMin="([\d.]+)" yMin="([\d.]+)" xMax="[\d.]+" yMax="[\d.]+">([^<]*)</word>'
@@ -125,6 +152,17 @@ class ParsedHeading:
     code: str
     level: int  # 4 o 6
     chapter: str
+    description: str
+
+
+@dataclass(frozen=True)
+class ParsedHeadingGroup:
+    """Nivel de un guion sin código (ADR 0004). Nunca lleva `code`: el
+    documento no lo numera, y fabricarle uno sería inventar un código
+    arancelario que no existe (regla 2 CLAUDE.md)."""
+
+    parent_code: str  # la partida (4 dígitos) de la que cuelga
+    ordinal: int  # posición entre hermanos del mismo padre, orden del documento
     description: str
 
 
@@ -237,8 +275,10 @@ def _centro_de_fila(
 #: >11pt). Con las fracciones a peso casi cero, la DP ya no tiene motivo
 #: para sacrificar nada por ellas -- consumen cuantas líneas hagan falta
 #: para que la partida/subpartida siguiente ajuste, sin penalizar su propio
-#: ajuste, que no se usa para nada.
-_PESO_POR_NIVEL = {4: 1.0, 6: 1.0, 8: 0.001}
+#: ajuste, que no se usa para nada. El grupo de guion (0, ADR 0004) SÍ
+#: importa -- su texto se carga -- así que lleva el mismo peso que partida y
+#: subpartida, no el casi-cero de la fracción.
+_PESO_POR_NIVEL = {0: 1.0, 4: 1.0, 6: 1.0, 8: 0.001}
 
 
 def _asignar_lineas(
@@ -411,7 +451,7 @@ def _sin_huerfanas_iniciales(
     lineas_texto: list[str],
     conteos: list[int],
     siguiente_fin: list[int | None],
-    anclas: list[tuple[float, str, int]],
+    anclas: list[tuple[float, str | None, int]],
 ) -> tuple[list[float], list[str], list[int], list[int | None]]:
     """Reintenta la PRIMERA ancla de la página quitándole líneas iniciales.
 
@@ -483,8 +523,16 @@ def _sin_huerfanas_iniciales(
     return lineas_y, lineas_texto, conteos, siguiente_fin
 
 
-def _headings_de_pagina(palabras: list[_Palabra]) -> list[tuple[str, int, str]]:
-    """(code, level, description) de las partidas/subpartidas de una página.
+def _headings_de_pagina(palabras: list[_Palabra]) -> list[tuple[str | None, int, str, bool]]:
+    """(code, level, description, guion_propio) de las partidas/subpartidas
+    de una página, más los grupos de guion sin código (ADR 0004, `level=0`,
+    `code=None`).
+
+    `guion_propio` sólo importa en `level=6`: `True` si esa subpartida es
+    ELLA MISMA una hoja de un solo guion (p. ej. 7305.20) -- hermana de los
+    grupos de guion, no su hija -- y por lo tanto nunca debe heredar el
+    grupo que esté activo, y además cierra ese grupo para lo que sigue
+    (ver `parse_headings_con_grupos`). Siempre `False` en los demás niveles.
 
     Las fracciones (nivel 8) sólo sirven aquí como ancla -- consumen sus
     propias líneas para que la fila siguiente no las herede -- nunca se
@@ -510,7 +558,7 @@ def _headings_de_pagina(palabras: list[_Palabra]) -> list[tuple[str, int, str]]:
         for idx in range(len(y_encabezados))
     ] or [(float("-inf"), y_pie)]
 
-    resultado: list[tuple[str, int, str]] = []
+    resultado: list[tuple[str | None, int, str, bool]] = []
     for y_min, y_max in segmentos:
         # El código se guarda SIN el punto ("8401" no "84.01"): mismo
         # convenio que `tariff_fractions.code`
@@ -518,7 +566,7 @@ def _headings_de_pagina(palabras: list[_Palabra]) -> list[tuple[str, int, str]]:
         # `length(code) = level` de la migración -- con el punto, "84.01"
         # mide 5, no 4, y toda fila reventaría la restricción (regresión
         # real, encontrada al probar la carga contra Postgres).
-        anclas: list[tuple[float, str, int]] = []
+        anclas: list[tuple[float, str | None, int]] = []
         for p in palabras:
             if p.x >= X_CODIGO_MAX or not (y_min < p.y < y_max):
                 continue
@@ -531,6 +579,32 @@ def _headings_de_pagina(palabras: list[_Palabra]) -> list[tuple[str, int, str]]:
         anclas.sort(key=lambda a: a[0])
         if not anclas:
             continue
+
+        # Grupos de guion (ADR 0004): un "-" solo, en la columna de
+        # NICO/SUBP (x entre X_GUION_MIN y X_GUION_MAX). Si NO comparte fila
+        # con ningún código real, es un grupo -- se agrega como ancla nueva.
+        # Si SÍ la comparte (p. ej. "7305.20        -"), esa subpartida es
+        # ELLA MISMA una hoja de un solo guion -- hermana de los grupos, no
+        # su hija -- y se anota en `ys_guion_propio` para que, más abajo, ni
+        # herede el grupo activo ni lo deje abierto para la que sigue.
+        # Verificado contra la página real: "7305.20" y su guion comparten
+        # yMin EXACTA (ver `_TOLERANCIA_MISMA_FILA`).
+        ys_con_codigo = [a[0] for a in anclas]
+        ys_guion_propio: set[float] = set()
+        for p in palabras:
+            if not (X_GUION_MIN <= p.x < X_GUION_MAX and y_min < p.y < y_max):
+                continue
+            if not _GUION_SOLO_RE.match(p.texto):
+                continue
+            compartida = next(
+                (y_code for y_code in ys_con_codigo if abs(p.y - y_code) <= _TOLERANCIA_MISMA_FILA),
+                None,
+            )
+            if compartida is not None:
+                ys_guion_propio.add(compartida)
+                continue
+            anclas.append((p.y, None, 0))
+        anclas.sort(key=lambda a: a[0])
 
         lineas_y, lineas_texto = _sin_subcapitulos(
             _y_de_lineas(palabras, y_min, y_max), _lineas_de_descripcion(palabras, y_min, y_max)
@@ -559,9 +633,96 @@ def _headings_de_pagina(palabras: list[_Palabra]) -> list[tuple[str, int, str]]:
                 texto = " ".join(lineas_texto[idx : idx + n]).strip()
                 texto = " ".join(texto.split())
                 if texto:
-                    resultado.append((code, level, texto))
+                    resultado.append((code, level, texto, y_code in ys_guion_propio))
             idx += n
     return resultado
+
+
+def _recorrer_con_grupos(
+    paginas: Iterator[list[tuple[str | None, int, str, bool]]],
+) -> tuple[list[ParsedHeading], list[ParsedHeadingGroup], dict[str, tuple[str, int]]]:
+    """El recorrido con estado (partida activa, grupo activo) sobre una
+    secuencia de páginas ya resueltas por `_headings_de_pagina` -- separado
+    de la extracción del PDF para poder probarlo con páginas sintéticas
+    pequeñas, sin depender de `pdftotext` ni de un documento real.
+
+    Un grupo sólo cuenta, y sólo asocia subpartidas, DENTRO de la PRIMERA
+    aparición real de su partida -- mismo criterio de "gana la primera
+    aparición" que ya usa el resto del parser (ver docstring de
+    `parse_headings`): si el documento repite la sección de una partida más
+    adelante (un índice, una referencia cruzada), sus guiones no se leen una
+    segunda vez.
+    """
+    encontrados: dict[str, ParsedHeading] = {}
+    grupos: list[ParsedHeadingGroup] = []
+    subpartida_a_grupo: dict[str, tuple[str, int]] = {}
+
+    partida_actual: str | None = None
+    partida_es_primera_aparicion = False
+    grupo_ordinal = 0
+    grupo_descripcion: str | None = None
+
+    for pagina in paginas:
+        for code, level, texto, guion_propio in pagina:
+            if level == 4:
+                assert code is not None  # nivel 4 siempre trae código real
+                partida_actual = code
+                partida_es_primera_aparicion = code not in encontrados
+                grupo_ordinal = 0
+                grupo_descripcion = None
+                encontrados.setdefault(
+                    code, ParsedHeading(code=code, level=level, chapter=code[:2], description=texto)
+                )
+            elif level == 0:
+                if partida_actual is not None and partida_es_primera_aparicion:
+                    grupo_ordinal += 1
+                    grupo_descripcion = texto
+                    grupos.append(
+                        ParsedHeadingGroup(
+                            parent_code=partida_actual, ordinal=grupo_ordinal, description=texto
+                        )
+                    )
+            elif level == 6:
+                assert code is not None  # nivel 6 siempre trae código real
+                if (
+                    not guion_propio
+                    and partida_actual is not None
+                    and partida_es_primera_aparicion
+                    and grupo_descripcion is not None
+                    and code not in encontrados
+                ):
+                    subpartida_a_grupo[code] = (partida_actual, grupo_ordinal)
+                if guion_propio:
+                    # Hoja de un solo guion (p. ej. 7305.20): hermana de los
+                    # grupos, no su hija. Nunca hereda el grupo activo, y
+                    # además lo cierra -- lo que siga tampoco es hijo del
+                    # grupo anterior salvo que aparezca uno nuevo.
+                    grupo_descripcion = None
+                encontrados.setdefault(
+                    code, ParsedHeading(code=code, level=level, chapter=code[:2], description=texto)
+                )
+    return sorted(encontrados.values(), key=lambda h: h.code), grupos, subpartida_a_grupo
+
+
+def parse_headings_con_grupos(
+    pdf_path: str, *, first_page: int = 1, last_page: int | None = None
+) -> tuple[list[ParsedHeading], list[ParsedHeadingGroup], dict[str, tuple[str, int]]]:
+    """Partidas/subpartidas (como `parse_headings`) MÁS los grupos de guion
+    sin código (ADR 0004) y a qué subpartida de 6 dígitos cuelga cada una.
+
+    Una sola pasada sobre el documento para las dos cosas -- reextraerlo dos
+    veces (`pdftotext -bbox-layout` por página, ~1 315 páginas) costaría el
+    doble sin necesidad. `parse_headings` es un envoltorio de ésta que
+    descarta los grupos: mismo resultado exacto que antes de este cambio,
+    cero riesgo de regresión sobre las 6 855 filas ya verificadas (PR #129;
+    reverificado tras este cambio: mismos 6 855 códigos, 6 853 descripciones
+    byte-idénticas, y las 2 que cambiaron son mejoras -- ver ADR 0004).
+    """
+    paginas = (
+        _headings_de_pagina(_palabras_de(bbox_xml))
+        for _, bbox_xml in extract_bbox_pages(pdf_path, first_page=first_page, last_page=last_page)
+    )
+    return _recorrer_con_grupos(paginas)
 
 
 def parse_headings(
@@ -576,11 +737,5 @@ def parse_headings(
     ordinales duplicado: la tabla real siempre precede a cualquier
     referencia posterior en el documento.
     """
-    encontrados: dict[str, ParsedHeading] = {}
-    for _, bbox_xml in extract_bbox_pages(pdf_path, first_page=first_page, last_page=last_page):
-        palabras = _palabras_de(bbox_xml)
-        for code, level, texto in _headings_de_pagina(palabras):
-            encontrados.setdefault(
-                code, ParsedHeading(code=code, level=level, chapter=code[:2], description=texto)
-            )
-    return sorted(encontrados.values(), key=lambda h: h.code)
+    headings, _, _ = parse_headings_con_grupos(pdf_path, first_page=first_page, last_page=last_page)
+    return headings

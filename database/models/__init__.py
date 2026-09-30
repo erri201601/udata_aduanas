@@ -45,6 +45,7 @@ from database.models.regulatory import (
     RegulatoryEvent,
     TariffFraction,
     TariffHeading,
+    TariffHeadingGroup,
     UnitOfMeasure,
 )
 
@@ -80,5 +81,6 @@ __all__ = [
     "SyntheticScenario",
     "TariffFraction",
     "TariffHeading",
+    "TariffHeadingGroup",
     "UnitOfMeasure",
 ]

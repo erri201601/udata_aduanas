@@ -124,13 +124,31 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
             "documento completo, igual que --notes."
         ),
     )
+    parser.add_argument(
+        "--heading-groups",
+        action="store_true",
+        help=(
+            "Backfill DIRIGIDO de niveles de un guion (ADR 0004) a "
+            "regulatory.tariff_heading_groups: sólo agrega lo que falte, no "
+            "vuelve a cargar tariff_headings completa -- ésa ya debe estar "
+            "cargada (--headings, en una corrida previa). Idempotente."
+        ),
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    if not args.raw_only and not args.chapters and not args.notes and not args.headings:
-        raise SystemExit("--chapters, --notes o --headings es obligatorio salvo con --raw-only")
+    if (
+        not args.raw_only
+        and not args.chapters
+        and not args.notes
+        and not args.headings
+        and not args.heading_groups
+    ):
+        raise SystemExit(
+            "--chapters, --notes, --headings o --heading-groups es obligatorio salvo con --raw-only"
+        )
     if args.chunks and not args.notes:
         raise SystemExit("--chunks sólo tiene efecto junto con --notes")
     chapters = frozenset(args.chapters or ())
@@ -203,7 +221,16 @@ def main(argv: list[str] | None = None) -> int:
             parsed_notes = notes.parse_notes(ligie_lines)
 
         parsed_headings = None
-        if args.headings:
+        parsed_groups = None
+        subheading_to_group = None
+        if args.heading_groups:
+            # Una sola pasada para las dos cosas (ver docstring de
+            # `parse_headings_con_grupos`) -- si además se pidió --headings,
+            # no se vuelve a recorrer el documento para lo mismo.
+            parsed_headings, parsed_groups, subheading_to_group = (
+                tariff_headings.parse_headings_con_grupos(str(ligie_path))
+            )
+        elif args.headings:
             parsed_headings = tariff_headings.parse_headings(str(ligie_path))
 
     if fa_result is not None and nico_result is not None:
@@ -222,6 +249,11 @@ def main(argv: list[str] | None = None) -> int:
         n_subpartidas = sum(1 for h in parsed_headings if h.level == 6)
         print(
             f"Partidas/subpartidas parseadas: {n_partidas} partidas, {n_subpartidas} subpartidas."
+        )
+    if parsed_groups is not None and subheading_to_group is not None:
+        print(
+            f"Grupos de guion parseados: {len(parsed_groups)}, "
+            f"{len(subheading_to_group)} subpartidas asociadas a alguno."
         )
 
     assert database_url is not None  # solo llegamos aquí sin --raw-only
@@ -248,12 +280,37 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 print(f"OK ({args.target}): {n_chunks} chunks de notas insertados.")
                 log.info("snice.cli.done", target=args.target, chunks=n_chunks)
-        if parsed_headings is not None:
+        if args.headings:
+            assert parsed_headings is not None
             n_headings = load.load_tariff_headings(
                 session, headings=parsed_headings, ligie_content_hash=ligie_capture.content_hash
             )
             print(f"OK ({args.target}): {n_headings} partidas/subpartidas insertadas.")
             log.info("snice.cli.done", target=args.target, headings=n_headings)
+        if args.heading_groups:
+            assert parsed_groups is not None
+            assert subheading_to_group is not None
+            reporte = load.add_missing_heading_groups(
+                session,
+                groups=parsed_groups,
+                subheading_to_group=subheading_to_group,
+                ligie_content_hash=ligie_capture.content_hash,
+            )
+            print(
+                f"OK ({args.target}): {reporte.grupos_creados} grupos de guion creados, "
+                f"{reporte.subpartidas_asociadas} subpartidas asociadas."
+            )
+            if reporte.necesitan_validacion:
+                print(f"NEEDS_VALIDATION ({len(reporte.necesitan_validacion)}):")
+                for linea in reporte.necesitan_validacion:
+                    print(f"  - {linea}")
+            log.info(
+                "snice.cli.done",
+                target=args.target,
+                grupos_creados=reporte.grupos_creados,
+                subpartidas_asociadas=reporte.subpartidas_asociadas,
+                necesitan_validacion=len(reporte.necesitan_validacion),
+            )
         session.commit()
 
     return 0
