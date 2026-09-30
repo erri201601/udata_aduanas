@@ -55,6 +55,20 @@ class Acierto(BaseModel):
 
     aciertos: int = 0
     comparados: int = 0
+    """Los casos donde LAS DOS PARTES declararon valor. Es el denominador."""
+    abstenciones: int = 0
+    """Los casos donde la persona declaró y el motor no.
+
+    No entran en el porcentaje. Abstenerse no es fallar: el motor dijo que no
+    podía, que es el comportamiento que §8.2 le exige cuando no tiene con qué.
+    Contarlas como error mide otra cosa —cuánto le falta por cubrir— y la
+    presenta como si midiera puntería.
+
+    Es la misma regla que `_compara` ya aplicaba en el otro sentido: si la
+    persona no declaró valor, no se puede saber si la máquina acertó. Nadie la
+    había aplicado al revés, y por eso `fraction_accuracy` salía 0.00 % sobre
+    13 casos cuando el motor sólo había contestado en uno.
+    """
     porcentaje: Decimal | None = None
     """`None` cuando no hay nada comparado. No es cero: es desconocido."""
 
@@ -108,8 +122,12 @@ def _compara(maquina: str | None, humano: str | None) -> bool | None:
 
     Si la persona no declaró valor, no se puede saber si la máquina acertó —
     y contarlo como fallo castigaría al motor por un dato que nadie dio.
+
+    Y AL REVÉS, que es lo que faltaba: si el MOTOR no declaró valor, tampoco se
+    puede decir que se equivocó. Se abstuvo, que es lo que §8.2 le exige cuando
+    no tiene con qué. Quien llama las cuenta aparte.
     """
-    if humano is None:
+    if humano is None or maquina is None:
         return None
     return maquina == humano
 
@@ -156,6 +174,11 @@ def precision(session: SessionDep) -> PrecisionClasificacion:
         ):
             resultado = _compara(izq, der)
             if resultado is None:
+                # La persona declaró y el motor no: es una abstención, no un
+                # fallo. Se cuenta aparte para que el porcentaje mida puntería
+                # y este número mida cobertura, que son cosas distintas.
+                if der is not None and izq is None:
+                    metrica.abstenciones += 1
                 continue
             metrica.comparados += 1
             if resultado:
