@@ -9,7 +9,9 @@ pytestmark = pytest.mark.unit
 
 
 def test_chapters_es_obligatorio_sin_raw_only() -> None:
-    with pytest.raises(SystemExit, match="--chapters, --notes o --headings es obligatorio"):
+    with pytest.raises(
+        SystemExit, match="--chapters, --notes, --headings o --heading-groups es obligatorio"
+    ):
         main(["--target", "local"])
 
 

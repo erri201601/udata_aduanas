@@ -171,6 +171,95 @@ class TariffHeading(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Regula
     level: Mapped[int] = mapped_column(sa.SmallInteger, nullable=False)
     chapter: Mapped[str] = mapped_column(sa.String(2), nullable=False)
     description: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    # Grupo de guion (ADR 0004) del que cuelga esta subpartida, si alguno —
+    # sólo tiene sentido en filas `level = 6`. NULL para la inmensa mayoría:
+    # la mayoría de las subpartidas cuelgan directo de su partida, sin un
+    # nivel de un guion de por medio.
+    #
+    # `use_alter=True`: esta FK y la de `TariffHeadingGroup.parent_heading_id`
+    # se referencian mutuamente (un grupo apunta a su partida, una subpartida
+    # apunta a su grupo) — un ciclo real a nivel de TABLA, aunque nunca a
+    # nivel de FILA (un grupo siempre se crea sobre una partida que ya
+    # existe; una subpartida siempre se liga a un grupo que ya existe).
+    # Sin `use_alter`, SQLAlchemy no puede ordenar las tablas para
+    # operaciones genéricas (`Base.metadata.sorted_tables`, que usa
+    # `tests/test_canonical_model.py`) y lo dice con un `SAWarning` que
+    # advierte que una versión futura lo convertiría en error. La migración
+    # ya crea/destruye esta FK por separado con `create_foreign_key`/
+    # `drop_constraint` (ver su archivo) — `use_alter=True` es sólo
+    # declararle al ORM la misma secuencia que la migración ya hace a mano.
+    group_id: Mapped[uuid.UUID | None] = mapped_column(
+        sa.ForeignKey(f"{_SCHEMA}.tariff_heading_groups.id", ondelete="RESTRICT", use_alter=True),
+        nullable=True,
+    )
+
+
+class TariffHeadingGroup(
+    UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base
+):
+    """Nivel de un guion de la LIGIE, sin código propio (ADR 0004).
+
+    Agrupa subpartidas hermanas bajo un encabezado común que el documento no
+    numera — p. ej., bajo la partida 7305, "Tubos de los tipos utilizados en
+    oleoductos o gasoductos:" agrupa 730511/12/19, y "Los demás, soldados:"
+    agrupa 730531/39. Sin este nivel, 730512 ("Los demás, soldados
+    longitudinalmente.") y 730531 ("Soldados longitudinalmente.") son
+    indistinguibles para el motor — el caso real que abrió el ADR 0004.
+
+    TABLA SEPARADA DE `tariff_headings`, A PROPÓSITO: un grupo no tiene
+    código arancelario real (el documento no lo numera), y `tariff_headings`
+    existe desde el ADR 0002 con la garantía de que `code` SIEMPRE es un
+    código real — `code NOT NULL`, `CHECK (length(code) = level)`. Meter el
+    grupo ahí con un código sintético o con `code` nullable debilitaría esa
+    garantía para las filas que sí son código real. Con tabla propia, sin
+    columna `code` en absoluto, un grupo no puede llegar nunca a
+    `TariffCandidate.code` por accidente — por construcción, no por
+    disciplina (mismo criterio que separó `tariff_headings` de
+    `tariff_fractions` en el ADR 0002).
+
+    `description_hash`, NO `ordinal`, ES LA IDENTIDAD PARA RECARGAR (decisión
+    de Persona 1, ADR 0004): si el DOF reforma la 7305 e inserta un grupo
+    nuevo a la mitad, todos los `ordinal` posteriores se desplazan, y un
+    grupo ya cargado podría aparecer con un `ordinal` distinto en la
+    siguiente carga aunque su texto no haya cambiado. Identificar por
+    posición renombraría el mismo grupo como si fuera otro. `ordinal` sólo
+    sirve para ordenar y mostrar en el orden real del documento — nunca para
+    decidir si dos filas son "la misma fila". Ver
+    `ingestion.snice.tariff_headings.add_missing_heading_groups`: si al
+    recargar aparece el mismo `description_hash` bajo el mismo padre pero
+    con `ordinal` distinto al ya guardado, es `NEEDS_VALIDATION` y no se
+    toca — un reordenamiento silencioso es una reforma que nadie leyó.
+
+    `content_hash` (de `RegulatoryMixin`) sigue siendo el hash del PDF de
+    origen completo, igual que en `tariff_headings` — NO es la identidad de
+    este grupo frente a sus hermanos, todos comparten el mismo valor dentro
+    de una misma carga. `description_hash` es el campo nuevo para eso.
+    """
+
+    __tablename__ = "tariff_heading_groups"
+    __table_args__ = (
+        sa.Index("ix_tariff_heading_groups_padre", "parent_heading_id", "valid_from", "valid_to"),
+        sa.UniqueConstraint(
+            "parent_heading_id",
+            "description_hash",
+            "valid_from",
+            name="uq_tariff_heading_groups_padre_hash_valid_from",
+        ),
+        {"schema": _SCHEMA},
+    )
+
+    parent_heading_id: Mapped[uuid.UUID] = mapped_column(
+        sa.ForeignKey(f"{_SCHEMA}.tariff_headings.id", ondelete="RESTRICT"), nullable=False
+    )
+    # Posición entre hermanos del mismo padre, en el orden real del
+    # documento. Posicional, NO arancelario — nunca se usa como identidad
+    # (ver docstring de la clase).
+    ordinal: Mapped[int] = mapped_column(sa.SmallInteger, nullable=False)
+    description: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    # sha256 de `description` normalizada (`rag.types.hash_contenido`) — la
+    # identidad de ESTE grupo frente a sus hermanos, distinta del
+    # `content_hash` del PDF completo que hereda de `RegulatoryMixin`.
+    description_hash: Mapped[str] = mapped_column(sa.Text, nullable=False)
 
 
 class Nico(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base):

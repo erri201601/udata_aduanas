@@ -10,6 +10,7 @@ Siempre una corrida en seco contra Postgres local antes.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -20,17 +21,20 @@ from database.models.regulatory import (
     Nico,
     TariffFraction,
     TariffHeading,
+    TariffHeadingGroup,
 )
 from database.repositories.chunks import PostgresChunkStore
 from rag.types import LegalChunk, hash_contenido
 
 if TYPE_CHECKING:
+    import uuid
+
     from sqlalchemy.orm import Session
 
     from ingestion.snice.nico import ParsedNico
     from ingestion.snice.notes import ParsedNote
     from ingestion.snice.tariff import ParsedFraction
-    from ingestion.snice.tariff_headings import ParsedHeading
+    from ingestion.snice.tariff_headings import ParsedHeading, ParsedHeadingGroup
 
 SNICE_SLUG = "snice"
 LIGIE_SHORT_NAME = "LIGIE"
@@ -365,3 +369,129 @@ def load_tariff_headings(
         )
     session.flush()
     return len(headings)
+
+
+@dataclass(frozen=True)
+class AddHeadingGroupsReport:
+    """Los números que pide Persona 1 para el reporte del §46."""
+
+    grupos_creados: int
+    subpartidas_asociadas: int
+    necesitan_validacion: tuple[str, ...]
+
+
+def add_missing_heading_groups(
+    session: Session,
+    *,
+    groups: list[ParsedHeadingGroup],
+    subheading_to_group: dict[str, tuple[str, int]],
+    ligie_content_hash: str,
+) -> AddHeadingGroupsReport:
+    """Backfill DIRIGIDO de niveles de un guion (ADR 0004): sólo agrega lo
+    que falte, sin re-cargar `tariff_headings` completa -- esa ya está
+    cargada (6 855 filas) y `load_tariff_headings` revienta ruidoso contra
+    su propia unicidad si se le vuelve a pasar todo. Idempotente, seguro de
+    re-correr, mismo patrón que `add_fraccion_chunks_for_long_rules`
+    (`ingestion.dof.load`) y `add_missing_coves` (`ingestion.sintetico.load`).
+
+    IDENTIDAD DE UN GRUPO: `(parent_heading_id, description_hash)`, NO
+    `ordinal` -- decisión explícita de Persona 1 (ADR 0004): si el DOF
+    reforma una partida e inserta un grupo nuevo a la mitad, todos los
+    `ordinal` posteriores se desplazan, y el mismo grupo de siempre podría
+    aparecer con `ordinal` distinto sin que su texto haya cambiado.
+    Identificar por posición lo leería como si fuera otro grupo.
+
+    Si al recargar aparece el mismo `description_hash` bajo el mismo padre
+    pero con un `ordinal` DISTINTO al ya guardado, es un reordenamiento que
+    nadie leyó -- se anota en `necesitan_validacion`, esa fila NO se toca
+    (ni se crea, ni se renombra), y el resto de la carga continúa (regla 36
+    del maestro: `NEEDS_VALIDATION`, no una reconciliación automática).
+    """
+    source = get_or_create_snice_source(session)
+    retrieved_at = datetime.now(UTC)
+
+    partidas_por_code = {
+        h.code: h for h in session.query(TariffHeading).filter(TariffHeading.level == 4).all()
+    }
+
+    necesitan_validacion: list[str] = []
+    grupo_id_por_padre_ordinal: dict[tuple[str, int], uuid.UUID] = {}
+    creados = 0
+
+    for g in groups:
+        partida = partidas_por_code.get(g.parent_code)
+        if partida is None:
+            # No debería pasar: todo grupo se parseó bajo una partida que
+            # `parse_headings_con_grupos` ya reconoció como código real.
+            # Si no está en `tariff_headings`, algo más raro pasó (quizás la
+            # partida SÍ se cargó, y esta consulta corrió antes del commit) —
+            # no se inventa a qué partida pertenece.
+            necesitan_validacion.append(
+                f"grupo bajo {g.parent_code} (ordinal {g.ordinal}): "
+                "la partida no está en tariff_headings"
+            )
+            continue
+
+        h = hash_contenido(g.description)
+        existente = (
+            session.query(TariffHeadingGroup)
+            .filter_by(parent_heading_id=partida.id, description_hash=h)
+            .one_or_none()
+        )
+        if existente is not None:
+            if existente.ordinal != g.ordinal:
+                necesitan_validacion.append(
+                    f"{g.parent_code}: el grupo {h[:19]}… ya está guardado con ordinal "
+                    f"{existente.ordinal}, pero esta carga lo ve en el ordinal {g.ordinal} -- "
+                    "reordenamiento sin leer, no se toca"
+                )
+                continue
+            grupo_id_por_padre_ordinal[(g.parent_code, g.ordinal)] = existente.id
+            continue
+
+        nuevo = TariffHeadingGroup(
+            parent_heading_id=partida.id,
+            ordinal=g.ordinal,
+            description=g.description,
+            description_hash=h,
+            data_origin="OFFICIAL",
+            source_id=source.id,
+            valid_from=LIGIE_VALID_FROM,
+            source_url=LIGIE_SOURCE_URL,
+            source_document="LIGIE 2022 (DOF)",
+            content_hash=ligie_content_hash,
+            retrieved_at=retrieved_at,
+        )
+        session.add(nuevo)
+        session.flush()
+        grupo_id_por_padre_ordinal[(g.parent_code, g.ordinal)] = nuevo.id
+        creados += 1
+
+    subpartidas_por_code = {
+        h.code: h for h in session.query(TariffHeading).filter(TariffHeading.level == 6).all()
+    }
+    asociadas = 0
+    for subheading_code, (parent_code, ordinal) in subheading_to_group.items():
+        grupo_id = grupo_id_por_padre_ordinal.get((parent_code, ordinal))
+        if grupo_id is None:
+            continue  # el grupo no se pudo crear/resolver -- ya reportado arriba
+        sub = subpartidas_por_code.get(subheading_code)
+        if sub is None:
+            necesitan_validacion.append(f"{subheading_code}: no está en tariff_headings")
+            continue
+        if sub.group_id == grupo_id:
+            continue  # ya asociada -- idempotente
+        if sub.group_id is not None and sub.group_id != grupo_id:
+            necesitan_validacion.append(
+                f"{subheading_code}: ya tiene un group_id distinto del que esta carga calculó"
+            )
+            continue
+        sub.group_id = grupo_id
+        asociadas += 1
+
+    session.flush()
+    return AddHeadingGroupsReport(
+        grupos_creados=creados,
+        subpartidas_asociadas=asociadas,
+        necesitan_validacion=tuple(necesitan_validacion),
+    )
