@@ -14,12 +14,18 @@ from __future__ import annotations
 import uuid
 from datetime import date
 from decimal import Decimal
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated, cast
 
 import sqlalchemy as sa
+from core.llm.errors import ProviderNotConfiguredError, ProviderResponseError
+from core.llm.registry import get_default_provider
+from core.product_dna.types import SourceDocument
+from core.product_dna.vision import MEDIA_TYPES, VisionExtractor
 from database.models import Product, ProductAttribute, ProductDna
 from database.repositories import save_classification
-from fastapi import APIRouter, HTTPException, Query, status
+from database.repositories.product_dna import guardar_dna
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
+from ingestion.snice.raw import content_hash, local_target, store_raw_bytes
 from pydantic import BaseModel, Field
 from rag import (
     MODO_SEMANTICO,
@@ -31,6 +37,9 @@ from schemas.operational import ProductRead
 
 from apps.api.clasificacion import clasificar_borrador
 from apps.api.db import SessionDep
+
+if TYPE_CHECKING:
+    from core.llm.base import ModelProvider
 from apps.api.dna import cargar_borrador, version_vigente
 
 router = APIRouter(prefix="/products", tags=["products"])
@@ -207,6 +216,128 @@ def _consulta_juridica(terminos_producto: list[str]) -> str:
     recuperar. Van después de los conceptos para no desplazarlos.
     """
     return " ".join([*CONCEPTOS_DE_CLASIFICACION, *terminos_producto[:3]])
+
+
+#: Lo más grande que se acepta subir. No es una cifra de rendimiento: una
+#: imagen de más de esto casi nunca es una foto de producto, y el proveedor de
+#: visión la rechazaría después de habernos costado el viaje.
+MAXIMO_IMAGEN_BYTES = 8 * 1024 * 1024
+
+
+class DnaDesdeImagenResponse(BaseModel):
+    """Lo que se extrajo de la imagen, y de dónde salió."""
+
+    product_dna_id: uuid.UUID
+    version: int
+    atributos: int
+    summary: str | None = None
+    missing_information: list[str] = Field(default_factory=list)
+
+    minio_key: str
+    """Dónde quedó el crudo. Sin esto no se puede volver a la imagen."""
+    content_hash: str
+    """El hash del archivo TAL COMO SE RECIBIÓ. Es lo que prueba, meses
+    después, que el atributo salió de esa foto y no de otra."""
+
+
+@router.post(
+    "/{product_id}/dna/from-image",
+    status_code=status.HTTP_201_CREATED,
+    summary="Extrae el Product DNA de una imagen (§16)",
+)
+def dna_desde_imagen(
+    product_id: uuid.UUID,
+    session: SessionDep,
+    imagen: Annotated[UploadFile, File(description="Foto o ficha del producto")],
+) -> DnaDesdeImagenResponse:
+    """Cierra el primer eslabón del §48: «usuario carga ficha técnica + imagen».
+
+    EL CRUDO SE GUARDA ANTES DE MIRARLO (§12, regla 7)
+
+    La imagen sube a MinIO con su `content_hash` ANTES de pasar por el modelo.
+    Si el orden fuera el otro, un fallo del proveedor dejaría atributos sin
+    documento del que dijeran venir, y esa es exactamente la situación que el
+    pipeline existe para que no ocurra: lo único irreversible es el crudo.
+
+    EL ORIGEN LO HEREDA DEL PRODUCTO
+
+    El DNA de un producto sintético es `SYNTHETIC` aunque la foto sea real y el
+    modelo real. Inventar un sexto valor para «lo que subió un usuario»
+    rompería los cinco cerrados del §9, y el dato que describe no cambia de
+    naturaleza por cómo se extrajo.
+    """
+    producto = session.get(Product, product_id)
+    if producto is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "producto no encontrado")
+
+    datos = imagen.file.read()
+    if not datos:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "la imagen llegó vacía")
+    if len(datos) > MAXIMO_IMAGEN_BYTES:
+        raise HTTPException(
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            f"la imagen pesa {len(datos)} bytes y el máximo son {MAXIMO_IMAGEN_BYTES}",
+        )
+
+    tipo = imagen.content_type or "application/octet-stream"
+    if tipo not in MEDIA_TYPES:
+        raise HTTPException(
+            status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            f"{tipo} no es una imagen que el proveedor acepte; "
+            f"admitidos: {', '.join(sorted(MEDIA_TYPES))}",
+        )
+
+    capture = store_raw_bytes(
+        datos,
+        source_url=f"upload://producto/{product_id}/{imagen.filename or 'imagen'}",
+        minio_key=f"product-dna/{product_id}/{content_hash(datos)}",
+        target=local_target(),
+    )
+
+    try:
+        # `cast` por lo mismo que en `apps/evaluacion/hs_accuracy.py`: el
+        # protocolo declara `name` como variable de instancia y los
+        # proveedores la traen de clase. Es estructuralmente compatible.
+        extractor = VisionExtractor(
+            cast("ModelProvider", get_default_provider()), image=datos, media_type=tipo
+        )
+        # `text` vacío y no la descripción del producto: lo que se le pide al
+        # modelo es que lea LA IMAGEN. Colarle el texto que ya teníamos le
+        # dejaría repetirlo como si lo hubiera visto en la foto.
+        borrador = extractor.extract(
+            SourceDocument(text="", kind="image", reference=capture.minio_key)
+        )
+    except ProviderNotConfiguredError as exc:
+        # El crudo YA está guardado y eso no se deshace: la imagen existe y su
+        # hash consta, aunque no hayamos podido leerla. Se dice cuál falta.
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            f"no hay proveedor de visión configurado: {exc}",
+        ) from exc
+    except ProviderResponseError as exc:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            f"el proveedor de visión no devolvió algo utilizable: {exc}",
+        ) from exc
+
+    dna = guardar_dna(
+        session,
+        borrador,
+        product_id=product_id,
+        data_origin=producto.data_origin,
+        telemetria=extractor.last_metadata,
+    )
+    session.commit()
+
+    return DnaDesdeImagenResponse(
+        product_dna_id=dna.id,
+        version=dna.version,
+        atributos=len(borrador.attributes),
+        summary=borrador.summary,
+        missing_information=list(borrador.missing_information),
+        minio_key=capture.minio_key,
+        content_hash=capture.content_hash,
+    )
 
 
 @router.post(

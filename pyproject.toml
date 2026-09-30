@@ -8,6 +8,11 @@ license = { text = "Proprietary — UDATA" }
 dependencies = [
     # API
     "fastapi>=0.115",
+    # FastAPI no trae el parser de multipart y lo exige para recibir ficheros:
+    # sin esto, el endpoint de Product DNA desde imagen revienta al arrancar,
+    # no al usarse. Con tope superior a propósito — un `>=` sin techo ya nos
+    # rompió el CI una vez (sqlalchemy 2.0.52 local contra otra en CI).
+    "python-multipart>=0.0.9,<0.1",
     "uvicorn[standard]>=0.32",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
