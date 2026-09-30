@@ -39,7 +39,7 @@ def test_extrae_partida_de_cuatro_lineas_completa_sin_perder_la_ultima() -> None
     """Regresión: 84.01 tiene 4 líneas reales de descripción. El punto medio
     con la subpartida vecina (1 línea) le robaba la última."""
     palabras = _palabras_de(PAGINA_889_CAPITULO_84)
-    encontrados = {c: (n, t) for c, n, t in _headings_de_pagina(palabras)}
+    encontrados = {c: (n, t) for c, n, t, _ in _headings_de_pagina(palabras)}
 
     assert "8401" in encontrados
     nivel, texto = encontrados["8401"]
@@ -52,7 +52,7 @@ def test_extrae_partida_de_cuatro_lineas_completa_sin_perder_la_ultima() -> None
 
 def test_subpartida_de_una_sola_linea_no_hereda_texto_de_la_partida() -> None:
     palabras = _palabras_de(PAGINA_889_CAPITULO_84)
-    encontrados = {c: (n, t) for c, n, t in _headings_de_pagina(palabras)}
+    encontrados = {c: (n, t) for c, n, t, _ in _headings_de_pagina(palabras)}
 
     assert encontrados["840110"] == (6, "Reactores nucleares.")
 
@@ -64,7 +64,7 @@ def test_ninguna_partida_o_subpartida_trae_ruido_institucional() -> None:
     fragmentos_ruido = ("Dirección General", "Facilitación", "Comercio Exterior", "Pachuca")
     for pagina in (PAGINA_889_CAPITULO_84, PAGINA_604_CAPITULO_61, PAGINA_33_CAPITULO_3):
         palabras = _palabras_de(pagina)
-        for _, _, texto in _headings_de_pagina(palabras):
+        for _, _, texto, _guion in _headings_de_pagina(palabras):
             for ruido in fragmentos_ruido:
                 assert ruido not in texto, f"{ruido!r} se coló en {texto!r}"
 
@@ -76,14 +76,14 @@ def test_ninguna_fila_repite_texto_de_su_vecina() -> None:
     seguidas). Cada texto debe ser distinto de sus vecinas inmediatas."""
     palabras = _palabras_de(PAGINA_889_CAPITULO_84)
     encontrados = _headings_de_pagina(palabras)
-    textos = [t for _, _, t in encontrados]
+    textos = [t for _, _, t, _guion in encontrados]
     for i in range(len(textos) - 1):
         assert textos[i] != textos[i + 1]
 
 
 def test_capitulo_61_no_mezcla_prendas_con_encabezado_de_pagina() -> None:
     palabras = _palabras_de(PAGINA_604_CAPITULO_61)
-    encontrados = {c: (n, t) for c, n, t in _headings_de_pagina(palabras)}
+    encontrados = {c: (n, t) for c, n, t, _ in _headings_de_pagina(palabras)}
 
     # Lo que sí se recuperó, real y verificado a mano contra el PDF.
     assert encontrados.get("610210") == (6, "De lana o pelo fino.")
@@ -95,7 +95,7 @@ def test_capitulo_61_no_mezcla_prendas_con_encabezado_de_pagina() -> None:
 
 def test_capitulo_3_pescado_subpartidas_reales() -> None:
     palabras = _palabras_de(PAGINA_33_CAPITULO_3)
-    encontrados = {c: (n, t) for c, n, t in _headings_de_pagina(palabras)}
+    encontrados = {c: (n, t) for c, n, t, _ in _headings_de_pagina(palabras)}
 
     assert encontrados.get("030274") == (6, "Anguilas (Anguilla spp.).")
     assert encontrados.get("030284") == (6, "Róbalos (Dicentrarchus spp.).")
@@ -103,8 +103,12 @@ def test_capitulo_3_pescado_subpartidas_reales() -> None:
 
 def test_nunca_devuelve_una_fraccion_de_ocho_digitos() -> None:
     """Las fracciones (nivel 8) sólo sirven de ancla -- ya se cargan del
-    XLSX de SNICE, cargarlas aquí también duplicaría la fuente."""
+    XLSX de SNICE, cargarlas aquí también duplicaría la fuente.
+
+    `nivel in (0, 4, 6)` y no `in (4, 6)` desde el ADR 0004: el nivel 0 (un
+    grupo de guion sin código, `code=None`) es una fila legítima nueva --
+    el invariante real de este test es "nunca nivel 8", no "sólo 4 o 6"."""
     for pagina in (PAGINA_889_CAPITULO_84, PAGINA_604_CAPITULO_61, PAGINA_33_CAPITULO_3):
         palabras = _palabras_de(pagina)
-        for code, nivel, _ in _headings_de_pagina(palabras):
-            assert nivel in (4, 6), f"{code} salió con nivel {nivel}"
+        for code, nivel, _, _guion in _headings_de_pagina(palabras):
+            assert nivel in (0, 4, 6), f"{code} salió con nivel {nivel}"

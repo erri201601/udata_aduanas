@@ -1,7 +1,7 @@
 # ADR 0004 — Niveles intermedios de un guion en la nomenclatura
 
 - **Fecha:** 2026-09-30
-- **Estado:** propuesto
+- **Estado:** aceptado (2026-09-30)
 - **Decide:** Persona 1
 - **Pregunta de:** Persona 2 — Persona 1 encontró el mismo hueco por su
   cuenta el 29/30-sep, desde el motor; este documento junta las dos
@@ -338,3 +338,44 @@ marca como tal).
   lo ve con certeza.
 - Después de esto, según el orden que fijó Persona 1: Anexo 2.4.1
   (fracción → NOM, ADR 0003, ya aceptado) y luego lo que quede.
+
+## Decisión de Persona 1 (2026-09-30)
+
+**Opción (d), con un cambio: identidad por `description_hash`, no por
+`ordinal`.**
+
+Confirma (d) por la razón de contrato (la de este documento) y por una más
+fuerte: un grupo de guion es un registro regulatorio, y §13 exige que todo
+registro lleve su propia fuente, su hash y su vigencia — (a) lo hubiera
+convertido en texto repetido en 1 390 filas, sin poder contestar «¿desde
+cuándo dice eso ese guion?» (§14), y `content_hash` habría dejado de
+identificar un dato para identificar una copia.
+
+**El cambio:** `UNIQUE (parent_heading_id, ordinal, valid_from)` como se
+proponía tenía el mismo defecto que se le objetó a (b) — si el DOF inserta
+un grupo nuevo a la mitad de una partida, los `ordinal` posteriores se
+desplazan, y el mismo grupo de siempre aparecería con un `ordinal`
+distinto sin que su texto cambiara. El esquema queda igual (`ordinal` sigue
+en la tabla, sirve para ordenar y mostrar), pero la IDENTIDAD para recargar
+es `(parent_heading_id, description_hash)`: si aparece el mismo hash bajo
+el mismo padre con un `ordinal` distinto al ya guardado, es
+`NEEDS_VALIDATION` — no se renombra sola. Implementado así en
+`add_missing_heading_groups` (`ingestion.snice.load`).
+
+**Aviso sobre la RGI 3a:** cuando el texto del grupo entre en la
+concatenación que arma `TariffCatalogRepository`, puede cambiar qué
+candidatas de PARTIDA cumplen una condición medible (la misma clase de
+fuga que ya se documentó una vez en `core/rgi_engine/rules.py`, con la
+tubería resolviendo a 73052001 en vez de negarse). El criterio de
+aceptación 4 no es una formalidad: se corre `deteccion_26` antes y después
+de conectar el repositorio, comparando falsos positivos, no sólo el TP
+agregado.
+
+**Pendiente, fuera de esta migración:** el cableado de
+`TariffCatalogRepository`/`core/rgi_engine/rules.py` para que el texto del
+grupo entre en `TariffCandidate.text` — el ADR 0002 lo asignó a Persona 1
+("Persona 1 cambia `TariffCatalogRepository`..."), y este documento no lo
+reasigna por su cuenta. La migración, el parser y el backfill dirigido
+(274 partidas medidas, 1 024 grupos reales encontrados) quedan completos y
+verificados en `feature/niveles-intermedios-guion`; el criterio de
+aceptación 1-3 no se puede cerrar del todo hasta que ese cableado exista.
