@@ -91,6 +91,53 @@ export async function fetchProductDna(
   return pedir<ProductDnaDetail>(`/products/${productId}/dna`, signal)
 }
 
+export interface DnaDesdeImagen {
+  product_dna_id: string
+  version: number
+  atributos: number
+  summary: string | null
+  missing_information: string[]
+  minio_key: string
+  content_hash: string
+}
+
+/**
+ * Sube una imagen y extrae de ella el Product DNA (§16).
+ *
+ * No usa `pedir()` porque manda `multipart/form-data` y, sobre todo, porque
+ * aquí el CUERPO DEL ERROR importa: el 503 de «no hay proveedor de visión
+ * configurado» dice cuál falta, y perder ese texto dejaría al usuario con un
+ * «La API respondió 503» que no le sirve para nada.
+ */
+export async function extraerDnaDeImagen(
+  productId: string,
+  imagen: File,
+  signal?: AbortSignal,
+): Promise<DnaDesdeImagen> {
+  const cuerpo = new FormData()
+  cuerpo.append('imagen', imagen)
+
+  const respuesta = await fetch(`${API_BASE_URL}/products/${productId}/dna/from-image`, {
+    method: 'POST',
+    body: cuerpo,
+    signal,
+    headers: { Accept: 'application/json' },
+  })
+
+  if (!respuesta.ok) {
+    let detalle = `La API respondió ${respuesta.status}`
+    try {
+      const json = (await respuesta.json()) as { detail?: string }
+      if (json.detail) detalle = json.detail
+    } catch {
+      // Un error sin cuerpo JSON: se queda el genérico, que es mejor que nada.
+    }
+    throw new ApiError(detalle, respuesta.status)
+  }
+
+  return (await respuesta.json()) as DnaDesdeImagen
+}
+
 async function pedir<T>(ruta: string, signal?: AbortSignal): Promise<T> {
   const respuesta = await fetch(`${API_BASE_URL}${ruta}`, {
     signal,

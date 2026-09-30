@@ -10,6 +10,18 @@
  * cuántas decisiones esperan a una persona y cuántos pedimentos nadie ha
  * mirado. Un tablero que sólo cuenta éxitos no sirve para dirigir; sirve para
  * vender, que es otra cosa.
+ *
+ * SOBRE EL ASPECTO (30-sep, Persona 1)
+ *
+ * Aquí se probó el rediseño —tarjetas, KPI con la etiqueta arriba, barras— y
+ * de aquí se llevó a las otras nueve pantallas. Sus estilos ya no son propios:
+ * viven en `.kpi`, `.tarjeta` y `.barras`, que usa toda la consola.
+ *
+ * Las barras salen de repartos que EXISTEN —severidad de los hallazgos,
+ * cobertura de la auditoría—. No hay ni una serie temporal, aunque el ejemplo
+ * que inspiró esto las tenga por todas partes: los 16 pedimentos entraron en
+ * dos días, y una línea de tiempo con eso sería un adorno que insinúa una
+ * historia que no tenemos.
  */
 
 import { useEffect, useState } from 'react'
@@ -19,20 +31,77 @@ import type { Dashboard } from '../api/client'
 import { SyntheticBanner } from '../components/DataOriginBadge'
 import { formatearMonto } from '../components/severity'
 
-interface CifraProps {
+type Tono = 'normal' | 'atencion' | 'bien'
+
+/** Una cifra grande, con la etiqueta ARRIBA: se lee antes qué es que cuánto. */
+function Kpi({
+  valor,
+  etiqueta,
+  nota,
+  tono = 'normal',
+}: {
   valor: number | string
   etiqueta: string
   nota?: string
-  tono?: 'normal' | 'atencion' | 'bien'
+  tono?: Tono
+}) {
+  return (
+    <article className={`kpi kpi--${tono}`}>
+      <span className="kpi__etiqueta">{etiqueta}</span>
+      <span className="kpi__valor">{valor}</span>
+      {nota && <span className="kpi__nota">{nota}</span>}
+    </article>
+  )
 }
 
-function Cifra({ valor, etiqueta, nota, tono = 'normal' }: CifraProps) {
+interface Barra {
+  etiqueta: string
+  valor: number
+  tono?: Tono
+}
+
+/**
+ * Barras horizontales proporcionales al mayor valor de SU grupo.
+ *
+ * Contra el total no: varios de estos repartos no son particiones —una
+ * decisión resuelta puede además estar dictaminada—, y una barra que llega al
+ * 100 % del total afirmaría un reparto que no existe.
+ */
+function Barras({ datos }: { datos: Barra[] }) {
+  const tope = Math.max(...datos.map((d) => d.valor), 1)
   return (
-    <div className={`tablero__cifra tablero__cifra--${tono}`}>
-      <span className="tablero__valor">{valor}</span>
-      <span className="tablero__etiqueta">{etiqueta}</span>
-      {nota && <span className="tablero__nota">{nota}</span>}
-    </div>
+    <ul className="barras">
+      {datos.map((d) => (
+        <li key={d.etiqueta} className="barras__fila">
+          <span className="barras__etiqueta">{d.etiqueta}</span>
+          <span className="barras__pista">
+            <span
+              className={`barras__barra barras__barra--${d.tono ?? 'normal'}`}
+              style={{ width: `${Math.max((d.valor / tope) * 100, d.valor > 0 ? 2 : 0)}%` }}
+            />
+          </span>
+          <span className="barras__valor">{d.valor}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function Tarjeta({
+  titulo,
+  children,
+  pie,
+}: {
+  titulo: string
+  children: React.ReactNode
+  pie?: string
+}) {
+  return (
+    <section className="tarjeta">
+      <h2 className="tarjeta__titulo">{titulo}</h2>
+      {children}
+      {pie && <p className="tarjeta__pie">{pie}</p>}
+    </section>
   )
 }
 
@@ -63,18 +132,23 @@ export function ExecutiveDashboard() {
   const impacto = datos
     ? formatearMonto(datos.hallazgos.impacto_cuantificado, datos.hallazgos.impacto_moneda)
     : null
-  const ahorro = datos
-    ? formatearMonto(datos.oportunidades.ahorro_cuantificado, datos.oportunidades.ahorro_moneda)
-    : null
+
+  const severidades = Object.entries(datos?.hallazgos.por_severidad ?? {})
+  const orden = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO']
+  const porSeveridad: Barra[] = severidades
+    .sort((a, b) => orden.indexOf(a[0]) - orden.indexOf(b[0]))
+    .map(([nivel, n]) => ({
+      etiqueta: nivel,
+      valor: n,
+      tono: nivel === 'CRITICAL' || nivel === 'HIGH' ? 'atencion' : 'normal',
+    }))
 
   return (
     <section className="pantalla">
       <header className="pantalla__encabezado">
         <div>
           <h1>Panorama</h1>
-          <p className="pantalla__sub">
-            Qué ha resuelto el sistema, y qué sigue esperando
-          </p>
+          <p className="pantalla__sub">Qué ha resuelto el sistema, y qué sigue esperando</p>
         </div>
       </header>
 
@@ -94,104 +168,117 @@ export function ExecutiveDashboard() {
 
       {datos && (
         <>
-          <h2 className="seccion">Clasificación</h2>
-          <div className="tablero">
-            <Cifra valor={datos.clasificaciones.total} etiqueta="decisiones" />
-            <Cifra
-              valor={datos.clasificaciones.resueltas}
-              etiqueta="resueltas"
-              tono="bien"
+          <div className="kpis">
+            <Kpi valor={datos.clasificaciones.total} etiqueta="Decisiones de clasificación" />
+            <Kpi valor={datos.auditoria.pedimentos} etiqueta="Pedimentos auditados" />
+            <Kpi
+              valor={datos.hallazgos.total}
+              etiqueta="Hallazgos"
+              tono={datos.hallazgos.total > 0 ? 'atencion' : 'normal'}
             />
-            <Cifra
-              valor={datos.clasificaciones.requieren_revision}
-              etiqueta="esperan a una persona"
-              nota="Ni error ni éxito: trabajo pendiente."
-              tono={datos.clasificaciones.requieren_revision > 0 ? 'atencion' : 'normal'}
-            />
-            <Cifra
+            <Kpi
               valor={datos.clasificaciones.dictaminadas}
-              etiqueta="dictaminadas por una persona"
-              nota="La única verdad del sistema que no generamos nosotros."
+              etiqueta="Dictaminadas por una persona"
               tono={datos.clasificaciones.dictaminadas > 0 ? 'bien' : 'normal'}
             />
-            <Cifra
-              valor={datos.clasificaciones.sin_informacion}
-              etiqueta="sin información suficiente"
-              nota="El motor no pudo, y lo dice."
-            />
-            <Cifra
-              valor={`${datos.clasificaciones.con_traza}/${datos.clasificaciones.total}`}
-              etiqueta="con traza conservada"
-              nota="De las demás no consta el razonamiento."
-            />
           </div>
 
-          <h2 className="seccion">Auditoría de pedimentos</h2>
-          <div className="tablero">
-            <Cifra valor={datos.auditoria.pedimentos} etiqueta="pedimentos" />
-            <Cifra
-              valor={datos.auditoria.sin_auditar}
-              etiqueta="sin auditar"
-              nota="No están limpios: nadie los ha mirado."
-              tono={datos.auditoria.sin_auditar > 0 ? 'atencion' : 'normal'}
-            />
-            <Cifra
-              valor={datos.auditoria.auditados_completos}
-              etiqueta="revisados por completo"
-              nota="Los únicos de los que se puede afirmar que están limpios."
-              tono="bien"
-            />
-          </div>
+          <div className="rejilla">
+            <Tarjeta
+              titulo="Riesgo por severidad"
+              pie="Un CRITICAL entre ochenta y ocho y ochenta y ocho CRITICAL se leían igual. El reparto evita creer que el alarmado es el sistema y no los pedimentos."
+            >
+              {porSeveridad.length > 0 ? (
+                <Barras datos={porSeveridad} />
+              ) : (
+                <p className="sin-dato">No hay hallazgos.</p>
+              )}
+            </Tarjeta>
 
-          <h2 className="seccion">Riesgo detectado</h2>
-          <div className="tablero">
-            <Cifra valor={datos.hallazgos.total} etiqueta="hallazgos" />
-            {/* El reparto, no sólo la peor. Un CRITICAL entre ochenta y ocho y
-                ochenta y ocho CRITICAL se leían igual, y quien mira el tablero
-                puede creer que el alarmado es el sistema y no los pedimentos
-                que audita. */}
-            <Cifra
-              valor={datos.hallazgos.por_severidad?.CRITICAL ?? 0}
-              etiqueta="críticos"
-              nota={
-                Object.entries(datos.hallazgos.por_severidad ?? {})
-                  .filter(([nivel]) => nivel !== 'CRITICAL')
-                  .map(([nivel, n]) => `${n} ${nivel.toLowerCase()}`)
-                  .join(' · ') || 'No hay más severidades.'
-              }
-              tono={(datos.hallazgos.por_severidad?.CRITICAL ?? 0) > 0 ? 'atencion' : 'bien'}
-            />
-            <Cifra
-              valor={impacto ?? '—'}
-              etiqueta="impacto cuantificado"
-              nota="Sólo lo que tiene monto. Lo demás no se estima."
-            />
-            <Cifra
-              valor={datos.hallazgos.solo_investigables}
-              etiqueta="sin monto"
-              nota="Se pueden investigar, no presentar. No son menos graves."
-            />
-          </div>
+            <Tarjeta
+              titulo="Clasificación"
+              pie="Estas cifras no suman al total: una decisión resuelta puede además estar dictaminada. Son etiquetas, no un reparto."
+            >
+              <Barras
+                datos={[
+                  { etiqueta: 'Resueltas', valor: datos.clasificaciones.resueltas, tono: 'bien' },
+                  {
+                    etiqueta: 'Esperan a una persona',
+                    valor: datos.clasificaciones.requieren_revision,
+                    tono: 'atencion',
+                  },
+                  {
+                    etiqueta: 'Dictaminadas',
+                    valor: datos.clasificaciones.dictaminadas,
+                    tono: 'bien',
+                  },
+                  {
+                    etiqueta: 'Sin información',
+                    valor: datos.clasificaciones.sin_informacion,
+                  },
+                  { etiqueta: 'Con traza', valor: datos.clasificaciones.con_traza },
+                ]}
+              />
+            </Tarjeta>
 
-          {datos.oportunidades.total > 0 && (
-            <>
-              <h2 className="seccion">Oportunidad</h2>
-              <div className="tablero">
-                <Cifra valor={datos.oportunidades.total} etiqueta="oportunidades" />
-                <Cifra
-                  valor={ahorro ?? '—'}
-                  etiqueta="ahorro cuantificado"
-                  tono="bien"
+            <Tarjeta
+              titulo="Cobertura de la auditoría"
+              pie="«Sin auditar» no es «limpio»: es que nadie los ha mirado. Sólo de los revisados por completo se puede afirmar algo."
+            >
+              <Barras
+                datos={[
+                  { etiqueta: 'Auditados', valor: datos.auditoria.auditados },
+                  {
+                    etiqueta: 'Sin auditar',
+                    valor: datos.auditoria.sin_auditar,
+                    tono: datos.auditoria.sin_auditar > 0 ? 'atencion' : 'normal',
+                  },
+                  {
+                    etiqueta: 'Revisados por completo',
+                    valor: datos.auditoria.auditados_completos,
+                    tono: 'bien',
+                  },
+                ]}
+              />
+            </Tarjeta>
+
+            <Tarjeta
+              titulo="Impacto"
+              pie="Sólo lo que tiene monto. Lo demás no se estima: un hallazgo sin importe no es menos grave, es que no se puede presentar como dinero."
+            >
+              <div className="kpis kpis--interno">
+                <Kpi valor={impacto ?? '—'} etiqueta="Cuantificado" />
+                <Kpi
+                  valor={datos.hallazgos.solo_investigables}
+                  etiqueta="Sin monto"
+                  nota="Se investigan, no se presentan."
                 />
               </div>
-            </>
-          )}
+            </Tarjeta>
+
+            {datos.oportunidades.total > 0 && (
+              <Tarjeta titulo="Oportunidad">
+                <div className="kpis kpis--interno">
+                  <Kpi valor={datos.oportunidades.total} etiqueta="Oportunidades" tono="bien" />
+                  <Kpi
+                    valor={
+                      formatearMonto(
+                        datos.oportunidades.ahorro_cuantificado,
+                        datos.oportunidades.ahorro_moneda,
+                      ) ?? '—'
+                    }
+                    etiqueta="Ahorro cuantificado"
+                    tono="bien"
+                  />
+                </div>
+              </Tarjeta>
+            )}
+          </div>
 
           <p className="tablero__pie">
             {datos.filas_simuladas} de las filas contadas son simulación
-            {datos.todo_simulado ? ' — todas' : ', y el resto no'}. No se
-            mezclan con datos reales en una misma cifra: una que sumara ambos
-            dejaría de poder presentarse.
+            {datos.todo_simulado ? ' — todas' : ', y el resto no'}. No se mezclan con datos
+            reales en una misma cifra: una que sumara ambos dejaría de poder presentarse.
           </p>
         </>
       )}
