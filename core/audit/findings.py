@@ -122,6 +122,8 @@ class AuditReport(BaseModel):
 
     findings: tuple[Finding, ...] = ()
     unverifiable: tuple[str, ...] = ()
+    verified: tuple[str, ...] = ()
+    """Qué se comprobó de cada partida. Ver `ShadowComparison.verified`."""
     """Lo que no se pudo comprobar, heredado del Espejo.
 
     Va aparte de los hallazgos por la misma razón de siempre: «no encontré

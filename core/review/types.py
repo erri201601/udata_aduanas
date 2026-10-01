@@ -75,6 +75,11 @@ class PedimentoReview(BaseModel):
         return self.comparison.unverifiable
 
     @property
+    def verified(self) -> tuple[str, ...]:
+        """Qué SÍ se comprobó. La mitad que faltaba de `unverifiable`."""
+        return self.comparison.verified
+
+    @property
     def worst_severity(self) -> str | None:
         orden = ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO")
         presentes = {f.severity for f in self.findings}

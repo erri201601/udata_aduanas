@@ -112,6 +112,7 @@ def audit(
     return AuditReport(
         findings=tuple(hallazgos),
         unverifiable=comparison.unverifiable,
+        verified=comparison.verified,
         total_exposure=total_omitido,
         total_recoverable=total_recuperable,
         currency=impacto.difference.currency if impacto else None,

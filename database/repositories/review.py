@@ -59,6 +59,7 @@ def save_review(
         pedimento_id=pedimento_id,
         is_complete=review.is_complete,
         unverifiable=list(review.unverifiable),
+        verified=list(review.verified),
         engine_version=REVIEW_VERSION,
         data_origin=data_origin,
     )

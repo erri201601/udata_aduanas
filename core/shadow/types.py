@@ -200,6 +200,19 @@ class ShadowComparison(BaseModel):
     pedimento sin verificar pareciera limpio (§36).
     """
 
+    verified: tuple[str, ...] = ()
+    """Qué SÍ se pudo comprobar de cada partida, con su nombre.
+
+    Simétrico a `unverifiable`, y tan necesario como él. Sin esta mitad, la
+    única forma de leer una partida con huecos era «sin verificar», y eso hacía
+    parecer que el sistema no comprobaba nada en partidas donde comprobaba
+    ocho de diez cosas.
+
+    Decir lo que se comprobó no afloja la regla del §36: una partida no está
+    limpia por tener ocho comprobaciones buenas si le faltan dos. Sólo permite
+    distinguirla de otra donde no se pudo hacer ninguna.
+    """
+
     @property
     def has_findings(self) -> bool:
         return bool(self.divergences)
