@@ -27,7 +27,13 @@ from typing import TYPE_CHECKING
 import sqlalchemy as sa
 from core.rgi_engine.context import TariffCandidate
 
-from database.models import Nico, TariffFraction, TariffHeading, UnitOfMeasure
+from database.models import (
+    Nico,
+    TariffFraction,
+    TariffHeading,
+    TariffHeadingGroup,
+    UnitOfMeasure,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -144,6 +150,21 @@ def _texto_completo() -> sa.ColumnElement[str]:
         + sa.literal(" ")
         + sa.func.coalesce(_SUBPARTIDA.description, "")
     )
+
+
+def _con_grupo(grupo: str | None, descripcion: str) -> str:
+    """El texto de la subpartida, precedido de su nivel de un guion.
+
+    Se une con un punto y no con un separador tipográfico: el texto acaba en
+    la búsqueda por términos y en el razonamiento que lee un agente aduanal, y
+    un símbolo raro ahí se lee como ruido del sistema, no como nomenclatura.
+
+    Sin grupo se devuelve el texto tal cual: no se inventa un encabezado ni se
+    deja una marca de separación huérfana que pareciera texto legal.
+    """
+    if not grupo:
+        return descripcion
+    return f"{grupo.rstrip(': ')}. {descripcion}"
 
 
 def _con_jerarquia(consulta: sa.Select) -> sa.Select:
@@ -279,13 +300,45 @@ class TariffCatalogRepository:
         ]
 
     def subheadings(self, *, on_date: date, heading: str) -> Sequence[TariffCandidate]:
-        """Subpartidas (6 dígitos) que dependen de una partida."""
+        """Subpartidas (6 dígitos) que dependen de una partida.
+
+        EL TEXTO LLEVA SU NIVEL DE UN GUION (ADR 0004)
+
+        La LIGIE agrupa subpartidas hermanas bajo una línea con guion y sin
+        código: `730512` («Los demás, soldados longitudinalmente») cuelga de
+        «Tubos de los tipos utilizados en oleoductos o gasoductos», y `730531`
+        («Soldados longitudinalmente») de «Los demás, soldados». Sin ese
+        encabezado las dos dicen casi lo mismo y el motor no puede elegir —
+        se negaba, correctamente, en toda mercancía cuya subpartida tuviera
+        hermanas de texto repetido (274 partidas, 1 390 subpartidas).
+
+        El grupo se antepone al texto; NUNCA se devuelve como candidata. No
+        tiene código real, y un `TariffCandidate` sin código rompería el
+        contrato del puerto y la regla 2 de CLAUDE.md.
+
+        El resto de la consulta no cambia a propósito. `code` y `specificity`
+        siguen saliendo de donde salían, así que las candidatas no se
+        reordenan: lo único nuevo es cuánto texto lleva cada una.
+        """
+        # El encabezado de guion de esta subpartida, si lo tiene. Correlada
+        # sobre la columna que agrupa, que Postgres admite por estar en el
+        # GROUP BY.
+        grupo = (
+            sa.select(TariffHeadingGroup.description)
+            .select_from(TariffHeading)
+            .join(TariffHeadingGroup, TariffHeadingGroup.id == TariffHeading.group_id)
+            .where(TariffHeading.code == TariffFraction.subheading)
+            .limit(1)
+            .scalar_subquery()
+        )
+
         filas = self._session.execute(
             sa.select(
                 TariffFraction.subheading,
                 sa.func.min(TariffFraction.description).label("description"),
                 sa.func.max(TariffFraction.specificity).label("specificity"),
                 _un_source_id(),
+                grupo.label("grupo"),
             )
             .where(_vigentes(on_date), TariffFraction.heading == heading)
             .group_by(TariffFraction.subheading)
@@ -296,7 +349,7 @@ class TariffCatalogRepository:
         return [
             TariffCandidate(
                 code=f.subheading,
-                text=f.description,
+                text=_con_grupo(f.grupo, f.description),
                 level="SUBHEADING",
                 source_id=f.source_id,
                 specificity=f.specificity or 0,
