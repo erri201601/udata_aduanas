@@ -159,6 +159,35 @@ def _texto_completo() -> sa.ColumnElement[str]:
     )
 
 
+def _texto_propio_de_la_partida(on_date: date) -> sa.ColumnElement:
+    """El texto de la PARTIDA, no el de una fracción suya (arreglo del 3-oct).
+
+    `headings()` agrupaba por partida y tomaba el `min()` de las descripciones
+    de sus FRACCIONES — el mismo defecto que `subheadings()` tuvo hasta el
+    1-oct. Así, la partida 7304 —«Tubos y perfiles huecos, SIN COSTURA (sin
+    soldadura), de hierro o acero»— le llegaba al motor como «Barras huecas
+    laminadas en caliente…».
+
+    El daño era medible: once tubos CON COSTURA del corpus acababan en 7304, la
+    partida de los tubos sin costura. El descarte por negación ya sabía ver esa
+    contradicción, pero nunca llegaba a leer el texto que la contenía.
+
+    Correlada y no una segunda consulta: así la acotación y el `unaccent` del
+    SELECT principal siguen siendo lo que se mide, que es lo que dos tests
+    comprueban.
+    """
+    return (
+        sa.select(TariffHeading.description)
+        .where(
+            _vigentes(on_date, TariffHeading),
+            TariffHeading.code == TariffFraction.heading,
+        )
+        .correlate(TariffFraction)
+        .limit(1)
+        .scalar_subquery()
+    )
+
+
 def _con_grupo(grupo: str | None, descripcion: str) -> str:
     """El texto de la subpartida, precedido de su nivel de un guion.
 
@@ -286,6 +315,7 @@ class TariffCatalogRepository:
                     sa.func.max(TariffFraction.specificity).label("specificity"),
                     cobertura.label("coincidencias"),
                     _un_source_id(),
+                    _texto_propio_de_la_partida(on_date).label("propio"),
                 )
             )
             .where(_vigentes(on_date), _coincide(terms))
@@ -298,7 +328,8 @@ class TariffCatalogRepository:
         return [
             TariffCandidate(
                 code=f.heading,
-                text=f.description,
+                # El de la PARTIDA, no el de una fracción suya: ver `propio`.
+                text=f.propio or f.description,
                 level="HEADING",
                 source_id=f.source_id,
                 specificity=f.specificity or 0,

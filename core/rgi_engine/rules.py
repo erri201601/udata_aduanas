@@ -103,6 +103,9 @@ class RGI1:
         # plástico». Sin esto, la tubería de acero del corpus llegaba a la RGI
         # 3 c) con la 3926 todavía en la lista.
         familia = _familia_de_la_mercancia(context)
+        afirmado = _raices(
+            " ".join([context.description, *(f.value or "" for f in context.known_facts())])
+        )
         for c in encontrados:
             nota = notes.excludes(on_date=context.operation_date, heading=c.heading, terms=terminos)
             if nota:
@@ -113,6 +116,21 @@ class RGI1:
                 excluidas.append(
                     f"{c.code} descartada: su texto es de {materia} y la ficha declara {familia}"
                 )
+                continue
+
+            # LA NEGACIÓN DEL TEXTO TAMBIÉN DESCARTA AQUÍ, NO SÓLO EN LA RGI 6
+            #
+            # Estaba sólo al elegir fracción, y el daño era a nivel de partida:
+            # la 7304 dice «Tubos y perfiles huecos, SIN SOLDADURA» y once
+            # tubos SOLDADOS del corpus acababan ahí. La contradicción era
+            # exacta y nadie la miraba en este paso.
+            #
+            # Es la misma función y el mismo criterio: si el texto legal niega
+            # algo que la ficha afirma, esa posición es imposible. Que valga
+            # para una fracción y no para su partida no tenía ninguna razón.
+            negacion = _contradice(c, afirmado)
+            if negacion:
+                excluidas.append(f"{c.code} descartada: {negacion}")
                 continue
             sobreviven.append(c)
 
