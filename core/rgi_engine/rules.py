@@ -21,6 +21,7 @@ import unicodedata
 from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Any, Protocol
 
+from core.rgi_engine.pregunta import formular
 from core.rgi_engine.results import RGIResult
 from core.rgi_engine.states import RGIStatus
 
@@ -610,6 +611,9 @@ class RGI6:
                     f"El motor no elige entre ellas."
                 ),
                 missing_information=("desempate de subpartida por un clasificador",),
+                # La pregunta concreta, si hay una corta que lo resuelva. No
+                # sustituye al aviso de arriba: lo acota.
+                preguntas=tuple(formular(context, subs)),
             )
 
         fracciones = list(
@@ -650,9 +654,17 @@ class RGI6:
         afirmado = _raices(
             " ".join([context.description, *(f.value or "" for f in context.known_facts())])
         )
-        descartes = {c.code: m for c in fracciones if (m := _contradice(c, afirmado))}
+        descartes = {
+            c.code: m
+            for c in fracciones
+            if (m := _contradice(c, afirmado) or _lo_aprendido_la_descarta(c, context))
+        }
         vivas = [c for c in fracciones if c.code not in descartes]
-        motivos = " · ".join(f"{c}: el texto dice «sin {m}»" for c, m in descartes.items())
+        # El motivo viene ya escrito de donde salga —negación del texto o
+        # respuesta firmada— y se cita tal cual. Envolverlo en «el texto dice
+        # "sin ..."» producía frases rotas en cuanto el descarte no venía de
+        # una negación: «el texto dice "sin la ficha dice ..."».
+        motivos = " · ".join(f"{c}: {m}" for c, m in descartes.items())
 
         if len(vivas) == 1:
             unica = vivas[0]
@@ -693,6 +705,7 @@ class RGI6:
                     )
                 ),
                 missing_information=("desempate de fracción por un clasificador",),
+                preguntas=tuple(formular(context, list(vivas or fracciones))),
             )
 
         return RGIResult(
@@ -764,7 +777,7 @@ def _contradice(candidata: TariffCandidate, afirmado: set[str]) -> str | None:
         negada = str(negada)
         raices = _raices(negada)
         if raices and raices & afirmado:
-            return negada
+            return f"el texto dice «sin {negada}»"
     return None
 
 
@@ -903,6 +916,25 @@ def _condiciones(candidata: TariffCandidate, context: ClassificationContext) -> 
         else:
             incumplidas += 1
     return cumplidas, incumplidas
+
+
+def _lo_aprendido_la_descarta(
+    candidata: TariffCandidate, context: ClassificationContext
+) -> str | None:
+    """¿Alguna exclusión aprendida hace imposible esta posición?
+
+    Devuelve el motivo, para que la traza pueda citarlo: quien audite tiene que
+    poder ver que se descartó por una respuesta firmada, no por un algoritmo.
+
+    Es el mismo descarte por contradicción que ya hacía con las negaciones del
+    texto («sin galvanizar»), con una diferencia: aquella la deducía del texto
+    legal y ésta la sabe porque alguien la contestó. Por eso la traza las
+    distingue — una se sostiene sola, la otra se sostiene en quien la firmó.
+    """
+    for de_la_ficha, de_la_tarifa in context.exclusiones:
+        if _palabras(de_la_tarifa) & _palabras(candidata.text):
+            return f"la ficha dice «{de_la_ficha}», que no es «{de_la_tarifa}»"
+    return None
 
 
 def _el_grupo_la_describe(candidata: TariffCandidate, mercancia: str) -> bool:

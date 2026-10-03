@@ -485,8 +485,33 @@ class NomenclatureSynonym(
     nomenclature_term: Mapped[str] = mapped_column(sa.Text, nullable=False)
     """Como lo dice la tarifa. Es lo que se añade a la búsqueda."""
 
+    kind: Mapped[str] = mapped_column(
+        check_enum(("EQUIVALE", "EXCLUYE"), "kind"), nullable=False, server_default="EQUIVALE"
+    )
+    """Qué dice este puente sobre los dos términos.
+
+    `EQUIVALE` — hablan de lo mismo. Sirve para ENCONTRAR: una ficha que dice
+    «conducción de fluidos» busca también por «oleoductos».
+
+    `EXCLUYE` — no pueden darse a la vez. Sirve para DESCARTAR: una ficha que
+    dice «HFW» hace imposible una posición que exige «arco sumergido».
+
+    Los dos nacen de la misma pregunta a un clasificador —«¿son lo mismo?»— y
+    por eso viven en la misma tabla. La respuesta «no» vale tanto como el «sí»,
+    y hoy se perdía: nadie guardaba los noes.
+    """
+
     note: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
-    """Por qué son equivalentes. Lo lee quien audite la decisión."""
+    """Por qué. Lo lee quien audite la decisión."""
+
+    answered_by: Mapped[str | None] = mapped_column(sa.String(64), nullable=True)
+    """Quién contestó la pregunta que produjo esta fila.
+
+    Nulo mientras sea conjetura nuestra (`SYNTHETIC`). Con nombre, la fila es
+    criterio profesional y `data_origin` pasa a `HUMAN_VALIDATED` — y ese
+    cambio de una columna es lo que separa una suposición de algo que un
+    agente aduanal puede firmar.
+    """
 
 
 class RegulatoryEvent(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base):

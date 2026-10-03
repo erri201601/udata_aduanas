@@ -116,6 +116,19 @@ class ClassificationContext(BaseModel):
     """Términos de nomenclatura para buscar. Si vienen vacíos y hay un
     `Interpreter`, el motor se los pide a él."""
 
+    exclusiones: tuple[tuple[str, str], ...] = ()
+    """Parejas (lo que dice la ficha, lo que exige la tarifa) que NO son lo mismo.
+
+    Las contesta un clasificador y se guardan firmadas. Es el puente que ningún
+    algoritmo puede deducir: «HFW» y «arco sumergido» no comparten ni una letra
+    y no están unidas en ningún documento — sólo en la cabeza de quien clasifica.
+
+    Con ellas el motor DESCARTA, nunca elige: una posición que exige arco
+    sumergido es imposible para una mercancía que consta soldada con HFW. Eso
+    deja dos candidatas en vez de nueve, y lo que quede lo decide una persona
+    igual que antes.
+    """
+
     notes: dict[str, Any] = Field(default_factory=dict)
 
     def fact(self, name: str) -> ProductFact | None:

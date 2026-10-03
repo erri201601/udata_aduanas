@@ -78,6 +78,31 @@ def _busqueda(session: Session, borrador: ProductDnaDraft, on_date: date) -> lis
     return (palabras + nuevos)[:MAX_TERMINOS]
 
 
+def _exclusiones(session: Session, *, on_date: date) -> list[tuple[str, str]]:
+    """Las parejas que un clasificador declaró distintas, vigentes ese día.
+
+    SÓLO `HUMAN_VALIDATED`. Una exclusión escrita por nosotros es conjetura, y
+    una conjetura no puede hacer imposible una posición de la tarifa: eso es
+    descartar fundamento sin fundamento. Las nuestras sirven para BUSCAR
+    (`EQUIVALE`), nunca para descartar.
+    """
+    vigentes = sa.and_(
+        NomenclatureSynonym.valid_from <= on_date,
+        sa.or_(
+            NomenclatureSynonym.valid_to.is_(None),
+            NomenclatureSynonym.valid_to >= on_date,
+        ),
+    )
+    filas = session.execute(
+        sa.select(NomenclatureSynonym.commercial_term, NomenclatureSynonym.nomenclature_term).where(
+            vigentes,
+            NomenclatureSynonym.kind == "EXCLUYE",
+            NomenclatureSynonym.data_origin == "HUMAN_VALIDATED",
+        )
+    ).all()
+    return [(f.commercial_term, f.nomenclature_term) for f in filas]
+
+
 def _con_sinonimos(session: Session, terminos_base: list[str], *, on_date: date) -> list[str]:
     """Añade los términos de nomenclatura equivalentes a los de la ficha.
 
@@ -155,6 +180,10 @@ def clasificar_borrador(
         notes=notas,
         search_terms=busqueda,
         legal_refs=legal_refs,
+        # Lo que un clasificador ya contestó: parejas que NO son lo mismo.
+        # Sólo las firmadas — una conjetura nuestra no puede descartar una
+        # posición de la tarifa.
+        exclusiones=_exclusiones(session, on_date=operation_date),
         trade_flow=trade_flow,
     )
     return Clasificado(

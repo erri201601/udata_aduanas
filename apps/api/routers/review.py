@@ -62,15 +62,22 @@ sería una opinión disfrazada de dato. Se nombran; el revisor decide.
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, date, datetime
 from typing import Annotated, Final, Literal
 
 import sqlalchemy as sa
-from database.models import ClassificationDecision, Product
+from database.models import (
+    ClassificationDecision,
+    NomenclatureSynonym,
+    Product,
+    TariffHeading,
+)
 from database.repositories.tariff import TariffCatalogRepository
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from schemas.intelligence import ClassificationDecisionRead
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from apps.api.db import SessionDep
 
@@ -272,6 +279,119 @@ def pendientes(
             )
         )
     return pendientes
+
+
+# NOTA DE ORDEN: este bloque va ANTES de `POST /{decision_id}` a propósito.
+# FastAPI resuelve por orden de declaración, y con la ruta paramétrica delante,
+# `/review/vocabulario` entraba por ella e intentaba leer «vocabulario» como un
+# UUID. El 422 que devolvía no decía nada de rutas y costaba de ver.
+
+
+def _desde_cuando_rige_la_tarifa(session: Session) -> date:
+    """La vigencia de una respuesta de vocabulario NO es el día que se contestó.
+
+    Lo puse así primero y estaba mal: una respuesta firmada hoy no se aplicaba
+    a una operación de marzo, y el motor seguía preguntando lo mismo.
+
+    La regla 5 —no evaluar una operación histórica con regulación posterior—
+    protege del FUNDAMENTO, y una equivalencia de vocabulario no fundamenta
+    nada: describe qué significan las palabras del texto legal. «Cerámica
+    vidriada no es Talavera» era igual de cierto en marzo que hoy, porque el
+    texto que lo dice lleva en vigor desde que entró esa versión de la tarifa.
+
+    Así que rige desde que rige lo que describe. Si mañana una reforma cambia
+    ese texto, la respuesta vieja se cierra con `valid_to` y se vuelve a
+    preguntar sobre el nuevo — que es exactamente lo que debe pasar.
+    """
+    desde = session.scalar(sa.select(sa.func.min(TariffHeading.valid_from)))
+    return desde or date(2022, 1, 1)
+
+
+class RespuestaVocabulario(BaseModel):
+    """Lo que un clasificador contesta a la pregunta de desempate."""
+
+    termino_ficha: str = Field(min_length=2, max_length=120)
+    """Como lo dice la ficha: «HFW longitudinal»."""
+
+    termino_tarifa: str = Field(min_length=2, max_length=120)
+    """Como lo dice la tarifa: «arco sumergido»."""
+
+    son_lo_mismo: bool
+    """La respuesta. El `no` vale tanto como el `sí` y hoy se perdía."""
+
+    reviewer: str = Field(min_length=1, max_length=64)
+    """Quién lo contesta. Sin nombre no es criterio, es una opinión anónima."""
+
+    nota: str | None = None
+    """Por qué. Lo lee quien audite una decisión que se apoye en esto."""
+
+
+class VocabularioGuardado(BaseModel):
+    id: uuid.UUID
+    kind: str
+    data_origin: str
+
+
+@router.post(
+    "/vocabulario",
+    status_code=status.HTTP_201_CREATED,
+    summary="Responde una pregunta de desempate y la guarda para siempre",
+)
+def responder_vocabulario(
+    peticion: RespuestaVocabulario, session: SessionDep
+) -> VocabularioGuardado:
+    """Convierte un minuto de un clasificador en conocimiento reutilizable.
+
+    POR QUÉ ESTO EXISTE
+
+    Hoy un dictamen resuelve UN caso. Medido sobre el corpus el 2-oct, las 52
+    decisiones atascadas se concentran en ocho familias —8528 con 12, 7305 con
+    11, 7312 con 8—: la misma duda, una y otra vez, y cada vez el trabajo
+    entero otra vez.
+
+    Una respuesta aquí resuelve la familia. La próxima tubería HFW ya no
+    pregunta, ni la siguiente, ni las mil siguientes.
+
+    EL «NO» VALE TANTO COMO EL «SÍ»
+
+    `son_lo_mismo = false` no es una no-respuesta: es la que descarta. Que HFW
+    NO sea arco sumergido hace imposible la 730511, y eso es una afirmación
+    sólida que deja al motor con dos candidatas en vez de nueve. Hasta hoy los
+    noes se perdían porque no había dónde guardarlos.
+
+    ENTRA COMO `HUMAN_VALIDATED`, Y ESA COLUMNA ES TODO
+
+    Lo mismo escrito por nosotros sería `SYNTHETIC` — conjetura. Firmado por un
+    clasificador es criterio profesional, y es la diferencia entre algo que un
+    agente aduanal puede defender y algo que no.
+    """
+    fila = NomenclatureSynonym(
+        commercial_term=peticion.termino_ficha.strip().casefold(),
+        nomenclature_term=peticion.termino_tarifa.strip().casefold(),
+        kind="EQUIVALE" if peticion.son_lo_mismo else "EXCLUYE",
+        note=peticion.nota,
+        answered_by=peticion.reviewer,
+        data_origin="HUMAN_VALIDATED",
+        valid_from=_desde_cuando_rige_la_tarifa(session),
+        source_url=f"respuesta de {peticion.reviewer}",
+        source_document="Pregunta de desempate del RGI Engine",
+        content_hash=(
+            f"vocab:{peticion.termino_ficha}:{peticion.termino_tarifa}:{peticion.son_lo_mismo}"
+        ),
+        retrieved_at=datetime.now(UTC),
+    )
+    session.add(fila)
+    try:
+        session.commit()
+    except IntegrityError:
+        # Ya estaba contestada. No es un error: es que el bucle funciona.
+        session.rollback()
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "esa pareja ya está contestada; el motor ya no debería preguntarla",
+        ) from None
+
+    return VocabularioGuardado(id=fila.id, kind=fila.kind, data_origin=fila.data_origin)
 
 
 @router.post(

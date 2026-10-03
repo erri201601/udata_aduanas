@@ -166,6 +166,10 @@ def _traza(outcome: ClassificationOutcome) -> list[dict[str, Any]]:
             "confidence": str(p.confidence) if p.confidence is not None else None,
             "source_ids": [str(s) for s in p.source_ids],
             "missing_information": list(p.missing_information),
+            # La pregunta exacta que desatascaría el caso. Se congela con el
+            # resto: si alguien la contesta dentro de un mes, tiene que poder
+            # ver sobre qué textos se formuló, no sobre los de entonces.
+            "preguntas": [q.model_dump(mode="json") for q in p.preguntas],
         }
         for p in outcome.trace.steps
     ]

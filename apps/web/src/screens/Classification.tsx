@@ -20,6 +20,14 @@ import { EvidenceKindBadge } from '../components/EvidenceKindBadge'
 import { fundamenta } from '../components/evidenceKinds'
 import { useClassification, useClassifications } from '../hooks/useClassifications'
 
+interface PreguntaRGI {
+  atributo: string
+  valor_declarado: string
+  codigo: string
+  exige: string
+  texto: string
+}
+
 /** Un paso de la traza, tal como lo congela `database/repositories`. */
 interface PasoRGI {
   rule_id?: string
@@ -28,6 +36,7 @@ interface PasoRGI {
   candidate_codes?: string[]
   confidence?: string | null
   missing_information?: string[]
+  preguntas?: PreguntaRGI[]
 }
 
 /** Estados que no resolvieron: se muestran como tales, no como un hueco. */
@@ -235,6 +244,36 @@ export function Classification({ decisionInicial = null }: Props = {}) {
                           <code key={c}>{c}</code>
                         ))}
                       </p>
+                    )}
+
+                    {/* La pregunta concreta. Es lo que convierte «requiere
+                        revisión» en algo que se contesta en cinco segundos — y
+                        cuya respuesta sirve para todos los casos iguales. */}
+                    {paso.preguntas && paso.preguntas.length > 0 && (
+                      <div className="pregunta-desempate">
+                        <strong>Para desatascarlo basta con responder esto:</strong>
+                        <ul>
+                          {paso.preguntas.map((q) => (
+                            <li key={`${q.codigo}-${q.atributo}`}>
+                              <p className="pregunta-desempate__texto">{q.texto}</p>
+                              <p className="pregunta-desempate__caras">
+                                <span>
+                                  la ficha dice <code>{q.atributo}</code> ={' '}
+                                  <strong>{q.valor_declarado}</strong>
+                                </span>
+                                <span>
+                                  la <code>{q.codigo}</code> exige{' '}
+                                  <strong>{q.exige}</strong>
+                                </span>
+                              </p>
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="pregunta-desempate__pie">
+                          La respuesta se guarda firmada y no se vuelve a
+                          preguntar: resuelve este caso y todos los iguales.
+                        </p>
+                      </div>
                     )}
 
                     {paso.missing_information && paso.missing_information.length > 0 && (

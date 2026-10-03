@@ -67,6 +67,7 @@ TRAZA = [
         "confidence": "0.9100",
         "source_ids": [],
         "missing_information": [],
+        "preguntas": [],
     },
     {
         "rule_id": "RGI-6",
@@ -76,6 +77,7 @@ TRAZA = [
         "confidence": "0.9100",
         "source_ids": [],
         "missing_information": [],
+        "preguntas": [],
     },
 ]
 
