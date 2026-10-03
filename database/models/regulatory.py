@@ -429,6 +429,91 @@ class PedimentoIdentifier(
     level: Mapped[str | None] = mapped_column(sa.String(1), nullable=True)
 
 
+class NomenclatureSynonym(
+    UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base
+):
+    """Puente entre el lenguaje comercial y el de la nomenclatura.
+
+    QUÉ ES Y QUÉ NO ES
+
+    NO es fundamento jurídico y no puede citarse como tal. Es lo mismo que el
+    §18 permite hacer a un modelo —«traduce "laptop gamer" a "máquina
+    automática para tratamiento de datos"»— escrito de forma determinista y
+    auditable en vez de dejado a una salida de LLM.
+
+    Una ficha dice «para conducción de fluidos» y la tarifa dice «de los tipos
+    utilizados en oleoductos o gasoductos». Sin puente, el motor no puede casar
+    dos textos que hablan de lo mismo, y se niega — correctamente, pero sin
+    necesidad.
+
+    POR QUÉ LLEVA `data_origin` COMO TODO LO DEMÁS
+
+    Un sinónimo que alguien escribió no vale lo mismo que uno sacado de las
+    Notas Explicativas. Mientras salgan de nuestra cabeza son `SYNTHETIC` y la
+    traza lo dice, igual que cualquier otro dato que generamos nosotros (§10).
+    El día que un clasificador los valide pasan a `HUMAN_VALIDATED`, y ese
+    cambio de una columna es toda la diferencia entre una conjetura y criterio.
+
+    Lo que un sinónimo NUNCA hace es cambiar el fundamento: la decisión se
+    sigue sosteniendo en el texto de la tarifa. El puente sólo ayuda a
+    ENCONTRARLO.
+    """
+
+    __tablename__ = "nomenclature_synonyms"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "commercial_term",
+            "nomenclature_term",
+            "valid_from",
+            name="uq_nomenclature_synonyms_par",
+        ),
+        # El modelo canónico exige índice por (clave natural, vigencia) en toda
+        # tabla regulatoria: es lo que hace que la regla 5 —filtrar por fecha—
+        # no cueste un escaneo en cada clasificación.
+        sa.Index(
+            "ix_nomenclature_synonyms_vigencia",
+            "commercial_term",
+            "valid_from",
+            "valid_to",
+        ),
+        {"schema": _SCHEMA},
+    )
+
+    commercial_term: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    """Como lo dice una ficha técnica o una factura."""
+
+    nomenclature_term: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    """Como lo dice la tarifa. Es lo que se añade a la búsqueda."""
+
+    kind: Mapped[str] = mapped_column(
+        check_enum(("EQUIVALE", "EXCLUYE"), "kind"), nullable=False, server_default="EQUIVALE"
+    )
+    """Qué dice este puente sobre los dos términos.
+
+    `EQUIVALE` — hablan de lo mismo. Sirve para ENCONTRAR: una ficha que dice
+    «conducción de fluidos» busca también por «oleoductos».
+
+    `EXCLUYE` — no pueden darse a la vez. Sirve para DESCARTAR: una ficha que
+    dice «HFW» hace imposible una posición que exige «arco sumergido».
+
+    Los dos nacen de la misma pregunta a un clasificador —«¿son lo mismo?»— y
+    por eso viven en la misma tabla. La respuesta «no» vale tanto como el «sí»,
+    y hoy se perdía: nadie guardaba los noes.
+    """
+
+    note: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    """Por qué. Lo lee quien audite la decisión."""
+
+    answered_by: Mapped[str | None] = mapped_column(sa.String(64), nullable=True)
+    """Quién contestó la pregunta que produjo esta fila.
+
+    Nulo mientras sea conjetura nuestra (`SYNTHETIC`). Con nombre, la fila es
+    criterio profesional y `data_origin` pasa a `HUMAN_VALIDATED` — y ese
+    cambio de una columna es lo que separa una suposición de algo que un
+    agente aduanal puede firmar.
+    """
+
+
 class RegulatoryEvent(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base):
     """Salida del DOF Regulatory Watcher: una publicación relevante y su alcance."""
 

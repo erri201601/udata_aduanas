@@ -16,7 +16,7 @@ cualquier acierto la construye.
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from core.shadow.divergences import DivergenceType
 from core.shadow.types import ORIGEN_DEL_PROVEEDOR, Divergence, ShadowComparison, default_severity
@@ -300,6 +300,55 @@ def _depende_de_clasificar(divergencia: Divergence, expected: ExpectedItem) -> b
     return False
 
 
+#: Las comprobaciones que el Espejo sabe hacer sobre una partida, y el dato que
+#: cada una necesita para poder hacerse. El nombre es el que ve una persona.
+#:
+#: POR QUÉ ESTA LISTA EXISTE
+#:
+#: `_lagunas` dice lo que NO se pudo comprobar. Nadie decía lo que SÍ, y sin esa
+#: mitad la pantalla sólo podía elegir entre «conforme» (todo bien) y «sin
+#: verificar» (algo faltó). Una partida con siete comprobaciones buenas y una
+#: desconocida salía igual que una donde no se comprobó nada — y eso hacía
+#: parecer que el sistema no verificaba nada, cuando verificaba casi todo.
+_COMPROBACIONES: Final[tuple[tuple[str, str], ...]] = (
+    ("fracción arancelaria", "fraction_code"),
+    ("NICO", "nico"),
+    ("valor en aduana", "customs_value"),
+    ("impuesto general de importación", "igi_amount"),
+    ("IVA", "vat_amount"),
+    ("unidad de medida", "declared_unit_is_known"),
+    ("ficha técnica", "missing_technical_fields"),
+    ("país de origen", "country_of_origin"),
+    ("NOM exigidas", "required_nom_codes"),
+    ("identificadores", "required_identifiers"),
+)
+
+
+def comprobaciones_hechas(expected: ExpectedItem) -> tuple[str, ...]:
+    """Qué se pudo comprobar de esta partida.
+
+    Es el complemento exacto de `_lagunas`: junto a ella dice, de las diez
+    comprobaciones que el Espejo sabe hacer, cuáles tuvieron con qué.
+
+    La fracción cuenta sólo si la clasificación SE SOSTIENE, no si el motor
+    llegó a un código: una clasificación que no es defendible no comprueba
+    nada, aunque haya producido ocho dígitos.
+    """
+    hechas: list[str] = []
+    for nombre, campo in _COMPROBACIONES:
+        if campo == "fraction_code":
+            if expected.is_resolved and expected.fraction_code:
+                hechas.append(nombre)
+        elif campo == "nico":
+            # Con la expectativa firme o con el catálogo basta: el catálogo
+            # solo ya permite afirmar que un NICO declarado NO existe.
+            if expected.nico_code or expected.valid_nico_codes:
+                hechas.append(nombre)
+        elif getattr(expected, campo) is not None:
+            hechas.append(nombre)
+    return tuple(hechas)
+
+
 def _lagunas(expected: ExpectedItem, declared: DeclaredItem | None = None) -> list[str]:
     """Lo que no se pudo comprobar de esta partida, y por qué.
 
@@ -388,6 +437,10 @@ def compare(
     por_linea = {e.line_number: e for e in expected}
     divergencias: list[Divergence] = []
     no_verificables: list[str] = []
+    # Simétrico a `no_verificables`, y por el mismo motivo: sin saber qué SÍ se
+    # comprobó, una partida con siete comprobaciones buenas y una imposible se
+    # lee igual que una donde no se pudo comprobar nada.
+    verificadas: list[str] = []
 
     for d in declared:
         e = por_linea.get(d.line_number)
@@ -409,10 +462,12 @@ def compare(
             # el origen y las NOM ya declaradas siguen siendo comprobables.
             divergencias.extend(x for x in compare_item(d, e) if not _depende_de_clasificar(x, e))
             no_verificables.extend(f"línea {d.line_number}: {r}" for r in _lagunas(e, d))
+            verificadas.extend(f"línea {d.line_number}: {c}" for c in comprobaciones_hechas(e))
             continue
 
         divergencias.extend(compare_item(d, e))
         no_verificables.extend(f"línea {d.line_number}: {r}" for r in _lagunas(e, d))
+        verificadas.extend(f"línea {d.line_number}: {c}" for c in comprobaciones_hechas(e))
 
     # ── Consistencia histórica del SKU ───────────────────────────────────────
     if sku_history:
@@ -437,4 +492,8 @@ def compare(
                     )
                 )
 
-    return ShadowComparison(divergences=tuple(divergencias), unverifiable=tuple(no_verificables))
+    return ShadowComparison(
+        divergences=tuple(divergencias),
+        unverifiable=tuple(no_verificables),
+        verified=tuple(verificadas),
+    )

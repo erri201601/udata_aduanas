@@ -70,6 +70,19 @@ class TariffCandidate(BaseModel):
     """Qué tan específico es el texto respecto de la mercancía. Lo usa la
     RGI 3 a). Mayor es más específico."""
 
+    group_text: str | None = None
+    """El encabezado de un guion bajo el que cuelga esta posición (ADR 0004).
+
+    La LIGIE agrupa subpartidas hermanas bajo una línea sin código —«Los demás
+    monitores:», «Proyectores:»— y ESE es su discriminador propio: las nueve
+    subpartidas de 8528 dicen casi lo mismo y sólo el encabezado las separa.
+
+    Va aparte de `text` y no sustituye a nada. El grupo no es un candidato —no
+    tiene código y devolverlo como tal rompería el contrato—, pero sí es un
+    dato DE este candidato, y es el único que permite elegir entre hermanas sin
+    inventar.
+    """
+
     @property
     def chapter(self) -> str:
         """Los dos primeros dígitos."""
@@ -102,6 +115,19 @@ class ClassificationContext(BaseModel):
     search_terms: tuple[str, ...] = ()
     """Términos de nomenclatura para buscar. Si vienen vacíos y hay un
     `Interpreter`, el motor se los pide a él."""
+
+    exclusiones: tuple[tuple[str, str], ...] = ()
+    """Parejas (lo que dice la ficha, lo que exige la tarifa) que NO son lo mismo.
+
+    Las contesta un clasificador y se guardan firmadas. Es el puente que ningún
+    algoritmo puede deducir: «HFW» y «arco sumergido» no comparten ni una letra
+    y no están unidas en ningún documento — sólo en la cabeza de quien clasifica.
+
+    Con ellas el motor DESCARTA, nunca elige: una posición que exige arco
+    sumergido es imposible para una mercancía que consta soldada con HFW. Eso
+    deja dos candidatas en vez de nueve, y lo que quede lo decide una persona
+    igual que antes.
+    """
 
     notes: dict[str, Any] = Field(default_factory=dict)
 

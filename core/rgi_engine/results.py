@@ -14,6 +14,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from core.rgi_engine.context import TariffCandidate
+from core.rgi_engine.pregunta import Pregunta
 from core.rgi_engine.states import TERMINAL, RGIStatus
 
 
@@ -32,6 +33,14 @@ class RGIResult(BaseModel):
     source_ids: tuple[Any, ...] = ()
     confidence: Decimal | None = None
     missing_information: tuple[str, ...] = ()
+
+    preguntas: tuple[Pregunta, ...] = ()
+    """Lo que haría falta saber para desatascar, en forma de sí o no.
+
+    Vacío cuando no hay una pregunta corta que lo resuelva —muchas candidatas,
+    o falta un dato en vez de un puente de vocabulario—. Entonces la respuesta
+    honesta sigue siendo mandarlo a un clasificador sin acotar.
+    """
 
     requires_human_review: bool = False
     """La regla resolvió, pero su resolución necesita que alguien la mire.

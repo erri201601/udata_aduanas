@@ -117,6 +117,19 @@ class LineaEspejo(BaseModel):
 
     divergencias: list[DivergenciaRead] = Field(default_factory=list)
     no_verificable_por: list[str] = Field(default_factory=list)
+
+    comprobado: list[str] = Field(default_factory=list)
+    """Qué SÍ se comprobó de esta partida, por nombre.
+
+    Es la mitad que faltaba. Sin ella, la pantalla sólo podía decir «conforme»
+    o «sin verificar», y una partida con ocho comprobaciones buenas y dos
+    imposibles se leía igual que una donde no se pudo comprobar nada — que es
+    lo que hacía parecer que el sistema no verificaba nada.
+
+    Enumerarlo NO afloja el §36: una partida no está limpia por tener ocho
+    comprobaciones buenas si le faltan dos. Sólo deja de mentir sobre las ocho.
+    """
+
     peor_severidad: str | None = None
 
 
@@ -219,21 +232,45 @@ def _hallazgos(session: Session, revision: ShadowReview | None) -> list[RiskFind
     )
 
 
-def _estado(divergencias: list[DivergenciaRead], huecos: list[str], *, hubo_auditoria: bool) -> str:
+def _estado(
+    divergencias: list[DivergenciaRead],
+    huecos: list[str],
+    *,
+    hubo_auditoria: bool,
+    comprobadas: int = 0,
+) -> str:
     """El estado de una partida. Nunca por descarte.
 
     `hubo_auditoria` no es un detalle: sin corrida del espejo, una partida no
     tiene divergencias ni huecos, y sin este parámetro caería en CONFORME.
     Un pedimento que nadie revisó pasaría por limpio — exactamente la
     confusión que esta pantalla existe para impedir. Lo detectó un test.
+
+    PARCIAL, Y POR QUÉ HACÍA FALTA (Persona 1, 30-sep)
+
+    Antes, CUALQUIER hueco mandaba la partida a SIN_VERIFICAR. Una con siete
+    comprobaciones hechas y pasadas salía igual que una donde no se pudo
+    comprobar nada, y las doce partidas del corpus se leían como si el sistema
+    no verificara nada — cuando verificaba casi todo.
+
+    Son estados distintos y ahora se distinguen:
+
+        CONFORME       se comprobó todo lo comprobable y nada falló
+        DIVERGENTE     algo se comprobó y no cuadró
+        PARCIAL        parte se comprobó y pasó; otra parte no se pudo
+        SIN_VERIFICAR  no se pudo comprobar NADA
+
+    SIN_VERIFICAR sigue existiendo y sigue significando lo mismo de siempre:
+    de esa partida no se puede afirmar nada. Lo que se deja de hacer es
+    aplicarle esa etiqueta a partidas de las que sí se sabe bastante.
     """
     if not hubo_auditoria:
         return "SIN_VERIFICAR"
     if divergencias:
         return "DIVERGENTE"
-    if huecos:
-        return "SIN_VERIFICAR"
-    return "CONFORME"
+    if not huecos:
+        return "CONFORME"
+    return "PARCIAL" if comprobadas else "SIN_VERIFICAR"
 
 
 @router.get(
@@ -269,6 +306,12 @@ def espejo(pedimento_id: uuid.UUID, session: SessionDep) -> PedimentoEspejo:
             por_partida.setdefault(h.pedimento_item_id, []).append(h)
 
     motivos, sueltos = _repartir_motivos(list(revision.unverifiable) if revision else [])
+    # `or []` no es defensa cosmética: las revisiones anteriores a esta columna
+    # no la tienen, y una corrida vieja tiene que seguir leyéndose — sin
+    # comprobaciones registradas, que es la verdad sobre ella.
+    hechas, _ = _repartir_motivos(
+        list(getattr(revision, "verified", None) or []) if revision else []
+    )
 
     lineas: list[LineaEspejo] = []
     for partida in partidas:
@@ -289,6 +332,7 @@ def espejo(pedimento_id: uuid.UUID, session: SessionDep) -> PedimentoEspejo:
             for h in propios
         ]
         huecos = motivos.get(partida.line_number, [])
+        comprobadas = hechas.get(partida.line_number, [])
         esperada = next(
             (d.expected_value for d in divergencias if d.field == _CAMPO_FRACCION),
             None,
@@ -305,10 +349,16 @@ def espejo(pedimento_id: uuid.UUID, session: SessionDep) -> PedimentoEspejo:
                 customs_value=partida.customs_value,
                 customs_value_currency=partida.customs_value_currency,
                 expected_fraction_code=esperada,
-                estado=_estado(divergencias, huecos, hubo_auditoria=revision is not None),
+                estado=_estado(
+                    divergencias,
+                    huecos,
+                    hubo_auditoria=revision is not None,
+                    comprobadas=len(comprobadas),
+                ),
                 verificacion_parcial=bool(divergencias and huecos),
                 divergencias=divergencias,
                 no_verificable_por=huecos,
+                comprobado=comprobadas,
                 peor_severidad=_peor([d.severity for d in divergencias]),
             )
         )

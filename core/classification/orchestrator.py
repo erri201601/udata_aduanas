@@ -51,6 +51,7 @@ def classify_product(
     search_terms: Sequence[str] = (),
     legal_refs: Sequence[LegalRef] = (),
     trade_flow: str = "IMPORT",
+    exclusiones: Sequence[tuple[str, str]] = (),
 ) -> ClassificationOutcome:
     """Clasifica un producto y devuelve la decisión con lo que la sostiene.
 
@@ -70,6 +71,7 @@ def classify_product(
         facts=hechos,
         trade_flow=trade_flow,
         search_terms=tuple(search_terms),
+        exclusiones=tuple(exclusiones),
     )
 
     traza = classify(contexto, catalog=catalog, notes=notes, interpreter=interpreter)

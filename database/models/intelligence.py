@@ -312,6 +312,11 @@ class ShadowReview(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Base):
     unverifiable: Mapped[list[str]] = mapped_column(
         ARRAY(sa.Text), nullable=False, server_default="{}"
     )
+    #: Qué SÍ se comprobó de cada partida, en el mismo formato que
+    #: `unverifiable` («línea N: nombre»). Sin esta mitad, una partida con ocho
+    #: comprobaciones buenas y dos imposibles se leía igual que una donde no se
+    #: pudo comprobar nada.
+    verified: Mapped[list[str]] = mapped_column(ARRAY(sa.Text), nullable=False, server_default="{}")
     engine_version: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
 
 

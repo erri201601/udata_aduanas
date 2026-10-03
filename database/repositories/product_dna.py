@@ -54,16 +54,29 @@ def guardar_dna(
     anterior = session.scalar(
         sa.select(sa.func.max(ProductDna.version)).where(ProductDna.product_id == product_id)
     )
-    session.execute(
-        sa.update(ProductDna)
-        .where(ProductDna.product_id == product_id, ProductDna.is_current.is_(True))
-        .values(is_current=False)
-    )
+
+    # UNA EXTRACCIÓN VACÍA NO DESPLAZA A LA ANTERIOR
+    #
+    # Pasó en vivo: Persona 1 subió una imagen que el modelo no supo leer, el
+    # DNA nuevo entró con cero atributos como vigente, y el motor dejó de poder
+    # clasificar ese producto — «no hay términos de nomenclatura con los que
+    # buscar». Un borrador sin nada que aportar no es una versión mejor: es
+    # ninguna versión, y pisar con él lo que sí servía destruye información.
+    #
+    # Se guarda igual, con su número y su trazabilidad, porque el intento
+    # ocurrió y consta. Lo que no hace es quedarse como vigente.
+    aporta = bool(borrador.attributes or borrador.summary)
+    if aporta:
+        session.execute(
+            sa.update(ProductDna)
+            .where(ProductDna.product_id == product_id, ProductDna.is_current.is_(True))
+            .values(is_current=False)
+        )
 
     dna = ProductDna(
         product_id=product_id,
         version=(anterior or 0) + 1,
-        is_current=True,
+        is_current=aporta,
         input_kinds=list(borrador.input_kinds),
         summary=borrador.summary,
         missing_information=list(borrador.missing_information),
