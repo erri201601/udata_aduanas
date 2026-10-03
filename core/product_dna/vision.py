@@ -120,18 +120,129 @@ class VisionExtractor:
         crudo = _extraer_json(respuesta.text)
         atributos = tuple(
             ExtractedAttribute(
-                name=a["name"],
+                name=nombre,
                 value=a.get("value"),
                 unit=a.get("unit"),
                 status=_topar(str(a.get("status", "MISSING"))),
                 confidence=a.get("confidence"),
                 locator=a.get("evidence_reference"),
             )
-            for a in crudo.get("attributes", [])
-            if isinstance(a, dict) and a.get("name") in CATALOG
+            for nombre, a in _atributos(crudo)
+        )
+        _comprobar_que_no_se_perdio_nada(crudo, atributos)
+
+        return ProductDnaDraft(
+            summary=crudo.get("summary"),
+            attributes=atributos,
+            missing_information=tuple(
+                str(m) for m in crudo.get("missing_information", []) if isinstance(m, str)
+            ),
+            input_kinds=("image",),
         )
 
-        return ProductDnaDraft(summary=crudo.get("summary"), attributes=atributos)
+
+#: Claves del objeto raíz que NO son atributos. Todo lo demás que aparezca ahí
+#: se interpreta como un atributo devuelto en la forma vieja.
+_NO_SON_ATRIBUTOS: Final[frozenset[str]] = frozenset(
+    {"summary", "attributes", "missing_information"}
+)
+
+
+def _atributos(crudo: dict) -> list[tuple[str, dict]]:
+    """Los atributos de la respuesta, vengan en la forma que vengan.
+
+    El prompt pide una LISTA bajo `attributes`, cada elemento con su `name`.
+    Pero esta ruta no usa salida estructurada —no todos los proveedores la
+    admiten en visión— así que nada obliga al modelo a obedecer, y de hecho no
+    obedecía: devolvía un objeto con un atributo POR CLAVE.
+
+    Eso costó una ficha técnica entera. El modelo leyó producto, marca, modelo,
+    SKU, fabricante y materiales, todos `EXTRACTED` con su localización, y el
+    parser devolvió cero porque buscaba una lista que no estaba. Nadie lo vio
+    en dos semanas porque este código no lo llamaba nadie.
+
+    Se aceptan las dos formas. Pedir una en el prompt y entender sólo ésa es
+    apostar a que un modelo de lenguaje no improvise.
+    """
+    en_lista = crudo.get("attributes")
+    if isinstance(en_lista, list):
+        crudos = [
+            (a["name"], a) for a in en_lista if isinstance(a, dict) and a.get("name") in CATALOG
+        ]
+    else:
+        crudos = [
+            (clave, valor)
+            for clave, valor in crudo.items()
+            if clave in CATALOG and isinstance(valor, dict)
+        ]
+
+    salida: list[tuple[str, dict]] = []
+    for nombre, a in crudos:
+        salida.extend(_desplegar(nombre, a))
+    return salida
+
+
+def _desplegar(nombre: str, atributo: dict) -> list[tuple[str, dict]]:
+    """Un atributo, o varios si `technical_attributes` trae una bolsa.
+
+    `technical_attributes` es del catálogo del §16 y su valor es, por
+    naturaleza, un objeto: «construcción 6x19, diámetro 10 mm, alma de fibra».
+    Guardarlo como un solo atributo con todo dentro lo dejaría inservible para
+    el motor, que busca `diametro_mm` por su nombre.
+
+    Se despliega en uno por clave, HEREDANDO el estado y la confianza del
+    padre: se leyeron en el mismo acto, y darles un estado mejor del que el
+    modelo declaró para el conjunto sería subir una confianza que nadie dio.
+    """
+    valor = atributo.get("value")
+    if nombre != "technical_attributes" or not isinstance(valor, dict):
+        return [(nombre, {**atributo, "value": _texto(valor)})]
+
+    return [
+        (str(clave), {**atributo, "value": _texto(v)})
+        for clave, v in valor.items()
+        if v is not None and str(v).strip()
+    ]
+
+
+def _texto(valor: object) -> str | None:
+    """El valor como texto, o `None` si no aporta.
+
+    Un modelo que devuelve `19` en vez de `"19"` no está equivocado, y tirar el
+    atributo por eso perdería un dato bueno. Un objeto anidado se aplana a
+    `clave: valor` en vez de perderse: es peor información que tenerla suelta,
+    pero mucho mejor que ninguna.
+    """
+    if valor is None:
+        return None
+    if isinstance(valor, str):
+        return valor or None
+    if isinstance(valor, dict):
+        return "; ".join(f"{k}: {v}" for k, v in valor.items() if v is not None) or None
+    if isinstance(valor, list):
+        return ", ".join(str(v) for v in valor if v is not None) or None
+    return str(valor)
+
+
+def _comprobar_que_no_se_perdio_nada(
+    crudo: dict, atributos: tuple[ExtractedAttribute, ...]
+) -> None:
+    """Un borrador vacío que salió de una respuesta llena es un fallo NUESTRO.
+
+    Y tiene que doler, no pasar por «la imagen no aportaba nada»: son cosas
+    opuestas y quien mire la pantalla no puede distinguirlas.
+
+    Una imagen que de verdad no dice nada devuelve un objeto sin más claves que
+    las del envoltorio, y ésa sí produce un borrador vacío sin error.
+    """
+    if atributos:
+        return
+    sobrantes = set(crudo) - _NO_SON_ATRIBUTOS
+    if sobrantes:
+        raise ProviderResponseError(
+            "la respuesta de visión trae datos que no se supieron leer "
+            f"({', '.join(sorted(sobrantes)[:6])}): el formato no es el esperado"
+        )
 
 
 def _extraer_json(texto: str) -> dict:
