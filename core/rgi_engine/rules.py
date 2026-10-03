@@ -597,7 +597,7 @@ class RGI6:
                 missing_information=(f"subpartidas de {partida.heading}",),
             )
 
-        elegida = _unica_o_mas_especifica(subs, mercancia=context.description)
+        elegida = _unica_o_mas_especifica(subs, mercancia=context.description, context=context)
         if elegida is None:
             return RGIResult(
                 rule_id=self.rule_id,
@@ -672,7 +672,9 @@ class RGI6:
                 confidence=_confianza(context),
             )
 
-        fraccion = _unica_o_mas_especifica(fracciones, mercancia=context.description)
+        fraccion = _unica_o_mas_especifica(
+            fracciones, mercancia=context.description, context=context
+        )
         if fraccion is None:
             return RGIResult(
                 rule_id=self.rule_id,
@@ -903,6 +905,27 @@ def _condiciones(candidata: TariffCandidate, context: ClassificationContext) -> 
     return cumplidas, incumplidas
 
 
+def _el_grupo_la_describe(candidata: TariffCandidate, mercancia: str) -> bool:
+    """¿El encabezado de guion de esta posición habla de esta mercancía?
+
+    SÓLO EL GRUPO, NO TODO EL TEXTO, Y HAY UNA RAZÓN CARA DETRÁS
+
+    La primera versión miraba el texto entero y clasificó un cable de acero sin
+    recubrimiento declarado en «De acero SIN RECUBRIMIENTO» — porque «acero»
+    era la única palabra compartida. Afirmaba una ausencia que la ficha no
+    dice, que es exactamente lo que el test del silencio existe para impedir.
+
+    «Acero» lo dice media tarifa; que una posición no lo repita no significa
+    que su mercancía no lo sea. El encabezado de guion es distinto: la LIGIE lo
+    pone AHÍ PRECISAMENTE para separar hermanas —«Los demás monitores:» frente
+    a «Proyectores:»— así que casar con él es casar con el discriminador que la
+    propia nomenclatura eligió, no con una coincidencia de vocabulario.
+    """
+    if not candidata.group_text:
+        return False
+    return bool(_palabras(candidata.group_text) & _palabras(mercancia))
+
+
 def _algo_la_sostiene(candidata: TariffCandidate, mercancia: str) -> bool:
     """¿Hay algo en la mercancía que respalde lo que esta candidata añade?
 
@@ -948,19 +971,41 @@ def _unica_o_mas_especifica(
     if len(cands) == 1:
         return cands[0]
 
+    # ── La única cuyo texto describe la mercancía ────────────────────────────
+    #
+    # Desde el ADR 0004 el texto de una subpartida llega con su nivel de un
+    # guion delante: «Los demás monitores. Aptos para ser conectados
+    # directamente…». Ese encabezado es lo que distingue a las nueve
+    # subpartidas de 8528 —monitores CRT, los demás monitores, proyectores,
+    # televisores— que antes decían casi lo mismo.
+    #
+    # Si EXACTAMENTE UNA comparte palabras distintivas con la mercancía, ésa
+    # es la que la describe, y elegirla es una afirmación que se puede leer:
+    # «la mercancía dice X y sólo esta posición dice X».
+    #
+    # Si la comparten varias, no se elige. Y si no la comparte ninguna,
+    # tampoco. La regla de siempre: sólo resuelve cuando queda una.
+    if mercancia:
+        describen = [c for c in cands if _el_grupo_la_describe(c, mercancia)]
+        if len(describen) == 1:
+            return describen[0]
+
     # ── Antes que la especificidad: la condición que la mercancía CUMPLE ──
     #
-    # SÓLO SE USA EN LA RGI 3 a), CON PARTIDAS. No en la RGI 6.
+    # YA SE USA TAMBIÉN AL BAJAR (1-oct). Antes no se podía, y la razón era
+    # otra de la que parecía.
     #
-    # El texto de una candidata de subpartida o fracción viene concatenado con
-    # el de sus descendientes, así que una condición de un hijo sube al padre.
-    # Probado en vivo: con esto activo en la RGI 6, la tubería de acero para
-    # conducción de fluidos resolvía a 73052001 —tubos de entubación para
-    # extracción de petróleo— porque el texto concatenado de esa subpartida
-    # arrastraba un umbral que la mercancía cumplía. La correcta es 73051291.
+    # El texto de una subpartida NO era suyo: `subheadings()` lo derivaba del
+    # `min()` de las descripciones de sus fracciones, así que 730520 —«Tubos de
+    # entubación (casing)»— le llegaba al motor como «Con espesor de pared
+    # inferior a 50.8 mm», el texto de una hija. Con eso, la tubería del corpus
+    # resolvía a 73052001 —tubos para extracción de petróleo— porque cumplía un
+    # umbral prestado. Pasó de negarse honestamente a contestar mal.
     #
-    # Pasó de negarse honestamente a contestar mal. Mientras el texto de cada
-    # nivel no sea el suyo propio, esto no se puede usar para bajar.
+    # La causa no era este desempate: era aquel `min()`. Arreglado en origen —
+    # cada nivel lee su propio texto de `tariff_headings` (ADR 0002)— la
+    # condición numérica vuelve a ser una afirmación sobre la posición que la
+    # declara, y se puede usar para bajar.
     #
     # Una partida que fija un umbral medible y la mercancía lo cumple es más
     # específica en el sentido que importa: el texto legal dice algo

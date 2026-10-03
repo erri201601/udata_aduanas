@@ -22,7 +22,7 @@ from __future__ import annotations
 import operator
 import re
 from functools import reduce
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
 from core.rgi_engine.context import TariffCandidate
@@ -60,15 +60,22 @@ def _un_source_id() -> sa.ColumnElement:
     ).label("source_id")
 
 
-def _vigentes(on_date: date) -> sa.ColumnElement[bool]:
+def _vigentes(on_date: date, tabla: Any = TariffFraction) -> sa.ColumnElement[bool]:
     """`valid_from <= fecha <= valid_to`, con `valid_to = NULL` = vigente.
 
     Es la regla 5 del CLAUDE.md escrita una sola vez, para que ninguna consulta
     pueda olvidarla.
+
+    `tabla` es explícita desde el 1-oct. Estaba fija en `TariffFraction`, y al
+    usarla en una consulta sobre `TariffHeading` metía las fracciones en el
+    FROM sin que se notara: la subpartida 691110 salía DIEZ VECES —una por
+    fracción suya— y el motor veía diez candidatas idénticas donde había una.
+    Un producto cartesiano silencioso, que es la clase de fallo que no revienta
+    sino que devuelve de más.
     """
     return sa.and_(
-        TariffFraction.valid_from <= on_date,
-        sa.or_(TariffFraction.valid_to.is_(None), TariffFraction.valid_to >= on_date),
+        tabla.valid_from <= on_date,
+        sa.or_(tabla.valid_to.is_(None), tabla.valid_to >= on_date),
     )
 
 
@@ -302,57 +309,77 @@ class TariffCatalogRepository:
     def subheadings(self, *, on_date: date, heading: str) -> Sequence[TariffCandidate]:
         """Subpartidas (6 dígitos) que dependen de una partida.
 
-        EL TEXTO LLEVA SU NIVEL DE UN GUION (ADR 0004)
+        EL TEXTO ES EL SUYO, NO EL DE UNA HIJA (arreglo del 1-oct)
 
-        La LIGIE agrupa subpartidas hermanas bajo una línea con guion y sin
-        código: `730512` («Los demás, soldados longitudinalmente») cuelga de
-        «Tubos de los tipos utilizados en oleoductos o gasoductos», y `730531`
-        («Soldados longitudinalmente») de «Los demás, soldados». Sin ese
-        encabezado las dos dicen casi lo mismo y el motor no puede elegir —
-        se negaba, correctamente, en toda mercancía cuya subpartida tuviera
-        hermanas de texto repetido (274 partidas, 1 390 subpartidas).
+        Esta consulta derivaba las candidatas de `tariff_fractions`, agrupando
+        por subpartida y tomando el `min()` de las descripciones de las
+        FRACCIONES. Así, la subpartida 730520 —«Tubos de entubación (casing)»—
+        le llegaba al motor como «Con espesor de pared inferior a 50.8 mm»: el
+        texto de una de sus hijas.
 
-        El grupo se antepone al texto; NUNCA se devuelve como candidata. No
-        tiene código real, y un `TariffCandidate` sin código rompería el
-        contrato del puerto y la regla 2 de CLAUDE.md.
+        No era un detalle cosmético. Ayer activé el desempate por condición
+        numérica en la RGI 6 y la tubería del corpus resolvió a `73052001`
+        —tubos para extracción de petróleo— porque ese umbral prestado lo
+        cumplía. Pasó de negarse honestamente a contestar mal, y hubo que
+        revertirlo. La causa no era el desempate: era este `min()`.
 
-        El resto de la consulta no cambia a propósito. `code` y `specificity`
-        siguen saliendo de donde salían, así que las candidatas no se
-        reordenan: lo único nuevo es cuánto texto lleva cada una.
+        Ahora el texto sale de `tariff_headings`, que es donde vive el de cada
+        nivel (ADR 0002), con su encabezado de guion delante (ADR 0004). La
+        `specificity` se sigue derivando de las fracciones porque la tabla de
+        niveles no la tiene, y es lo único que se conserva de la vía anterior.
         """
-        # El encabezado de guion de esta subpartida, si lo tiene. Correlada
-        # sobre la columna que agrupa, que Postgres admite por estar en el
-        # GROUP BY.
         grupo = (
             sa.select(TariffHeadingGroup.description)
-            .select_from(TariffHeading)
-            .join(TariffHeadingGroup, TariffHeadingGroup.id == TariffHeading.group_id)
-            .where(TariffHeading.code == TariffFraction.subheading)
+            .where(TariffHeadingGroup.id == TariffHeading.group_id)
+            .correlate(TariffHeading)
+            .limit(1)
+            .scalar_subquery()
+        )
+        #: La especificidad de una subpartida: la mayor de sus fracciones. No
+        #: está en `tariff_headings` y derivarla aquí evita una migración para
+        #: un dato que sólo usa el desempate.
+        # `correlate` explícito: sin él SQLAlchemy correlaciona las DOS tablas y
+        # la subconsulta se queda sin FROM. Lo cazó el test que exige que toda
+        # consulta al catálogo vaya acotada.
+        specificity = (
+            sa.select(sa.func.max(TariffFraction.specificity))
+            .where(_vigentes(on_date), TariffFraction.subheading == TariffHeading.code)
+            .correlate(TariffHeading)
+            .scalar_subquery()
+        )
+        fuente = (
+            sa.select(TariffFraction.source_id)
+            .where(_vigentes(on_date), TariffFraction.subheading == TariffHeading.code)
+            .correlate(TariffHeading)
             .limit(1)
             .scalar_subquery()
         )
 
         filas = self._session.execute(
             sa.select(
-                TariffFraction.subheading,
-                sa.func.min(TariffFraction.description).label("description"),
-                sa.func.max(TariffFraction.specificity).label("specificity"),
-                _un_source_id(),
+                TariffHeading.code,
+                TariffHeading.description,
                 grupo.label("grupo"),
+                specificity.label("specificity"),
+                fuente.label("source_id"),
             )
-            .where(_vigentes(on_date), TariffFraction.heading == heading)
-            .group_by(TariffFraction.subheading)
-            .order_by(sa.desc("specificity"), TariffFraction.subheading)
+            .where(
+                _vigentes(on_date, TariffHeading),
+                sa.func.length(TariffHeading.code) == 6,
+                TariffHeading.code.startswith(heading),
+            )
+            .order_by(sa.desc("specificity"), TariffHeading.code)
             .limit(MAX_CANDIDATOS)
         ).all()
 
         return [
             TariffCandidate(
-                code=f.subheading,
+                code=f.code,
                 text=_con_grupo(f.grupo, f.description),
                 level="SUBHEADING",
                 source_id=f.source_id,
                 specificity=f.specificity or 0,
+                group_text=f.grupo,
             )
             for f in filas
         ]

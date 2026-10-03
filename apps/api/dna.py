@@ -120,6 +120,28 @@ def terminos(dna: ProductDnaDraft) -> list[str]:
     return encontrados[:MAX_TERMINOS]
 
 
+def palabras_de(dna: ProductDnaDraft) -> list[str]:
+    """Todas las palabras distintivas de la ficha, SIN truncar.
+
+    `terminos()` corta a `MAX_TERMINOS` y hace bien: más términos ensanchan la
+    consulta hasta que deja de discriminar. Pero quien busca equivalencias de
+    vocabulario necesita verlas todas, porque la palabra que casa con un puente
+    puede estar más allá del corte.
+
+    Pasó con la tubería del corpus: su ficha dice «para conducción de fluidos»
+    y esas dos palabras caían en la posición 10 y 11 de la lista. El puente que
+    las traduce a «oleoductos o gasoductos» no podía dispararse nunca.
+    """
+    vistas: set[str] = set()
+    salida: list[str] = []
+    for texto in (dna.summary or "", *(a.value or "" for a in dna.solid())):
+        for palabra in _palabras(texto):
+            if palabra.casefold() not in vistas:
+                vistas.add(palabra.casefold())
+                salida.append(palabra)
+    return salida
+
+
 #: Por debajo de esto una palabra engancha demasiadas fracciones para servir de
 #: filtro: "de", "con", "kg", "RAM".
 MIN_LONGITUD_TERMINO = 5
