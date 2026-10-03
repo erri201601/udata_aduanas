@@ -742,10 +742,19 @@ def _palabras(texto: str) -> set[str]:
 
 
 #: Prefijo con el que se comparan dos palabras para decidir que hablan de lo
-#: mismo. «galvanizar» y «galvanizado» comparten «galvani»; «recubrimiento» y
-#: «recubrir», «recubri». Siete y no menos: con cinco, «acerado» y «acero»
-#: colisionarían con media tarifa.
-_RAIZ = 7
+#: mismo. Seis, medido contra los pares que importan:
+#:
+#:     soldadura / soldada        6 ✓   7 ✗   ← costó 11 clasificaciones
+#:     galvanizar / galvanizado   6 ✓   7 ✓
+#:     acero / acerado            6 ✗   7 ✗   ← el que NO debe casar
+#:
+#: Estaba en siete y por eso la 7304 —«Tubos y perfiles huecos, SIN SOLDADURA»—
+#: no se descartaba para una tubería SOLDADA: `soldadu` no es `soldada`. Por
+#: una letra, el motor clasificó once tubos soldados como tubos sin costura.
+#:
+#: Cinco sería demasiado: casaría «recubrimiento» con «recubierto», que a veces
+#: son lo mismo y a veces no, y este umbral sólo debe casar lo indudable.
+_RAIZ = 6
 
 #: «sin X» niega X. «con o sin X» NO lo niega: lo permite en los dos sentidos,
 #: y tratarlo como negación descartaría la fracción correcta de un cable

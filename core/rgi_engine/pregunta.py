@@ -77,6 +77,17 @@ def _palabras(texto: str) -> set[str]:
     return {p for p in re.findall(r"[^\W\d_]+", _plano(texto)) if len(p) >= _MINIMO}
 
 
+def _raices(texto: str) -> set[str]:
+    """Las palabras recortadas a su raíz, para que el plural no despiste.
+
+    «cable» y «cables» son la misma palabra, y una pregunta que no lo viera
+    preguntaría por algo que la ficha ya dice. Se usa SÓLO para callar
+    preguntas, nunca para decidir: un recorte de más hace que preguntemos
+    menos, que es el lado seguro del error.
+    """
+    return {p[:_MINIMO] for p in _palabras(texto)}
+
+
 def formular(context: ClassificationContext, candidatas: list[TariffCandidate]) -> list[Pregunta]:
     """Las preguntas que desatascarían este caso, o lista vacía.
 
@@ -96,15 +107,29 @@ def formular(context: ClassificationContext, candidatas: list[TariffCandidate]) 
     if not hechos:
         return []
 
+    # Todo lo que la ficha dice de la mercancía, incluida su descripción.
+    todo_lo_que_consta = _raices(" ".join([context.description, *(h.value or "" for h in hechos)]))
+
     preguntas: list[Pregunta] = []
     for candidata in candidatas:
         distintivas = _palabras(candidata.text)
         if not distintivas:
             continue
+
+        # SI ALGO DE LA FICHA YA TOCA ESTA POSICIÓN, NO SE PREGUNTA POR ELLA.
+        #
+        # La comprobación es por CANDIDATA y no por hecho, y esa diferencia
+        # importa: antes se saltaba el hecho que coincidía y preguntaba con el
+        # siguiente, produciendo «la ficha dice material = acero, la 731210
+        # exige "Cables", ¿son lo mismo?». Un material contra un tipo de
+        # producto. La descripción ya decía CABLE DE ACERO — el motor tenía con
+        # qué, y la pregunta sólo gastaba el tiempo de quien la leyera.
+        if _raices(candidata.text) & todo_lo_que_consta:
+            continue
+
         for hecho in hechos:
             afirmadas = _palabras(hecho.value or "")
-            if not afirmadas or afirmadas & distintivas:
-                # Comparten vocabulario: el motor ya podía trabajar con eso.
+            if not afirmadas:
                 continue
             exige = _lo_que_exige(candidata.text)
             if not exige or _es_residual(exige):
