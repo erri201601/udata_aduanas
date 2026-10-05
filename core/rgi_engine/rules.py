@@ -825,6 +825,56 @@ class RGI6:
             )
         }
         vivas = [c for c in fracciones if c.code not in descartes]
+
+        # UN RESIDUAL PURO NO SOBREVIVE A COSTA DE LA ESPECÍFICA (5-oct)
+        #
+        # La regla de arriba dice que descartar sólo resuelve cuando queda
+        # exactamente una, y con dos supervivientes se vuelve al empate. Eso
+        # dejaba la pregunta del cable 6x36 sin efecto:
+        #
+        #     73121008  «Sin galvanizar, … constituidos por 7 alambres.»
+        #     73121005  «De acero sin recubrimiento, con o sin lubricación, …»
+        #     73121099  «Los demás.»
+        #
+        # El motor preguntaba lo correcto y un «no» descartaba la 73121008…
+        # dejando DOS, así que el caso volvía al empate. Simulado sobre el
+        # corpus: ni el «sí» ni el «no» cambiaban nada. Seis casos de la
+        # bandeja pidiendo un minuto a cambio de cero, y una pregunta cuya
+        # respuesta no se usa es peor que no preguntar.
+        #
+        # Un texto que es sólo «Los demás.» no califica nada, así que no puede
+        # mantener vivo un empate contra una hermana que describe la mercancía.
+        # Con él fuera queda una sola: 73121005, la que dictaminó César.
+        #
+        # POR QUÉ ESTO NO ES EL DESEMPATE QUE YA SALIÓ MAL
+        #
+        # El aviso de arriba es sobre `specificity`: desempatar entre los
+        # supervivientes por número de calificativos daba 73121007
+        # —«constituidos por 7 alambres»— a un cable de 114 alambres. Esto no
+        # cuenta calificativos: quita una candidata que no tiene ninguno, y
+        # además exige `_algo_la_sostiene` —que alguna palabra de la fracción
+        # conste en la mercancía—, que es el guardarraíl que impidió elegir
+        # «De Talavera» para una vajilla que no la menciona.
+        #
+        # Y SÓLO SI UN DESCARTE ELIMINÓ ALGO
+        #
+        # Sin descarte no hay información nueva: es el empate de siempre, y lo
+        # resuelve —o no— `_unica_o_mas_especifica` con sus propias reglas.
+        # Esta existe para que una RESPUESTA pague, así que se activa cuando
+        # hay una respuesta (o una negación del texto) que quitó una candidata.
+        #
+        # Lo cazó `test_varias_fracciones_aplicables_no_se_deciden_al_azar`:
+        # sin esta condición el motor resolvía un empate limpio entre una
+        # fracción y un «Las demás», que es un empate que debe decidir una
+        # persona.
+        #
+        # Sólo cuando quede EXACTAMENTE una. Con dos que califican, se vuelve
+        # al empate como siempre.
+        if descartes and len(vivas) > 1:
+            califican = [c for c in vivas if not _es_residual_puro(c)]
+            if len(califican) == 1 and _algo_la_sostiene(califican[0], context.description):
+                vivas = califican
+
         # El motivo viene ya escrito de donde salga —negación del texto o
         # respuesta firmada— y se cita tal cual. Envolverlo en «el texto dice
         # "sin ..."» producía frases rotas en cuanto el descarte no venía de
@@ -1644,6 +1694,23 @@ def _el_grupo_la_describe(candidata: TariffCandidate, mercancia: str) -> bool:
     if not candidata.group_text:
         return False
     return bool(_palabras_con_singular(candidata.group_text) & _palabras_con_singular(mercancia))
+
+
+#: Lo que dice un residual cuando no dice nada más.
+_SOLO_RESIDUAL: frozenset[str] = frozenset({"los demas", "las demas", "otros", "otras"})
+
+
+def _es_residual_puro(candidata: TariffCandidate) -> bool:
+    """¿Su texto propio es SÓLO el residual, sin calificar nada?
+
+    Distinto de `_cuelga_de_un_residual`, que mira el encabezado de guion.
+    Aquí el texto entero es «Los demás.»: no añade ni una característica. Son
+    1 799 fracciones de la TIGIE.
+
+    «Los demás. De acero inoxidable» NO lo es: empieza igual y sigue
+    calificando, y por eso sigue pudiendo desempatar.
+    """
+    return _plano(candidata.text).strip(" .:") in _SOLO_RESIDUAL
 
 
 def _cuelga_de_un_residual(candidata: TariffCandidate) -> bool:

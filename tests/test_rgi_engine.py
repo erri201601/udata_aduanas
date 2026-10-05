@@ -2148,3 +2148,129 @@ def test_un_no_firmado_tambien_deja_de_preguntarse() -> None:
     )
 
     assert all("hierro o acero" not in p.exige for p in preguntas)
+
+
+# ── Una pregunta que no mueve nada no es una pregunta (5-oct) ──────────────
+
+
+def test_un_encabezado_de_guion_no_se_pregunta_como_exigencia_de_la_partida() -> None:
+    """LA PREGUNTA MÁS REPETIDA DE LA BANDEJA DABA UNA FRACCIÓN EQUIVOCADA.
+
+    La partida 7305 guarda pegado su primer encabezado de guion —«Tubos de los
+    tipos utilizados en oleoductos o gasoductos:»— y el motor lo preguntaba a
+    20 tuberías. Un «no» honesto —una tubería de conducción de agua industrial
+    NO es de las de oleoducto— borraba la partida 7305 entera y el motor caía a
+    `73063004`. César dictaminó `73051999`.
+
+    En una partida, una frase terminada en «:» es el título de las subpartidas
+    de debajo (ADR 0004), no una condición suya. 344 descripciones de partida
+    llevan dos puntos: «Bovinos domésticos:», «Fresca o refrigerada:».
+    """
+    from core.rgi_engine.pregunta import _frases
+
+    texto = (
+        "Los demás tubos (por ejemplo: soldados o remachados) de sección circular "
+        "con diámetro exterior superior a 406.4 mm, de hierro o acero. Tubos de los "
+        "tipos utilizados en oleoductos o gasoductos:"
+    )
+
+    assert all("oleoductos" not in f for f in _frases(texto, nivel="HEADING"))
+    # En una subpartida el mismo encabezado va DELANTE y sí la califica: es el
+    # nivel de guion inmediatamente superior, que distingue la 730511 de la
+    # 730520. Ahí un «no» descarta sólo su grupo.
+    sub = "Tubos de los tipos utilizados en oleoductos o gasoductos: Soldados con arco."
+    assert any("oleoductos" in f for f in _frases(sub, nivel="SUBHEADING"))
+
+
+def test_el_punto_de_un_decimal_no_parte_la_frase() -> None:
+    """«superior a 406.4 mm» daba «superior a 406» y «4 mm».
+
+    La primera es un umbral falso y la segunda no dice nada. Un punto separa
+    frases; entre dígitos es una coma decimal.
+    """
+    from core.rgi_engine.pregunta import _frases
+
+    frases = _frases("de sección circular con diámetro superior a 406.4 mm", nivel="HEADING")
+
+    assert any("406.4" in f for f in frases)
+    assert not any(f.strip() == "4 mm" for f in frases)
+
+
+def _cable_6x36(exclusiones: tuple[tuple[str, str], ...] = ()) -> ClassificationContext:
+    return ClassificationContext(
+        description="CABLE DE ACERO SIN RECUBRIMIENTO, CONSTRUCCION 6X36, DIAMETRO 18 MM",
+        operation_date=OPERACION,
+        facts=(
+            ProductFact(name="material", value="acero", status="OBSERVED"),
+            ProductFact(name="construccion", value="6x36", status="OBSERVED"),
+        ),
+        search_terms=("cables",),
+        exclusiones=exclusiones,
+    )
+
+
+def _catalogo_731210() -> CatalogoFalso:
+    """Las tres fracciones reales que competían por el cable 6x36."""
+    return CatalogoFalso(
+        headings=[
+            TariffCandidate(
+                code="7312",
+                text="Cables, trenzas y eslingas, de hierro o acero.",
+                level="HEADING",
+                specificity=4,
+            )
+        ],
+        subheadings=[
+            TariffCandidate(code="731210", text="Cables.", level="SUBHEADING", specificity=2)
+        ],
+        fractions=[
+            TariffCandidate(
+                code="73121008",
+                text="Sin galvanizar, de diámetro menor o igual a 19 mm, constituidos por 7 alambres.",
+                level="FRACTION",
+                specificity=3,
+            ),
+            TariffCandidate(
+                code="73121005",
+                text="De acero sin recubrimiento, con o sin lubricación.",
+                level="FRACTION",
+                specificity=3,
+            ),
+            TariffCandidate(code="73121099", text="Los demás.", level="FRACTION", specificity=0),
+        ],
+    )
+
+
+def test_un_residual_puro_no_mantiene_vivo_el_empate_tras_un_descarte() -> None:
+    """LA PREGUNTA DEL CABLE NO SERVÍA PARA NADA, Y ERA LA CORRECTA.
+
+    El motor preguntaba «¿constituidos por 7 alambres?» —la cláusula que de
+    verdad distingue— y un «no» descartaba la 73121008… dejando DOS, así que la
+    regla de «descartar sólo resuelve cuando queda una» devolvía el caso al
+    empate. Simulado sobre el corpus: ni el «sí» ni el «no» cambiaban nada.
+    Seis casos de la bandeja pidiendo un minuto a cambio de cero.
+
+    Un texto que es sólo «Los demás.» no califica nada, así que no puede
+    mantener vivo un empate contra una hermana que describe la mercancía. Con
+    él fuera queda la 73121005, que es la que dictaminó César.
+    """
+    traza = classify(
+        _cable_6x36((("6x36", "constituidos por 7 alambres"),)),
+        catalog=_catalogo_731210(),
+        notes=NotasFalsas(),
+    )
+
+    assert traza.final_status is RGIStatus.RESOLVED
+    assert traza.resolved_code == "73121005"
+
+
+def test_sin_contestar_el_cable_sigue_sin_resolverse() -> None:
+    """El contraste: lo que resuelve el caso es la respuesta, no la regla.
+
+    Sin descartar la 73121008 quedan dos fracciones que describen el cable, y
+    elegir exigiría saber cuántos alambres tiene. El motor se niega, que es lo
+    correcto.
+    """
+    traza = classify(_cable_6x36(), catalog=_catalogo_731210(), notes=NotasFalsas())
+
+    assert traza.final_status is RGIStatus.HUMAN_REVIEW_REQUIRED
