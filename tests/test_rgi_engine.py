@@ -972,3 +972,68 @@ def test_la_materia_mas_larga_gana_al_leerla() -> None:
     assert _materias_literales("De acero inoxidable.") == {"acero inoxidable"}
     assert _materias_literales("De fundición, incluso esmaltadas.") == {"fundicion"}
     assert _materias_literales("Las demás.") == set()
+
+
+# ── Un CABLE es de los «Cables» (Persona 1, 5-oct) ─────────────────────────
+
+
+def test_el_numero_gramatical_no_distingue_una_mercancia() -> None:
+    """EL FALLO QUE BLOQUEABA 41 PRODUCTOS.
+
+    La partida 7312 abre dos subpartidas: `731210` dice «Cables.» y `731290`
+    dice «Los demás.». Cuarenta y un cables de acero del corpus se quedaban
+    sin clasificar porque la ficha dice «CABLE» y la tarifa «Cables», y la
+    comparación era de conjuntos exactos:
+
+        {'cables'} & {'cable', 'acero', 'construccion', ...} = set()
+
+    El motor no podía ver que un CABLE es uno de los «Cables».
+    """
+    from core.rgi_engine.rules import _algo_la_sostiene
+
+    cables = TariffCandidate(code="731210", text="Cables.", level="SUBHEADING", specificity=3)
+    assert _algo_la_sostiene(
+        cables, "CABLE DE ACERO GALVANIZADO, CONSTRUCCION 6X19, DIAMETRO 10 MM"
+    )
+
+
+def test_el_plural_tambien_casa_al_reves() -> None:
+    """La tarifa a veces va en singular y la ficha en plural."""
+    from core.rgi_engine.rules import _algo_la_sostiene
+
+    pos = TariffCandidate(code="821599", text="Cuchara de mesa.", level="FRACTION", specificity=2)
+    assert _algo_la_sostiene(pos, "JUEGO DE CUCHARAS DE MESA DE ACERO INOXIDABLE")
+
+
+def test_no_se_usa_la_raiz_de_seis_para_el_plural() -> None:
+    """Son dos problemas distintos y cada uno tiene su herramienta.
+
+    `_RAIZ = 6` está medido contra los pares que importan —soldadura/soldada—
+    y una palabra de cinco letras truncada a seis sigue siendo ella misma:
+    `cable` no se acerca a `cables` por ahí.
+    """
+    from core.rgi_engine.rules import _raices, _singulares
+
+    assert _raices("Cables.") & _raices("CABLE") == set(), "la raíz no lo resuelve"
+    assert "cable" in _singulares("cables"), "el singular sí"
+
+
+def test_una_palabra_corta_no_se_destroza_al_singularizar() -> None:
+    """Se quita la `s` sólo si lo que queda sigue siendo distintivo.
+
+    El umbral hace de guardia: una palabra que al perder la `s` baja de cinco
+    letras no se recorta, porque el trozo ya no distingue nada.
+    """
+    from core.rgi_engine.rules import _singulares
+
+    assert _singulares("llaves") == {"llaves", "llave"}
+    assert _singulares("redes") == {"redes"}, "«red» tiene tres letras: no se toca"
+    assert _singulares("acero") == {"acero"}, "no acaba en s"
+
+
+def test_el_plural_no_inventa_coincidencias() -> None:
+    """Dos palabras distintas no se vuelven la misma al singularizar."""
+    from core.rgi_engine.rules import _palabras_con_singular
+
+    assert not (_palabras_con_singular("tornillos") & _palabras_con_singular("tuercas"))
+    assert not (_palabras_con_singular("alambres") & _palabras_con_singular("alambique"))
