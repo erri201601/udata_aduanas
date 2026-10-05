@@ -264,15 +264,56 @@ def _la_decision_vigente() -> sa.ColumnElement[bool]:
 
 
 def _ya_dictaminada() -> sa.ColumnElement[bool]:
-    """¿Existe un veredicto humano que apunte a esta decisión?
+    """¿Se pronunció un clasificador sobre ESTE CASO?
 
     Se pregunta por el veredicto y no por `requires_human_review`: ese campo
     también es falso en las que el motor resolvió limpio y nadie miró, que es
     otra cosa muy distinta.
+
+    POR CASO, NO POR DECISIÓN (Persona 1, 5-oct)
+
+    El veredicto apunta con `reviews_decision_id` a la decisión concreta que
+    revisó, y eso está bien: dice qué dijo la máquina y qué dijo la persona,
+    ese día. Pero preguntar sólo por esa decisión convierte el dictamen en algo
+    que caduca al volver a clasificar.
+
+    Pasó medido: reclasificar los 181 productos del corpus dejó los **trece**
+    dictámenes de César colgando de decisiones anteriores, y el tablero pasó de
+    7 a **cero dictaminadas**. Los veredictos no se habían perdido —seguían en
+    la base, íntegros— pero la pantalla decía que nadie había mirado nada.
+
+    Y es la misma unidad que el resto de esta función ya usa: tres líneas más
+    arriba, `_la_decision_vigente` agrupa por `product_dna_id` porque «un
+    producto es un caso, no una fila por cada vez que se clasificó». El
+    dictamen es sobre la mercancía, y mientras la ficha sea la misma, lo que
+    esa persona dijo sigue dicho.
+
+    Sexta vez que aparece este patrón —un predicado por decisión donde la
+    unidad es el caso—, y la quinta está documentada en el comentario de
+    `tablero()`, justo encima.
+
+    Si la ficha cambia de versión, el caso es otro y el dictamen NO se arrastra:
+    se pronunció sobre unos hechos que ya no son los que hay.
     """
     veredicto = sa.orm.aliased(ClassificationDecision, name="veredicto")
-    return sa.exists(
-        sa.select(veredicto.id).where(veredicto.reviews_decision_id == ClassificationDecision.id)
+    revisada = sa.orm.aliased(ClassificationDecision, name="revisada")
+    return sa.or_(
+        # El veredicto apunta a esta decisión. Único camino para las que no
+        # tienen ficha: sin `product_dna_id` no hay caso al que agruparlas.
+        sa.exists(
+            sa.select(veredicto.id).where(
+                veredicto.reviews_decision_id == ClassificationDecision.id
+            )
+        ),
+        # O a otra decisión de la MISMA ficha: mismo caso, misma mercancía.
+        sa.exists(
+            sa.select(veredicto.id)
+            .join(revisada, revisada.id == veredicto.reviews_decision_id)
+            .where(
+                ClassificationDecision.product_dna_id.isnot(None),
+                revisada.product_dna_id == ClassificationDecision.product_dna_id,
+            )
+        ),
     )
 
 

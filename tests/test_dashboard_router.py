@@ -13,6 +13,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import pytest
+import sqlalchemy as sa
 from apps.api.db import get_session
 from apps.api.main import create_app
 from database.models import ClassificationDecision, Pedimento, RiskFinding
@@ -313,3 +314,57 @@ def test_una_oportunidad_puede_decir_si_es_simulacion() -> None:
     assert "is_simulation" in {c.name for c in OpportunityFinding.__table__.columns}
     columna = OpportunityFinding.__table__.c.is_simulation
     assert not columna.nullable, "igual que en RiskFinding: o es simulación o no lo es"
+
+
+# ── El dictamen es del caso, no de la decisión (Persona 1, 5-oct) ──────────
+
+
+def test_las_dictaminadas_se_cuentan_por_ficha_no_por_decision() -> None:
+    """Reclasificar no borra lo que dijo una persona.
+
+    Los trece dictámenes de César apuntan con `reviews_decision_id` a la
+    decisión concreta que revisaron, y eso está bien. Pero preguntar SÓLO por
+    esa decisión convierte el dictamen en algo que caduca al volver a
+    clasificar: reclasificar los 181 productos del corpus dejó el tablero en
+    **cero dictaminadas** cuando enseñaba 7. Los veredictos seguían íntegros en
+    la base; la pantalla decía que nadie había mirado nada.
+
+    La unidad es la misma que usa `_la_decision_vigente` tres líneas más
+    arriba: la ficha. «Un producto es un caso, no una fila por cada vez que se
+    clasificó.»
+
+    Se comprueba sobre el SQL porque la sesión falsa ignora los WHERE.
+    """
+    from apps.api.routers.dashboard import _ya_dictaminada
+
+    sql = str(
+        sa.select(sa.func.count())
+        .select_from(ClassificationDecision)
+        .where(_ya_dictaminada())
+        .compile(compile_kwargs={"literal_binds": True})
+    )
+
+    assert "reviews_decision_id" in sql, "sigue preguntando por el veredicto"
+    assert "product_dna_id" in sql, (
+        "sin la ficha, el dictamen caduca en cuanto el motor vuelve a contestar"
+    )
+
+
+def test_una_decision_sin_ficha_tambien_puede_estar_dictaminada() -> None:
+    """Sin `product_dna_id` no hay caso al que agruparla.
+
+    El camino directo —un veredicto que apunta a ESA decisión— tiene que
+    seguir existiendo, o las decisiones sin ficha perderían su dictamen por
+    una puerta que se abrió para conservarlo.
+    """
+    from apps.api.routers.dashboard import _ya_dictaminada
+
+    sql = str(
+        sa.select(sa.func.count())
+        .select_from(ClassificationDecision)
+        .where(_ya_dictaminada())
+        .compile(compile_kwargs={"literal_binds": True})
+    )
+
+    assert sql.count("reviews_decision_id") >= 2, "los dos caminos, no sólo el de la ficha"
+    assert "OR" in sql.upper()
