@@ -1586,3 +1586,249 @@ def _plano_test(texto: str) -> str:
     import unicodedata
 
     return unicodedata.normalize("NFKD", texto.casefold()).encode("ascii", "ignore").decode()
+
+
+# ── La partida correcta puede no llegar a ser candidata (César, 5-oct) ─────
+
+
+def test_se_recupera_la_partida_que_cumple_un_umbral_medible() -> None:
+    """EL DEFECTO QUE DESTAPÓ LA RESPUESTA DE UN CLASIFICADOR.
+
+    `headings()` devuelve sólo las partidas que cubren MÁS términos, y eso
+    evita que el ruido gane por la RGI 3 c) —un estropajo llegaba a tener
+    sesenta candidatas y la 9605 se las ganaba—. Pero con los términos
+    `TUBERIA ACERO CARBONO COSTURA HELICOIDAL DIAMETRO` de una tubería de
+    ⌀1219 mm:
+
+        7306, 7304, 8481, 3926   casan más términos        -> entran
+        7305                     casa «acero» y «diametro» -> SE CORTA
+
+    Y la 7305 es «tubos de sección circular con diámetro exterior superior a
+    406.4 mm». Era la correcta y no competía.
+
+    Mientras el motor se abstenía por el empate entre las que sí entraban, no
+    se veía. Al contestar César que una tubería no es grifería y deshacerse el
+    empate, el motor resolvió a la 7306 —el residual— con toda confianza: la
+    precisión cayó de 100 % a 96.15 %.
+
+    Se readmite por CUMPLIR el umbral de su propio texto, no por existir.
+    """
+    from core.rgi_engine.rules import _mas_la_que_cumple_una_condicion
+
+    class CatalogoDeDosNiveles:
+        """Devuelve 7306 con cobertura máxima y 7305 sólo si se pide más
+        amplio, que es exactamente lo que hace la base."""
+
+        def headings(
+            self, *, on_date: object, terms: object, cobertura_minima: int | None = None
+        ) -> list[TariffCandidate]:
+            residual = TariffCandidate(
+                code="7306",
+                text="Los demás tubos y perfiles huecos, de hierro o acero.",
+                level="HEADING",
+                specificity=1,
+            )
+            if cobertura_minima is None:
+                return [residual]
+            return [
+                residual,
+                TariffCandidate(
+                    code="7305",
+                    text=(
+                        "Los demás tubos de sección circular con diámetro exterior "
+                        "superior a 406.4 mm, de hierro o acero."
+                    ),
+                    level="HEADING",
+                    specificity=3,
+                ),
+            ]
+
+        def subheadings(self, **_: object) -> list[TariffCandidate]:
+            return []
+
+        def fractions(self, **_: object) -> list[TariffCandidate]:
+            return []
+
+    tuberia = ClassificationContext(
+        description="TUBERIA DE ACERO AL CARBONO, DIAMETRO EXTERIOR 1219 MM",
+        operation_date=OPERACION,
+        facts=(
+            ProductFact(name="material", value="acero al carbono", status="OBSERVED"),
+            ProductFact(name="diametro_exterior_mm", value="1219", status="OBSERVED"),
+        ),
+        search_terms=("tuberia",),
+    )
+    cat = CatalogoDeDosNiveles()
+    partida = cat.headings(on_date=OPERACION, terms=("tuberia",))
+
+    recuperadas = _mas_la_que_cumple_una_condicion(
+        list(partida),
+        cat,  # type: ignore[arg-type]
+        tuberia,
+        ("tuberia",),
+    )
+    assert {c.code for c in recuperadas} == {"7306", "7305"}, (
+        "la 7305 fija un umbral que 1219 mm cumple: compite"
+    )
+
+
+def test_no_se_recupera_nada_sin_una_condicion_cumplida() -> None:
+    """La puerta que impide reabrir el ruido del estropajo.
+
+    Una partida se readmite por CUMPLIR un umbral de su propio texto, que es
+    una afirmación sobre la mercancía. No por existir ni por compartir una
+    palabra: eso es lo que hacía que la 9605 ganara.
+    """
+    from core.rgi_engine.rules import _mas_la_que_cumple_una_condicion
+
+    class CatalogoSinUmbrales:
+        def headings(
+            self, *, on_date: object, terms: object, cobertura_minima: int | None = None
+        ) -> list[TariffCandidate]:
+            lana = TariffCandidate(
+                code="7323",
+                text="Lana de hierro o acero; esponjas, estropajos y artículos similares.",
+                level="HEADING",
+                specificity=2,
+            )
+            if cobertura_minima is None:
+                return [lana]
+            return [
+                lana,
+                TariffCandidate(
+                    code="9605",
+                    text="Juegos o surtidos de viaje para aseo personal.",
+                    level="HEADING",
+                    specificity=1,
+                ),
+            ]
+
+        def subheadings(self, **_: object) -> list[TariffCandidate]:
+            return []
+
+        def fractions(self, **_: object) -> list[TariffCandidate]:
+            return []
+
+    estropajo = ClassificationContext(
+        description="ESTROPAJO DE ACERO INOXIDABLE PARA LIMPIEZA DOMESTICA",
+        operation_date=OPERACION,
+        facts=(ProductFact(name="material", value="acero inoxidable", status="OBSERVED"),),
+        search_terms=("estropajo",),
+    )
+    cat = CatalogoSinUmbrales()
+    recuperadas = _mas_la_que_cumple_una_condicion(
+        list(cat.headings(on_date=OPERACION, terms=("estropajo",))),
+        cat,  # type: ignore[arg-type]
+        estropajo,
+        ("estropajo",),
+    )
+    assert {c.code for c in recuperadas} == {"7323"}, "la 9605 no cumple ningún umbral"
+
+
+# ── Un residual no empata con la específica (César, 5-oct) ─────────────────
+
+
+def test_un_residual_no_empata_con_la_posicion_especifica() -> None:
+    """LO ENCONTRÓ UN CLASIFICADOR, NO UNA MEDICIÓN.
+
+    La partida 7323 abre cinco subpartidas y el motor les daba la misma
+    especificidad:
+
+        732310  spec 2  grupo: —             «Lana de hierro o acero;
+                                              esponjas, estropajos, guantes…»
+        732393  spec 2  grupo: «Los demás:»  «Los demás. De acero inoxidable.»
+        732394  spec 2  grupo: «Los demás:»  «Los demás. De hierro o acero…»
+
+    La 732310 cuelga DIRECTA de la partida; las otras cuelgan de un grupo «Los
+    demás:». Empataban, y el motor se negaba a elegir.
+
+    En sus palabras: «el motor llegó correctamente a la partida 7323, pero no
+    identificó que existe una subpartida específica para lana de hierro o
+    acero, esponjas y estropajos: 7323.10. Por ello no debía continuar
+    comparando 7323.94 como si fuera igualmente específica.»
+
+    Un residual recoge lo que NO cayó en la específica. La LIGIE lo dice con la
+    línea de guion y `group_text` ya la traía.
+    """
+    from core.rgi_engine.rules import _unica_o_mas_especifica
+
+    estropajos = TariffCandidate(
+        code="732310",
+        text="Lana de hierro o acero; esponjas, estropajos, guantes y artículos similares.",
+        level="SUBHEADING",
+        specificity=2,
+    )
+    residual_inox = TariffCandidate(
+        code="732393",
+        text="Los demás. De acero inoxidable.",
+        level="SUBHEADING",
+        specificity=2,
+        group_text="Los demás:",
+    )
+    residual_acero = TariffCandidate(
+        code="732394",
+        text="Los demás. De hierro o acero, esmaltados.",
+        level="SUBHEADING",
+        specificity=2,
+        group_text="Los demás:",
+    )
+
+    elegida = _unica_o_mas_especifica(
+        [estropajos, residual_inox, residual_acero],
+        mercancia="ESTROPAJO DE ACERO INOXIDABLE PARA LIMPIEZA DOMESTICA",
+    )
+    assert elegida is not None, "ya no empatan: una es específica y dos son residuales"
+    assert elegida.code == "732310"
+
+
+def test_entre_residuales_el_desempate_sigue_como_estaba() -> None:
+    """Si TODAS cuelgan de un residual, ninguna tiene ventaja.
+
+    «Los demás. De acero inoxidable» sigue siendo más específica que «Los
+    demás. Los demás» dentro de su propio grupo, y la regla no se mete ahí.
+    """
+    from core.rgi_engine.rules import _unica_o_mas_especifica
+
+    inox = TariffCandidate(
+        code="732393",
+        text="Los demás. De acero inoxidable.",
+        level="SUBHEADING",
+        specificity=2,
+        group_text="Los demás:",
+    )
+    los_demas = TariffCandidate(
+        code="732399",
+        text="Los demás. Los demás.",
+        level="SUBHEADING",
+        specificity=0,
+        group_text="Los demás:",
+    )
+
+    elegida = _unica_o_mas_especifica(
+        [inox, los_demas], mercancia="SARTEN DE ACERO INOXIDABLE PARA COCINA"
+    )
+    assert elegida is not None and elegida.code == "732393"
+
+
+def test_solo_el_encabezado_decide_si_es_residual() -> None:
+    """Se mira el grupo, no el texto propio.
+
+    «Los demás. De acero inoxidable» empieza por «Los demás» en su texto
+    completo porque el guion se le pone delante (ADR 0004). Lo que la hace
+    residual es su ENCABEZADO, no esa repetición.
+    """
+    from core.rgi_engine.rules import _cuelga_de_un_residual
+
+    sin_grupo = TariffCandidate(
+        code="732310", text="Los demás tubos y perfiles huecos.", level="HEADING", specificity=1
+    )
+    assert not _cuelga_de_un_residual(sin_grupo), "sin encabezado no es residual"
+
+    con_grupo = TariffCandidate(
+        code="732393",
+        text="De acero inoxidable.",
+        level="SUBHEADING",
+        specificity=2,
+        group_text="Los demás:",
+    )
+    assert _cuelga_de_un_residual(con_grupo)

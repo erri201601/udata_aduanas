@@ -34,8 +34,24 @@ class TariffCatalog(Protocol):
     convierte esa regla en algo que no se puede olvidar.
     """
 
-    def headings(self, *, on_date: date, terms: Sequence[str]) -> Sequence[TariffCandidate]:
-        """Partidas (4 dígitos) cuyo texto coincide con los términos dados."""
+    def headings(
+        self,
+        *,
+        on_date: date,
+        terms: Sequence[str],
+        cobertura_minima: int | None = None,
+    ) -> Sequence[TariffCandidate]:
+        """Partidas (4 dígitos) cuyo texto coincide con los términos dados.
+
+        Por defecto sólo las que cubren MÁS términos, que es lo que evita que
+        el ruido gane por la RGI 3 c). `cobertura_minima` pide un conjunto más
+        amplio —las que cubren al menos esa cantidad— para que quien llama
+        pueda recuperar una partida que el recorte se llevó por delante.
+
+        Quien la use tiene que tener una razón sustantiva para recuperarla, no
+        sólo que exista: el motor sólo readmite las que CUMPLEN una condición
+        medible de su propio texto.
+        """
         ...
 
     def subheadings(self, *, on_date: date, heading: str) -> Sequence[TariffCandidate]:
