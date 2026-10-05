@@ -21,7 +21,27 @@ import { useEffect, useState } from 'react'
 
 import { fetchPendientes, revisarDecision } from '../api/client'
 import type { PendienteRead } from '../api/client'
+import { ContestarPregunta } from '../components/ContestarPregunta'
 import { SyntheticBanner } from '../components/DataOriginBadge'
+
+interface PreguntaRGI {
+  mercancia: string
+  codigo: string
+  exige: string
+  texto: string
+}
+
+/** Las preguntas del último paso de la traza, si las hay.
+ *
+ * Se leen del último paso porque es donde el motor se atascó: los anteriores
+ * continuaron, y preguntar por una regla que ya pasó no desatasca nada.
+ */
+function preguntasDe(p: PendienteRead): PreguntaRGI[] {
+  const traza = p.rgi_trace
+  if (!Array.isArray(traza) || traza.length === 0) return []
+  const ultimo = traza[traza.length - 1] as { preguntas?: PreguntaRGI[] } | null
+  return ultimo?.preguntas ?? []
+}
 
 /**
  * Nombre corto de cada causa. El texto largo lo manda la API en
@@ -154,6 +174,26 @@ export function HumanReview() {
               )}
 
               {p.reasoning && <p className="revision-fila__razon">{p.reasoning}</p>}
+
+              {/* LAS PREGUNTAS VAN DONDE SE TRABAJA, NO DONDE SE EXPLICA
+                  (Persona 1, 5-oct)
+                  El formulario se puso primero en Classification, que es la
+                  pantalla para EXPLICAR una decisión. Quien revisa entra aquí,
+                  a la bandeja. Tenerlo sólo allí obligaba a salir de la cola,
+                  buscar el caso en un selector y encontrar el formulario
+                  enterrado en la traza — y una cola que obliga a salir de ella
+                  no se usa.
+                  El dato ya venía: `PendienteRead` trae `rgi_trace`. */}
+              {preguntasDe(p).map((q) => (
+                <div className="revision-fila__pregunta" key={`${q.codigo}-${q.exige}`}>
+                  <p className="revision-fila__pregunta-texto">{q.texto}</p>
+                  <ContestarPregunta
+                    exige={q.exige}
+                    codigo={q.codigo}
+                    mercancia={q.mercancia}
+                  />
+                </div>
+              ))}
 
               <p className="revision-fila__meta">
                 {p.status} · operación del {p.operation_date} ·{' '}
