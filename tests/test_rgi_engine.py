@@ -1586,3 +1586,140 @@ def _plano_test(texto: str) -> str:
     import unicodedata
 
     return unicodedata.normalize("NFKD", texto.casefold()).encode("ascii", "ignore").decode()
+
+
+# ── La partida correcta puede no llegar a ser candidata (César, 5-oct) ─────
+
+
+def test_se_recupera_la_partida_que_cumple_un_umbral_medible() -> None:
+    """EL DEFECTO QUE DESTAPÓ LA RESPUESTA DE UN CLASIFICADOR.
+
+    `headings()` devuelve sólo las partidas que cubren MÁS términos, y eso
+    evita que el ruido gane por la RGI 3 c) —un estropajo llegaba a tener
+    sesenta candidatas y la 9605 se las ganaba—. Pero con los términos
+    `TUBERIA ACERO CARBONO COSTURA HELICOIDAL DIAMETRO` de una tubería de
+    ⌀1219 mm:
+
+        7306, 7304, 8481, 3926   casan más términos        -> entran
+        7305                     casa «acero» y «diametro» -> SE CORTA
+
+    Y la 7305 es «tubos de sección circular con diámetro exterior superior a
+    406.4 mm». Era la correcta y no competía.
+
+    Mientras el motor se abstenía por el empate entre las que sí entraban, no
+    se veía. Al contestar César que una tubería no es grifería y deshacerse el
+    empate, el motor resolvió a la 7306 —el residual— con toda confianza: la
+    precisión cayó de 100 % a 96.15 %.
+
+    Se readmite por CUMPLIR el umbral de su propio texto, no por existir.
+    """
+    from core.rgi_engine.rules import _mas_la_que_cumple_una_condicion
+
+    class CatalogoDeDosNiveles:
+        """Devuelve 7306 con cobertura máxima y 7305 sólo si se pide más
+        amplio, que es exactamente lo que hace la base."""
+
+        def headings(
+            self, *, on_date: object, terms: object, cobertura_minima: int | None = None
+        ) -> list[TariffCandidate]:
+            residual = TariffCandidate(
+                code="7306",
+                text="Los demás tubos y perfiles huecos, de hierro o acero.",
+                level="HEADING",
+                specificity=1,
+            )
+            if cobertura_minima is None:
+                return [residual]
+            return [
+                residual,
+                TariffCandidate(
+                    code="7305",
+                    text=(
+                        "Los demás tubos de sección circular con diámetro exterior "
+                        "superior a 406.4 mm, de hierro o acero."
+                    ),
+                    level="HEADING",
+                    specificity=3,
+                ),
+            ]
+
+        def subheadings(self, **_: object) -> list[TariffCandidate]:
+            return []
+
+        def fractions(self, **_: object) -> list[TariffCandidate]:
+            return []
+
+    tuberia = ClassificationContext(
+        description="TUBERIA DE ACERO AL CARBONO, DIAMETRO EXTERIOR 1219 MM",
+        operation_date=OPERACION,
+        facts=(
+            ProductFact(name="material", value="acero al carbono", status="OBSERVED"),
+            ProductFact(name="diametro_exterior_mm", value="1219", status="OBSERVED"),
+        ),
+        search_terms=("tuberia",),
+    )
+    cat = CatalogoDeDosNiveles()
+    partida = cat.headings(on_date=OPERACION, terms=("tuberia",))
+
+    recuperadas = _mas_la_que_cumple_una_condicion(
+        list(partida),
+        cat,  # type: ignore[arg-type]
+        tuberia,
+        ("tuberia",),
+    )
+    assert {c.code for c in recuperadas} == {"7306", "7305"}, (
+        "la 7305 fija un umbral que 1219 mm cumple: compite"
+    )
+
+
+def test_no_se_recupera_nada_sin_una_condicion_cumplida() -> None:
+    """La puerta que impide reabrir el ruido del estropajo.
+
+    Una partida se readmite por CUMPLIR un umbral de su propio texto, que es
+    una afirmación sobre la mercancía. No por existir ni por compartir una
+    palabra: eso es lo que hacía que la 9605 ganara.
+    """
+    from core.rgi_engine.rules import _mas_la_que_cumple_una_condicion
+
+    class CatalogoSinUmbrales:
+        def headings(
+            self, *, on_date: object, terms: object, cobertura_minima: int | None = None
+        ) -> list[TariffCandidate]:
+            lana = TariffCandidate(
+                code="7323",
+                text="Lana de hierro o acero; esponjas, estropajos y artículos similares.",
+                level="HEADING",
+                specificity=2,
+            )
+            if cobertura_minima is None:
+                return [lana]
+            return [
+                lana,
+                TariffCandidate(
+                    code="9605",
+                    text="Juegos o surtidos de viaje para aseo personal.",
+                    level="HEADING",
+                    specificity=1,
+                ),
+            ]
+
+        def subheadings(self, **_: object) -> list[TariffCandidate]:
+            return []
+
+        def fractions(self, **_: object) -> list[TariffCandidate]:
+            return []
+
+    estropajo = ClassificationContext(
+        description="ESTROPAJO DE ACERO INOXIDABLE PARA LIMPIEZA DOMESTICA",
+        operation_date=OPERACION,
+        facts=(ProductFact(name="material", value="acero inoxidable", status="OBSERVED"),),
+        search_terms=("estropajo",),
+    )
+    cat = CatalogoSinUmbrales()
+    recuperadas = _mas_la_que_cumple_una_condicion(
+        list(cat.headings(on_date=OPERACION, terms=("estropajo",))),
+        cat,  # type: ignore[arg-type]
+        estropajo,
+        ("estropajo",),
+    )
+    assert {c.code for c in recuperadas} == {"7323"}, "la 9605 no cumple ningún umbral"

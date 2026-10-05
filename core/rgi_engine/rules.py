@@ -93,6 +93,7 @@ class RGI1:
             )
 
         encontrados = list(catalog.headings(on_date=context.operation_date, terms=terminos))
+        encontrados = _mas_la_que_cumple_una_condicion(encontrados, catalog, context, terminos)
 
         # Las notas de exclusión se aplican antes que nada: descartan la
         # partida aunque el texto encaje.
@@ -1268,6 +1269,74 @@ def _hecho_de(context: ClassificationContext, sujeto: str) -> Decimal | None:
         if nombre and nombre <= palabras and valor is not None:
             candidatos.append(valor)
     return candidatos[0] if len(candidatos) == 1 else None
+
+
+#: Cuántos términos tiene que cubrir una partida para que se la mire siquiera
+#: al recuperar. Dos: con uno entra media tarifa —«acero» solo engancha 89
+#: posiciones— y con tres se quedaría fuera la 7305, que es el caso que esto
+#: viene a resolver.
+_COBERTURA_PARA_RECUPERAR = 2
+
+
+def _mas_la_que_cumple_una_condicion(
+    encontrados: list[TariffCandidate],
+    catalog: TariffCatalog,
+    context: ClassificationContext,
+    terminos: Sequence[str],
+) -> list[TariffCandidate]:
+    """Las partidas halladas, más la que el recorte de cobertura se llevó.
+
+    LA PARTIDA CORRECTA PUEDE NO LLEGAR A SER CANDIDATA (César, 5-oct)
+
+    `headings()` devuelve sólo las que cubren MÁS términos, y eso evita que el
+    ruido gane por la RGI 3 c) —un estropajo llegaba a tener sesenta candidatas
+    y la 9605 se las ganaba—. Pero se lleva por delante a la partida correcta
+    cuando el vocabulario de la ficha casa mejor con otra.
+
+    El caso medido: una tubería de ⌀1219 mm con los términos `TUBERIA ACERO
+    CARBONO COSTURA HELICOIDAL DIAMETRO`.
+
+        7306, 7304, 8481, 3926   casan más términos        -> entran
+        7305                     casa «acero» y «diametro» -> SE CORTA
+
+    Y la 7305 es «tubos de sección circular con diámetro exterior superior a
+    406.4 mm», que esta tubería cumple con 1219. Era la correcta y no competía.
+
+    POR QUÉ SE PUEDE READMITIR SIN REABRIR EL RUIDO
+
+    No se readmite por existir: se readmite por CUMPLIR una condición medible
+    de su propio texto. Eso es una afirmación sobre la mercancía —el documento
+    legal fija un umbral y la ficha lo comprueba— y no una coincidencia de
+    vocabulario. Es el mismo criterio que `_unica_o_mas_especifica` ya usa para
+    desempatar, aplicado un paso antes para que haya con qué desempatar.
+
+    El estropajo no trae ningún dato numérico que cumpla un umbral, así que
+    sigue con su única candidata. Lo comprueba la medición, no este comentario.
+    """
+    if not encontrados:
+        return encontrados
+
+    ya = {c.code for c in encontrados}
+    try:
+        mas_amplio = catalog.headings(
+            on_date=context.operation_date,
+            terms=terminos,
+            cobertura_minima=_COBERTURA_PARA_RECUPERAR,
+        )
+    except TypeError:
+        # Un catálogo que no admite el parámetro: se sigue con lo que haya. El
+        # motor no puede exigirle a cada implementación del puerto que soporte
+        # una mejora suya.
+        return encontrados
+
+    recuperadas = []
+    for c in mas_amplio:
+        if c.code in ya:
+            continue
+        cumplidas, incumplidas = _condiciones(c, context)
+        if cumplidas and not incumplidas:
+            recuperadas.append(c)
+    return encontrados + recuperadas
 
 
 def _condiciones(candidata: TariffCandidate, context: ClassificationContext) -> tuple[int, int]:

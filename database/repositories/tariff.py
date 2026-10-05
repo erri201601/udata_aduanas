@@ -274,7 +274,13 @@ class TariffCatalogRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def headings(self, *, on_date: date, terms: Sequence[str]) -> Sequence[TariffCandidate]:
+    def headings(
+        self,
+        *,
+        on_date: date,
+        terms: Sequence[str],
+        cobertura_minima: int | None = None,
+    ) -> Sequence[TariffCandidate]:
         """Partidas (4 dígitos) que comprenden la mercancía según los términos.
 
         Se agrupa por partida porque la tabla guarda fracciones de 8 dígitos:
@@ -294,6 +300,23 @@ class TariffCatalogRepository:
         devuelve vacío si algo casó. Medido el 23-sep: el estropajo pasa de 60
         candidatas —última 9605— a una sola, la 7323, que es «lana de hierro o
         acero; esponjas, estropajos y artículos similares».
+
+        Y LO QUE ESE RECORTE SE LLEVA POR DELANTE (César, 5-oct)
+
+        Una tubería de ⌀1219 mm con los términos `TUBERIA ACERO CARBONO COSTURA
+        HELICOIDAL DIAMETRO` deja fuera la 7305 —«tubos de sección circular con
+        diámetro exterior superior a 406.4 mm»— porque sólo casa dos términos
+        mientras 7306, 7304, 8481 y 3926 casan más. La partida CORRECTA no
+        llegaba a ser candidata.
+
+        Mientras el motor se abstenía por el empate entre las que sí entraban,
+        no se veía. Al contestar un clasificador y deshacerse el empate, el
+        motor resolvió a la 7306 —el residual— con toda confianza.
+
+        `cobertura_minima` abre esa puerta sin tocar el recorte: quien llama
+        pide un conjunto más amplio y decide él qué recuperar. El motor sólo
+        recupera las que CUMPLEN una condición medible de su texto, que es una
+        razón sustantiva y no una coincidencia de vocabulario.
         """
         cobertura = _coincidencias(terms)
         # La cobertura más alta que alcance cualquier partida. Se ordena y se
@@ -320,7 +343,7 @@ class TariffCatalogRepository:
             )
             .where(_vigentes(on_date), _coincide(terms))
             .group_by(TariffFraction.heading)
-            .having(cobertura >= mejor)
+            .having(cobertura >= (mejor if cobertura_minima is None else cobertura_minima))
             .order_by(sa.desc("coincidencias"), sa.desc("specificity"), TariffFraction.heading)
             .limit(MAX_CANDIDATOS)
         ).all()
