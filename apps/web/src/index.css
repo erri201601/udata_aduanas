@@ -1741,6 +1741,31 @@ code {
 
 .contestar__campo small { font-size: 0.7rem; color: var(--tenue); line-height: 1.45; }
 
+/* Los valores de la ficha, para elegir. Botones y no texto libre: el primero
+   que usó el formulario teclëó la etiqueta y su respuesta quedó inerte. */
+.contestar__valores { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 0.25rem; }
+
+.contestar__valor {
+  padding: 0.22rem 0.6rem;
+  font-size: 0.76rem;
+  font: inherit;
+  font-size: 0.76rem;
+  border: 1px solid var(--borde);
+  border-radius: 999px;
+  background: var(--fondo);
+  color: inherit;
+  cursor: pointer;
+}
+
+.contestar__valor:hover { border-color: var(--acento); }
+
+.contestar__valor--puesto {
+  border-color: var(--acento);
+  background: rgba(47, 111, 219, 0.12);
+  color: var(--acento);
+  font-weight: 600;
+}
+
 .contestar__botones { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.2rem; }
 
 .boton--si,

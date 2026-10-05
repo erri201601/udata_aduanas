@@ -61,6 +61,7 @@ sería una opinión disfrazada de dato. Se nombran; el revisor decide.
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import UTC, date, datetime
 from typing import Annotated, Final, Literal
@@ -326,6 +327,39 @@ class RespuestaVocabulario(BaseModel):
     """Por qué. Lo lee quien audite una decisión que se apoye en esto."""
 
 
+#: `material = «acero al carbono»` → `acero al carbono`. Etiqueta, igual y
+#: comillas de cualquier clase.
+_ETIQUETA = re.compile(r"^\s*[^\W\d_]+\s*=\s*")
+#: Las comillas se escriben con sus puntos de código para que el linter no
+#: avise de caracteres ambiguos: son datos, no texto de programa.
+_COMILLAS = "«»\"'" + "\u201c\u201d\u2018\u2019 "
+
+
+def _solo_el_valor(termino: str) -> str:
+    """El valor que la ficha dice, sin la etiqueta con la que se muestra.
+
+    EL PRIMER CLASIFICADOR QUE LO USÓ ESCRIBIÓ LA ETIQUETA (César, 5-oct)
+
+    Contestó `material = "acero al carbono"`, copiando el formato que la propia
+    pantalla le enseñaba debajo del campo. Y con eso la respuesta quedaba
+    **inerte**: para aplicarse, todas las palabras del término tienen que estar
+    en la ficha, y «material» no está — la ficha guarda los VALORES de los
+    hechos, no los nombres de los campos.
+
+    Así que su respuesta se guardó firmada, correcta en su razonamiento, y no
+    descartaba nada. El motor seguía proponiendo grifería para una tubería.
+
+    Nadie lo habría notado: la pantalla decía «guardado y firmado», la fila
+    estaba en la base, y el efecto era cero. Eso es lo peor que puede hacer
+    esta función — gastar el minuto de un clasificador sin que se note.
+
+    Se limpia aquí y no sólo en la pantalla porque el endpoint lo llama también
+    quien no pasa por ella.
+    """
+    limpio = _ETIQUETA.sub("", termino).strip().strip(_COMILLAS)
+    return limpio.casefold()
+
+
 class VocabularioGuardado(BaseModel):
     id: uuid.UUID
     kind: str
@@ -366,7 +400,7 @@ def responder_vocabulario(
     agente aduanal puede defender y algo que no.
     """
     fila = NomenclatureSynonym(
-        commercial_term=peticion.termino_ficha.strip().casefold(),
+        commercial_term=_solo_el_valor(peticion.termino_ficha),
         nomenclature_term=peticion.termino_tarifa.strip().casefold(),
         kind="EQUIVALE" if peticion.son_lo_mismo else "EXCLUYE",
         note=peticion.nota,
