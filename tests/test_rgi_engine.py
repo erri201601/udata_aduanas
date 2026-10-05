@@ -841,7 +841,10 @@ _BANERA_FUNDICION = TariffCandidate(
     group_text="Bañeras:",
 )
 _BANERA_DEMAS = TariffCandidate(
-    code="732429", text="Bañeras. Las demás.", level="SUBHEADING", specificity=0,
+    code="732429",
+    text="Bañeras. Las demás.",
+    level="SUBHEADING",
+    specificity=0,
     group_text="Bañeras:",
 )
 _HIGIENE_DEMAS = TariffCandidate(
@@ -858,7 +861,9 @@ def _contexto_fregadero(**cambios: object) -> ClassificationContext:
             "ESPESOR 0.8 MM, PARA INSTALACION EN COCINA"
         ),
         "operation_date": OPERACION,
-        "facts": (ProductFact(name="material", value="acero inoxidable AISI 304", status="OBSERVED"),),
+        "facts": (
+            ProductFact(name="material", value="acero inoxidable AISI 304", status="OBSERVED"),
+        ),
         "search_terms": ("fregaderos",),
     }
     base.update(cambios)
