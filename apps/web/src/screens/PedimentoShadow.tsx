@@ -203,7 +203,21 @@ function Partida({ linea, posibles }: { linea: LineaEspejo; posibles: string[] }
                   {d.rationale && <p className="divergencia__razon">{d.rationale}</p>}
                   <p className="divergencia__monto">
                     {monto ? (
-                      <>Impacto cuantificado: {monto}</>
+                      /* El mismo importe mide dos cosas distintas y presentarlas
+                         con la misma etiqueta haría que una cifra condicionada
+                         se leyera como una deuda cierta. */
+                      d.impact_scope === 'UNA_CONTRIBUCION' ? (
+                        <>
+                          <strong>Falta de esta contribución: {monto}</strong> — exacto, y no
+                          depende de clasificar: es lo que la ley da para la fracción que se
+                          declaró, menos lo que se escribió.
+                        </>
+                      ) : (
+                        <>
+                          Se movería {monto} si esto se corrigiera. Depende de la expectativa
+                          del motor, así que no es una deuda cierta todavía.
+                        </>
+                      )
                     ) : (
                       <em>
                         Sin monto. Se puede investigar, no presentar — y no por eso es menos

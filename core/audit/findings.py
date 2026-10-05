@@ -36,6 +36,32 @@ class Finding(BaseModel):
     impact_direction: str | None = None
     """OMISION | SOBREPAGO | SIN_DIFERENCIA."""
 
+    impact_scope: str | None = None
+    """`LINEA_COMPLETA` | `UNA_CONTRIBUCION`. Cómo se agrega este monto.
+
+    ESTO ES LO QUE DECIDE SI UN TOTAL SE SUMA O SE DEDUPLICA
+
+    Dos clases de dinero caben en `impact_amount` y se agregan al contrario:
+
+    `LINEA_COMPLETA` — una fracción mal, un valor mal y un origen mal explican
+    **la misma** diferencia de contribuciones, y el motor le atribuye a cada una
+    el delta entero a propósito (repartirlo daría cifras que no cuadran con
+    nada). Sumar dos de éstas contaría el mismo dinero dos veces: se toma una.
+
+    `UNA_CONTRIBUCION` — el IGI mal calculado y el IVA mal calculado son
+    **contribuciones distintas** y se deben las dos. Deduplicarlas con un
+    `max()` se quedaría con la mayor y perdería la otra.
+
+    Mientras el criterio vivió como una lista de tipos repetida en tres
+    lectores —el motor, el Espejo y el tablero—, cada uno podía derivar del
+    otro sin que nada fallara. Ahora viaja con el hallazgo y hay una sola
+    función que agrega (`core.audit.total_por_partida`).
+
+    `None` en las filas anteriores a la columna: se tratan como
+    `LINEA_COMPLETA`, que es lo que eran —el único tipo que llevaba monto era
+    la fracción—.
+    """
+
     evidences: tuple[Evidence, ...] = ()
     assumptions: tuple[str, ...] = ()
     is_simulation: bool = True
@@ -75,6 +101,7 @@ class Finding(BaseModel):
                 "rationale": self._rationale(),
                 "impact_amount": self.impact_amount,
                 "impact_amount_currency": self.impact_currency,
+                "impact_scope": self.impact_scope,
                 "is_simulation": self.is_simulation,
             }
         )

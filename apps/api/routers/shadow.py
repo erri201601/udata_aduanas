@@ -39,6 +39,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Final
 
 import sqlalchemy as sa
+from core.audit import total_por_partida
 from core.shadow import comprobaciones_posibles
 from database.models import Pedimento, PedimentoItem, RiskFinding, ShadowReview
 from fastapi import APIRouter, HTTPException, status
@@ -79,6 +80,20 @@ class DivergenciaRead(BaseModel):
     """`None` = no se cuantificó. NO es cero: una NOM faltante no cambia lo
     que se paga y aun así detiene la mercancía."""
     impact_amount_currency: str | None = None
+    impact_scope: str | None = None
+    """Qué mide ese importe, que no es lo mismo en los dos casos.
+
+    `UNA_CONTRIBUCION` — lo que falta de ESA contribución, exacto y sin
+    depender de clasificar: «la ley da 14 468.85 de IGI para la fracción que
+    declaraste y escribiste 4 822.95».
+
+    `LINEA_COMPLETA` — lo que se movería si la fracción, el valor o el origen
+    se corrigieran. Depende de una expectativa que el motor tiene que poder
+    sostener.
+
+    Presentarlos con la misma etiqueta haría que un importe condicionado se
+    leyera como una deuda cierta.
+    """
     is_simulation: bool = False
 
 
@@ -356,6 +371,7 @@ def espejo(pedimento_id: uuid.UUID, session: SessionDep) -> PedimentoEspejo:
                 rationale=h.rationale,
                 impact_amount=h.impact_amount,
                 impact_amount_currency=h.impact_amount_currency,
+                impact_scope=h.impact_scope,
                 is_simulation=h.is_simulation,
             )
             for h in propios
@@ -409,17 +425,27 @@ def espejo(pedimento_id: uuid.UUID, session: SessionDep) -> PedimentoEspejo:
     sobrepagos = len([h for h in con_monto if h.impact_amount and h.impact_amount < 0])
     monedas = {h.impact_amount_currency for h in adeudos if h.impact_amount_currency}
     mezcladas = len(monedas) > 1
-    # UN monto por partida, no uno por hallazgo: dos divergencias de la misma
-    # partida explican la MISMA diferencia y el motor le da a cada una el monto
-    # entero (`core.audit.engine._total`). Sumarlos contaría ese dinero dos
-    # veces, y con el corpus una partida puede traer valor y origen a la vez.
-    monto_por_partida: dict[uuid.UUID, Decimal] = {}
+    # UN total por partida, con el criterio del motor y no con uno propio.
+    #
+    # Aquí vivía una copia de la regla: «toma el mayor», que era correcta
+    # mientras el único monto fuera el delta entero de la partida. Desde que un
+    # IGI y un IVA mal calculados llevan cada uno lo suyo, el mayor perdería el
+    # otro — y el tablero tenía su propia copia, y el motor la tercera. Ahora
+    # las tres llaman a `total_por_partida`, que lee `impact_scope` de la fila.
+    adeudos_por_partida: dict[uuid.UUID, list[RiskFinding]] = {}
     for h in adeudos:
         if h.impact_amount is None:
             continue
-        clave = h.pedimento_item_id or h.id
-        if h.impact_amount > monto_por_partida.get(clave, Decimal(0)):
-            monto_por_partida[clave] = h.impact_amount
+        adeudos_por_partida.setdefault(h.pedimento_item_id or h.id, []).append(h)
+    monto_por_partida: dict[uuid.UUID, Decimal] = {}
+    for clave, grupo in adeudos_por_partida.items():
+        # `adeudos` ya está filtrado a importes positivos, así que todo el
+        # grupo va en la misma dirección y no hace falta separarla aquí.
+        total = total_por_partida(
+            (h.impact_amount, h.impact_scope) for h in grupo if h.impact_amount is not None
+        )
+        if total is not None:
+            monto_por_partida[clave] = total
     # Con más de una moneda no hay total: sumar pesos con dólares da un número
     # que parece dinero y no lo es.
     suma = (

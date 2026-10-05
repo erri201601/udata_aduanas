@@ -247,6 +247,12 @@ class RiskFindingBase(DataOriginFields, AIDecisionFields, SyntheticFields):
     rationale: str | None = None
     impact_amount: Decimal | None = None
     impact_amount_currency: str | None = None
+    impact_scope: str | None = None
+    """`LINEA_COMPLETA` se deduplica · `UNA_CONTRIBUCION` se suma.
+
+    No es descriptivo: es la instrucción de agregación, y viaja con la fila
+    para que no haya tres copias del criterio en tres lectores.
+    """
     is_simulation: bool = False
     evidence_id: uuid.UUID | None = None
 

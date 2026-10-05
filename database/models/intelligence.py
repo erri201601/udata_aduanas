@@ -26,6 +26,7 @@ from database.models.enums import (
     ERROR_TYPE,
     EVIDENCE_KIND,
     FINDING_SEVERITY,
+    IMPACT_SCOPE,
     OPPORTUNITY_STATUS,
     TRADE_FLOW,
 )
@@ -361,6 +362,16 @@ class RiskFinding(
     rationale: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     impact_amount: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
     impact_amount_currency: Mapped[str | None] = mapped_column(_CCY, nullable=True)
+    #: Cómo se agrega `impact_amount`: `LINEA_COMPLETA` se deduplica,
+    #: `UNA_CONTRIBUCION` se suma. El criterio vivía como una lista de tipos
+    #: repetida en el motor, el Espejo y el tablero, y cada copia podía
+    #: derivar de las otras en silencio. Ahora viaja con la fila.
+    #:
+    #: `NULL` en lo anterior a la columna = `LINEA_COMPLETA`, que es lo que
+    #: era: el único tipo que llevaba monto entonces era la fracción.
+    impact_scope: Mapped[str | None] = mapped_column(
+        check_enum(IMPACT_SCOPE, "impact_scope"), nullable=True
+    )
     is_simulation: Mapped[bool] = mapped_column(
         sa.Boolean, nullable=False, server_default=sa.false()
     )

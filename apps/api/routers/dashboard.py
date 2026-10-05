@@ -33,6 +33,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 import sqlalchemy as sa
+from core.audit import ALCANCE_CONTRIBUCION
 from database.models import (
     ClassificationDecision,
     OpportunityFinding,
@@ -179,10 +180,26 @@ class Dashboard(BaseModel):
 def _por_partida() -> sa.Subquery:
     """Un monto por partida, no uno por hallazgo.
 
-    Varias divergencias de la misma partida explican la MISMA diferencia de
-    contribuciones, y el motor le atribuye a cada una el monto entero
-    (`core.audit.engine`). Se agrupa por partida y se toma el mayor, que es
-    exactamente lo que hace `_total` dentro del motor.
+    DOS CLASES DE MONTO, Y SE AGREGAN AL CONTRARIO (Persona 1, 5-oct)
+
+    Aquí había un `max()` a secas, y era correcto mientras el único importe
+    fuera el delta entero de la partida: una fracción mal y un valor mal
+    explican la MISMA diferencia, cada uno la lleva completa, y sumarlas
+    contaría el mismo dinero dos veces.
+
+    Desde que un IGI mal calculado y un IVA mal calculado llevan cada uno lo
+    suyo —son contribuciones distintas y se deben las dos— el `max()` se
+    quedaría con la mayor y perdería la otra. Por eso la fila dice ahora cómo
+    agregarse, en `impact_scope`:
+
+        LINEA_COMPLETA     se toma el mayor  (y NULL cuenta aquí: es lo que
+                           eran las filas anteriores a la columna)
+        UNA_CONTRIBUCION   se suman
+
+    y las dos clases se suman entre sí, porque son disjuntas y telescopan. La
+    demostración está en `core.audit.engine.POR_CONTRIBUCION`, que es donde
+    vive el criterio — esto es SQL y hace lo mismo, con un test que lo fija
+    contra el agregador de verdad en vez de contra una cadena escrita a mano.
 
     Los hallazgos sin partida —el del seed, por ejemplo— se agrupan por su
     propio id: no se pierden, y cada uno cuenta una vez.
@@ -214,7 +231,20 @@ def _por_partida() -> sa.Subquery:
         .order_by(ShadowReview.pedimento_id, ShadowReview.created_at.desc())
         .subquery()
     )
-    monto = sa.func.max(RiskFinding.impact_amount).label("monto")
+    es_contribucion = RiskFinding.impact_scope == ALCANCE_CONTRIBUCION
+    suma_contribuciones = sa.func.sum(
+        sa.case((es_contribucion, RiskFinding.impact_amount), else_=0)
+    )
+    mayor_de_linea = sa.func.max(sa.case((~es_contribucion, RiskFinding.impact_amount)))
+    # Si hay error de cálculo, ése ES el total de la partida. El delta de la
+    # fracción NO se le suma: mide el movimiento de todas las contribuciones a
+    # la vez y desde importes recalculados, así que sumarlo sobre-acusa. Mismo
+    # criterio que `core.audit.total_por_partida`, y hay un test que compara
+    # esta consulta contra esa función en vez de contra una cadena.
+    monto = sa.case(
+        (suma_contribuciones > 0, suma_contribuciones),
+        else_=sa.func.coalesce(mayor_de_linea, 0),
+    ).label("monto")
     return (
         sa.select(monto)
         .where(

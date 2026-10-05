@@ -1090,6 +1090,8 @@ export interface components {
             impact_amount?: string | null;
             /** Impact Amount Currency */
             impact_amount_currency?: string | null;
+            /** Impact Scope */
+            impact_scope?: string | null;
             /**
              * Is Simulation
              * @default false
@@ -2392,6 +2394,8 @@ export interface components {
             impact_amount?: string | null;
             /** Impact Amount Currency */
             impact_amount_currency?: string | null;
+            /** Impact Scope */
+            impact_scope?: string | null;
             /**
              * Is Simulation
              * @default false
