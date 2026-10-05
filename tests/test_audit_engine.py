@@ -294,7 +294,9 @@ def test_un_igi_mal_calculado_lleva_su_monto_sin_clasificar() -> None:
     """
     r = auditar(
         comparison=comparacion(
-            declarado={"igi_amount": Decimal("4822.95")},
+            # La MISMA fracción en los dos lados: sin disputa, la tasa contra
+            # la que se mide es la que la ley le asigna a ese código.
+            declarado={"fraction_code": "84713001", "igi_amount": Decimal("4822.95")},
             esperado={"igi_amount": Decimal("14468.85")},
         ),
         # SIN tasas: el motor fiscal no puede cuantificar nada aquí.
@@ -317,7 +319,11 @@ def test_el_igi_y_el_iva_mal_calculados_se_suman() -> None:
     """
     r = auditar(
         comparison=comparacion(
-            declarado={"igi_amount": Decimal("5000.00"), "vat_amount": Decimal("17000.00")},
+            declarado={
+                "fraction_code": "84713001",
+                "igi_amount": Decimal("5000.00"),
+                "vat_amount": Decimal("17000.00"),
+            },
             esperado={"igi_amount": Decimal("15000.00"), "vat_amount": Decimal("18528.00")},
         ),
         transaction_value=None,
@@ -328,25 +334,21 @@ def test_el_igi_y_el_iva_mal_calculados_se_suman() -> None:
     assert r.total_exposure == Decimal("11528.00"), "10,000 de IGI + 1,528 de IVA"
 
 
-def test_el_error_de_calculo_no_se_suma_al_delta_de_la_fraccion() -> None:
-    """EL TEST QUE CORRIGIÓ LA DECISIÓN ANTES DE QUE SE MERGEARA.
+def test_las_dos_clases_de_monto_no_coinciden_nunca_en_una_partida() -> None:
+    """Y por eso la pregunta de «¿se suman?» ya no se puede dar.
 
-    Parecía que las dos piezas telescopaban y que el total era su suma. Lo
-    hacen, pero sólo contribución por contribución: el delta de la fracción
-    mide el movimiento de TODAS a la vez y lo mide desde importes
-    RECALCULADOS, no desde los escritos.
+    Se intentó sumarlas. Parecía que telescopaban —y telescopan, pero sólo
+    contribución por contribución—: con valor 100 000, tasa declarada 0.05,
+    correcta 0.15, IGI escrito 1 000 e IVA escrito 18 528, la suma daba 15 600
+    donde se debían 13 872.
 
-    Aquí: valor 100 000, tasa declarada 0.05, correcta 0.15, IGI escrito 1 000
-    e IVA escrito 18 528. Sumar daba **15 600**; lo que se debe son **13 872**,
-    porque el delta de la fracción ya trae el arrastre del IVA (16 800 a
-    18 400) medido contra un IVA que nadie escribió, y el escrito estaba 128
-    por encima.
-
-    Así que no se suman. La partida reporta su error de cálculo —exacto, sin
-    clasificar— y la fracción queda dicha aparte. Se reporta DE MENOS a
-    propósito: un importe que mezcla dos bases no se sostiene delante de una
-    autoridad.
+    La respuesta no fue elegir una precedencia: fue darse cuenta de que el
+    error de cálculo **no se puede afirmar** cuando una causa está abierta,
+    porque las tres causas atacan justamente las dos entradas con las que se
+    calcula. Así quedan mutuamente excluyentes por construcción.
     """
+    from core.audit import ALCANCE_CONTRIBUCION
+
     r = auditar(
         comparison=comparacion(
             declarado={"fraction_code": "84713099", "igi_amount": Decimal("1000.00")},
@@ -357,12 +359,12 @@ def test_el_error_de_calculo_no_se_suma_al_delta_de_la_fraccion() -> None:
         expected_rates=TASAS_ESPERADAS,
     )
 
-    assert r.total_exposure == Decimal("4000.00"), "el error de cálculo, exacto"
-    assert r.total_exposure != Decimal("15600.00"), "nunca la suma de las dos bases"
-    # Y la fracción sigue ahí, con su delta, para que se pueda decir que puede
-    # mover más: lo que no hace es entrar en el total.
-    fraccion = next(f for f in r.findings if f.divergence.kind is DivergenceType.FRACTION_MISMATCH)
-    assert fraccion.impact_amount == Decimal("11600.00")
+    alcances = {f.impact_scope for f in r.findings if f.impact_amount is not None}
+    assert ALCANCE_CONTRIBUCION not in alcances, (
+        "con la fracción abierta no se afirma ningún error de cálculo"
+    )
+    assert r.total_exposure == Decimal("11600.00"), "el delta de la fracción, que sí se sostiene"
+    assert r.total_exposure != Decimal("15600.00"), "nunca la suma de dos bases"
 
 
 def test_las_causas_siguen_sin_contarse_dos_veces() -> None:
@@ -425,7 +427,11 @@ def test_el_motor_escribe_importes_en_los_dos_tipos_por_contribucion() -> None:
 
     r = auditar(
         comparison=comparacion(
-            declarado={"igi_amount": Decimal("4822.95"), "vat_amount": Decimal("16328.58")},
+            declarado={
+                "fraction_code": "84713001",
+                "igi_amount": Decimal("4822.95"),
+                "vat_amount": Decimal("16328.58"),
+            },
             esperado={"igi_amount": Decimal("14468.85"), "vat_amount": Decimal("17871.92")},
         ),
         transaction_value=None,
@@ -488,3 +494,65 @@ def test_todo_lo_que_el_hallazgo_mapea_llega_a_la_tabla() -> None:
     assert perdidos == [], (
         f"el hallazgo mapea {perdidos} y `save_review` no los pasa: se calculan y se tiran"
     )
+
+
+def test_no_se_afirma_un_error_de_calculo_sobre_una_fraccion_en_disputa() -> None:
+    """LO QUE LA VALIDACIÓN CONTRA LA BASE DESTAPÓ, Y ES EL PEOR CASO.
+
+    El error de cálculo se mide contra la tasa de la fracción DECLARADA. Si el
+    sistema dice que esa fracción está mal, la base del cálculo está en disputa
+    y el número no se sostiene.
+
+    Línea 9 del pedimento 600002 del corpus:
+
+        IGI       -20 952.72
+        IVA        -3 352.44
+        fracción  +24 305.14
+
+    Ese importador escribió el dinero correcto bajo un código equivocado. Sin
+    esta puerta, la consola le decía «puedes recuperar 24 305» — y no puede
+    recuperar nada.
+
+    Reportar de menos es el lado prudente del error. Prometer una devolución
+    que no existe es el otro, y es peor: el primero se corrige con una revisión
+    y el segundo se cobra.
+    """
+    r = auditar(
+        comparison=comparacion(
+            declarado={"fraction_code": "84713099", "igi_amount": Decimal("25000.00")},
+            esperado={"igi_amount": Decimal("5000.00")},
+        ),
+        transaction_value=VALOR,
+        declared_rates=TASAS_DECLARADAS,
+        expected_rates=TASAS_ESPERADAS,
+    )
+
+    igi = next(f for f in r.findings if f.divergence.kind is DivergenceType.IGI_RATE_MISMATCH)
+    assert igi.impact_amount is None, "la base contra la que se mediría está en disputa"
+    assert igi.impact_scope is None
+
+    # El hallazgo sigue existiendo —el IGI declarado no cuadra y eso es cierto—
+    # y el número que SÍ se puede dar es el de la fracción.
+    assert r.total_exposure == Decimal("11600.00"), "el delta de la fracción, que sí se sostiene"
+
+
+def test_sin_fraccion_en_disputa_el_error_de_calculo_si_se_afirma() -> None:
+    """La puerta no puede comerse el caso normal.
+
+    Si la fracción declarada no está en disputa, la tasa contra la que se mide
+    es la que la ley le asigna a ese código, y el error de cálculo es exacto.
+    """
+    r = auditar(
+        comparison=comparacion(
+            # La MISMA fracción en los dos lados: sin disputa, la tasa contra
+            # la que se mide es la que la ley le asigna a ese código.
+            declarado={"fraction_code": "84713001", "igi_amount": Decimal("4822.95")},
+            esperado={"igi_amount": Decimal("14468.85")},
+        ),
+        transaction_value=None,
+        declared_rates=None,
+        expected_rates=None,
+    )
+
+    igi = next(f for f in r.findings if f.divergence.kind is DivergenceType.IGI_RATE_MISMATCH)
+    assert igi.impact_amount == Decimal("9645.90")

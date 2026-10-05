@@ -155,6 +155,30 @@ def audit(
     # cuenta: no necesita `impacto`, porque sale de los dos importes que el
     # propio hallazgo trae.
     divisa = transaction_value.currency if transaction_value is not None else None
+    # NO SE AFIRMA UN ERROR DE CÁLCULO SOBRE UNA BASE EN DISPUTA
+    #
+    # El error de cálculo es `valor declarado × tasa de la fracción declarada -
+    # importe escrito`. Las tres divergencias cuantificables atacan justamente
+    # esas dos entradas: la fracción cambia la tasa, el valor cambia la base, y
+    # el origen puede cambiar la preferencia arancelaria. Si cualquiera de las
+    # tres está abierta, el número contra el que se mediría es el que el propio
+    # sistema acaba de poner en duda.
+    #
+    # Lo destapó la validación contra la base, en la línea 9 del pedimento
+    # 600002: IGI -20 952.72, IVA -3 352.44, fracción +24 305.14. Ese
+    # importador escribió el dinero correcto bajo un código equivocado, y la
+    # regla sin esta puerta le decía «puedes recuperar 24 305». No puede
+    # recuperar nada.
+    #
+    # Reportar de menos es el lado prudente del error; prometer una devolución
+    # que no existe es el otro, y es peor: el primero se corrige en una
+    # revisión y el segundo se cobra.
+    #
+    # Efecto de paso: las dos clases de monto quedan mutuamente excluyentes por
+    # construcción, así que la pregunta de «¿se suman?» ya no se puede dar. La
+    # precedencia de `total_por_partida` se queda igual, porque las filas
+    # anteriores a esto sí pueden traer las dos.
+    base_en_disputa = any(d.kind in CUANTIFICABLES for d in comparison.divergences)
     hallazgos = [
         _a_hallazgo(
             d,
@@ -163,6 +187,7 @@ def audit(
             supuestos=supuestos,
             is_simulation=is_simulation,
             divisa_de_la_partida=divisa,
+            base_en_disputa=base_en_disputa,
         )
         for d in comparison.divergences
     ]
@@ -210,6 +235,7 @@ def _a_hallazgo(
     supuestos: Sequence[str],
     is_simulation: bool,
     divisa_de_la_partida: str | None = None,
+    base_en_disputa: bool = False,
 ) -> Finding:
     """Convierte una divergencia en hallazgo, con su impacto si lo tiene."""
     monto: Decimal | None = None
@@ -217,10 +243,14 @@ def _a_hallazgo(
     direccion: str | None = None
     alcance: str | None = None
 
-    if divergencia.kind in POR_CONTRIBUCION:
+    if divergencia.kind in POR_CONTRIBUCION and not base_en_disputa:
         # Este monto NO sale del motor fiscal: sale de los dos importes que el
         # hallazgo ya trae. Por eso existe aunque no haya tasas esperadas, que
         # es el caso de 3 de cada 4 partidas del corpus.
+        #
+        # Y no se calcula cuando la base está en disputa: la tasa y el valor
+        # contra los que se mediría son los que el sistema acaba de poner en
+        # duda.
         monto = _error_de_calculo(divergencia)
         if monto is not None:
             divisa = divisa_de_la_partida

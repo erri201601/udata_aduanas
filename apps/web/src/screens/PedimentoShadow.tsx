@@ -151,6 +151,11 @@ function Comprobado({ hechas, posibles }: { hechas: string[]; posibles: string[]
   )
 }
 
+/** ¿Es de los tipos cuyo monto es un error de cálculo de una contribución? */
+function esDeCalculo(tipo: string): boolean {
+  return tipo === 'IGI_RATE_MISMATCH' || tipo === 'VAT_MISMATCH'
+}
+
 function Partida({ linea, posibles }: { linea: LineaEspejo; posibles: string[] }) {
   return (
     <li className={`espejo-linea espejo-linea--${linea.estado.toLowerCase()}`}>
@@ -218,6 +223,14 @@ function Partida({ linea, posibles }: { linea: LineaEspejo; posibles: string[] }
                           del motor, así que no es una deuda cierta todavía.
                         </>
                       )
+                    ) : esDeCalculo(d.finding_type) ? (
+                      /* Y aquí la razón importa: no es que no se pudiera
+                         calcular, es que la base del cálculo está en duda. */
+                      <em>
+                        Sin monto porque la base está en duda: este importe se mediría
+                        contra la tasa y el valor que el sistema cuestiona en esta misma
+                        partida. Ponerle precio prometería una cifra que no se sostiene.
+                      </em>
                     ) : (
                       <em>
                         Sin monto. Se puede investigar, no presentar — y no por eso es menos

@@ -72,9 +72,13 @@ distintas** y se deben las dos; deduplicarlas perdería una.
 `NULL` = `LINEA_COMPLETA`, que es lo que eran las filas anteriores: el único
 tipo que llegaba a llevar monto era la fracción.
 
-### 2. Las dos clases NO se suman entre sí
+### 2. El error de cálculo no se afirma si la base está en disputa
 
-**Esto se intentó, se escribió, y un test lo tumbó antes de mergearse.**
+**Aquí se equivocó dos veces y las dos las cazó una comprobación.** Vale la
+pena dejarlas escritas, porque el razonamiento intermedio parecía sólido.
+
+#### Intento 1 — sumar las dos clases. Lo tumbó un test.
+
 Parecía que telescopaban:
 
 ```
@@ -84,29 +88,57 @@ movimiento de tasa = valor × tasa_correcta  − valor × tasa_declarada
 suma               = valor × tasa_correcta  − IGI_escrito
 ```
 
-Y telescopan — **pero sólo contribución por contribución**. El delta de la
+Telescopan — **pero sólo contribución por contribución**. El delta de la
 fracción no mide una contribución: mide el movimiento de **todas a la vez**, y
 lo mide desde los importes **recalculados**, no desde los escritos.
 
-El caso: valor 100 000, tasa declarada 0.05, correcta 0.15, IGI escrito 1 000,
-IVA escrito 18 528.
+Con valor 100 000, tasa declarada 0.05, correcta 0.15, IGI escrito 1 000 e IVA
+escrito 18 528:
 
 ```
 suma de las dos clases .... 15 600
 lo que realmente se debe .. 13 872
 ```
 
-Porque el delta de la fracción ya trae dentro el arrastre del IVA
-(16 800 → 18 400) medido contra un IVA que nadie escribió, y el IVA escrito
-estaba 128 por encima.
+El delta de la fracción ya traía dentro el arrastre del IVA (16 800 → 18 400)
+medido contra un IVA que nadie escribió, y el escrito estaba 128 por encima.
 
-**Así que manda el error de cálculo cuando lo hay**, y el delta de la fracción
-sólo cuando no lo hay. La fracción sigue llevando su monto y se dice aparte,
-como lo que puede mover todavía más.
+#### Intento 2 — dar precedencia al error de cálculo. Lo tumbó la base real.
 
-Se reporta **de menos** a propósito. «Tu IGI está mal calculado por 9 645.90, y
-además tu fracción podría estar mal» se sostiene delante de una autoridad; un
-número mayor que mezcla dos bases no.
+Si no se suman, parecía razonable que mandara el exacto. La validación contra
+la base dijo lo contrario. **Línea 9 del pedimento 600002:**
+
+```
+IGI       −20 952.72
+IVA        −3 352.44
+fracción  +24 305.14
+          ─────────────
+regla:    −24 305.16  de «sobrepago»
+```
+
+Ese importador **escribió el dinero correcto bajo un código equivocado**. La
+regla le decía «puedes recuperar 24 305 pesos» y no puede recuperar nada.
+
+Y eso es peor que reportar de menos. Un número corto se corrige en una
+revisión; una devolución prometida se cobra.
+
+#### La decisión
+
+**El error de cálculo no se afirma cuando alguna causa está abierta.**
+
+Es `valor declarado × tasa de la fracción declarada − importe escrito`, y las
+tres divergencias cuantificables atacan justamente esas dos entradas: la
+fracción cambia la tasa, el valor cambia la base, el origen puede cambiar la
+preferencia. Si cualquiera está en duda, el número contra el que se mediría es
+el que el propio sistema acaba de poner en duda.
+
+Efecto de paso: las dos clases quedan **mutuamente excluyentes por
+construcción**, así que la pregunta «¿se suman?» ya no se puede dar. La
+precedencia de `total_por_partida` se mantiene de todas formas, porque las
+filas anteriores a esto sí pueden traer las dos.
+
+Lo que se reporta en esa partida es el delta de la fracción, etiquetado como lo
+que es: «se movería 24 305.14 si esto se corrigiera».
 
 ### 3. Una sola función agrega
 
@@ -133,13 +165,16 @@ importe de IVA— y que hasta hoy no se podían presentar como dinero.
 
 ### Lo que NO se arregla, y es la frontera de esta decisión
 
-En una partida donde la fracción está mal **y** el IGI mal calculado, el número
-que se reporta es el error de cálculo, que es menor que lo que realmente se
-debe. Para dar el número completo haría falta que
-`_fiscal_esperado` usara la tasa de la fracción **esperada** cuando el motor la
-sostenga — y entonces `IGI_RATE_MISMATCH` dejaría de significar «miscalculaste»
-para significar «miscalculaste o clasificaste mal», que son dos acusaciones
-distintas contra un agente aduanal.
+En una partida donde la fracción está mal, el dinero que se reporta es el delta
+de la fracción —condicionado— y el error de cálculo no se reporta en absoluto.
+Si además el importe escrito está mal, ese error queda sin cuantificar.
+
+Para darlo haría falta que `_fiscal_esperado` usara la tasa de la fracción
+**esperada** cuando el motor la sostenga. Pero entonces `IGI_RATE_MISMATCH`
+dejaría de significar «miscalculaste» para significar «miscalculaste o
+clasificaste mal», que son dos acusaciones distintas contra un agente aduanal,
+y el hallazgo perdería la propiedad que lo hace valioso: ser exacto sin
+depender de clasificar.
 
 Eso es otra decisión y no se toma aquí. Hoy afecta a 9 de 60 partidas con
 hallazgos.
