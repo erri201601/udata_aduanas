@@ -26,8 +26,7 @@ import {
 import type { PrecisionClasificacion } from '../api/client'
 
 interface PreguntaRGI {
-  atributo: string
-  valor_declarado: string
+  mercancia: string
   codigo: string
   exige: string
   texto: string
@@ -354,13 +353,16 @@ export function Classification({ decisionInicial = null }: Props = {}) {
                         <strong>Para desatascarlo basta con responder esto:</strong>
                         <ul>
                           {paso.preguntas.map((q) => (
-                            <li key={`${q.codigo}-${q.atributo}`}>
+                            <li key={`${q.codigo}-${q.exige}`}>
                               <p className="pregunta-desempate__texto">{q.texto}</p>
                               <p className="pregunta-desempate__caras">
-                                <span>
-                                  la ficha dice <code>{q.atributo}</code> ={' '}
-                                  <strong>{q.valor_declarado}</strong>
-                                </span>
+                                {/* La ficha ENTERA y no un atributo elegido a
+                                    dedo: el emparejado automático producía
+                                    preguntas sin sentido —«¿es "caja 12
+                                    unidades" lo mismo que "Lana de hierro o
+                                    acero"?»— y quien contesta hace ese
+                                    emparejado bien y en un segundo. */}
+                                <span>la ficha dice {q.mercancia}</span>
                                 <span>
                                   la <code>{q.codigo}</code> exige{' '}
                                   <strong>{q.exige}</strong>

@@ -29,8 +29,7 @@ import sqlalchemy as sa
 _PENDIENTES = sa.text(
     """
     SELECT p.sku,
-           q->>'atributo'        AS atributo,
-           q->>'valor_declarado' AS dice_la_ficha,
+           q->>'mercancia'       AS dice_la_ficha,
            q->>'exige'           AS exige_la_tarifa,
            q->>'codigo'          AS posicion,
            q->>'texto'           AS pregunta
@@ -75,26 +74,38 @@ def main(argv: list[str] | None = None) -> int:
         sesion.close()
         motor.dispose()
 
-    # Agrupadas por la PAREJA, no por caso: la misma pregunta en veinte
+    # Agrupadas por LO QUE EXIGE LA TARIFA, no por caso ni por pareja.
+    #
+    # Antes se agrupaba por (término de la ficha, término de la tarifa), cuando
+    # la pregunta elegía un atributo de la ficha a dedo. Ese emparejado se
+    # quitó porque producía preguntas sin sentido —«¿es "caja 12 unidades" lo
+    # mismo que "Lana de hierro o acero"?»—, así que la clave es la cláusula
+    # legal: es lo que de verdad bloquea, y la misma cláusula en veinte
     # productos es una pregunta, no veinte.
-    por_pareja: dict[tuple[str, str], list[str]] = defaultdict(list)
-    posicion: dict[tuple[str, str], str] = {}
+    por_clausula: dict[tuple[str, str], list[str]] = defaultdict(list)
+    fichas: dict[tuple[str, str], set[str]] = defaultdict(set)
     for f in filas:
-        clave = (f.dice_la_ficha, f.exige_la_tarifa)
-        por_pareja[clave].append(f.sku)
-        posicion[clave] = f.posicion
+        clave = (f.posicion, f.exige_la_tarifa)
+        por_clausula[clave].append(f.sku)
+        if f.dice_la_ficha:
+            fichas[clave].add(f.dice_la_ficha)
 
-    if not por_pareja:
+    if not por_clausula:
         print("No hay preguntas pendientes.")
         return 0
 
-    print(f"{len(por_pareja)} preguntas desatascarían {len(filas)} casos.\n")
+    print(f"{len(por_clausula)} preguntas desatascarían {len(filas)} casos.\n")
     print("Ordenadas por cuánto rinde cada una.\n")
-    for (ficha, tarifa), skus in sorted(por_pareja.items(), key=lambda x: -len(x[1])):
-        print(f"── {len(skus)} caso(s) · posición {posicion[(ficha, tarifa)]}")
-        print(f"   La ficha dice: «{ficha}»")
+    for (posicion, tarifa), skus in sorted(por_clausula.items(), key=lambda x: -len(x[1])):
+        clave = (posicion, tarifa)
+        print(f"── {len(skus)} caso(s) · posición {posicion}")
         print(f"   La tarifa exige: «{tarifa}»")
-        print("   ¿Son lo mismo?   [sí / no]")
+        # Las fichas que caen aquí. Si son varias distintas, se enseñan: la
+        # respuesta puede no ser la misma para todas, y quien contesta tiene
+        # que poder verlo.
+        for ficha in sorted(fichas[clave])[:3]:
+            print(f"   La ficha dice:   {ficha}")
+        print("   ¿La cumple?   [sí / no]")
         print(f"   ejemplos: {', '.join(sorted(set(skus))[:4])}")
         print()
     return 0
