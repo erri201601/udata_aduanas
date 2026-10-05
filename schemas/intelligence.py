@@ -280,6 +280,11 @@ class OpportunityFindingBase(DataOriginFields, AIDecisionFields, SyntheticFields
     rationale: str | None = None
     estimated_saving_amount: Decimal | None = None
     estimated_saving_amount_currency: str | None = None
+    # §23: un ahorro POTENTIAL ya se presenta como potencial. Esto dice algo
+    # distinto y que faltaba — si sale de una operación inventada. Un ahorro
+    # simulado sin esta marca es la regla 4 al revés: SYNTHETIC presentado
+    # como real, y en el campo que alguien querría cobrar.
+    is_simulation: bool = False
     legal_rule_ids: list[uuid.UUID] = Field(default_factory=list)
     evidence_id: uuid.UUID | None = None
 

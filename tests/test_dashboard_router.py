@@ -47,6 +47,18 @@ class SesionFalsa:
         self.sql.append(str(sentencia))
         return iter(self._v.get("severidades", ()))
 
+    def scalars(self, sentencia: Any) -> Any:
+        """Las monedas presentes, que son un conjunto y no un escalar.
+
+        No se responde por turno como `scalar`: el tablero sólo suma cuando hay
+        UNA moneda, así que el número de llamadas a `scalar` depende de lo que
+        devuelva esto. Encadenar los dos contadores haría que configurar una
+        mezcla de monedas corriera el resto de las respuestas.
+        """
+        self.sql.append(str(sentencia))
+        clave = "monedas_ahorro" if "opportunity_findings" in str(sentencia) else "monedas"
+        return iter(self._v.get(clave, ()))
+
 
 def _cliente(**valores: Any) -> TestClient:
     app = create_app()
@@ -224,3 +236,80 @@ def test_la_peor_severidad_tambien_sale_de_la_vigente() -> None:
 
     severidad = [q for q in sesion.sql if "severity" in q and "count(" not in q.lower()]
     assert severidad and all("shadow_reviews" in q for q in severidad)
+
+
+# ── Dos monedas no se suman (Persona 1, 5-oct) ─────────────────────────────
+
+
+def test_con_dos_monedas_no_hay_total_de_impacto() -> None:
+    """El Espejo ya aplicaba esta disciplina y el tablero no.
+
+    Sumaba a ciegas y etiquetaba el resultado con la PRIMERA moneda que
+    encontraba: un número que parece dinero, no lo es, y encima afirma de qué
+    moneda es.
+    """
+    with _cliente(monedas=("MXN", "USD")) as c:
+        h = c.get("/dashboard").json()["hallazgos"]
+
+    assert h["monedas_mezcladas"] is True
+    assert h["impacto_cuantificado"] is None, "con dos monedas no hay total"
+    assert h["impacto_moneda"] is None, "ni divisa que ponerle"
+
+
+def test_con_una_sola_moneda_si_hay_total_de_impacto() -> None:
+    """La cautela no puede comerse el caso normal."""
+    with _cliente(monedas=("MXN",)) as c:
+        h = c.get("/dashboard").json()["hallazgos"]
+
+    assert h["monedas_mezcladas"] is False
+    assert h["impacto_moneda"] == "MXN"
+
+
+def test_con_dos_monedas_no_hay_total_de_ahorro() -> None:
+    """Mismo criterio en el ahorro, que es el número que alguien querría cobrar."""
+    with _cliente(monedas_ahorro=("MXN", "USD")) as c:
+        o = c.get("/dashboard").json()["oportunidades"]
+
+    assert o["monedas_mezcladas"] is True
+    assert o["ahorro_cuantificado"] is None
+    assert o["ahorro_moneda"] is None
+
+
+# ── El ahorro simulado se declara (Persona 1, 5-oct) ───────────────────────
+
+
+def test_las_oportunidades_entran_en_el_censo_de_simuladas() -> None:
+    """Un ahorro simulado tiene que contar para `todo_simulado`.
+
+    Mientras no contaba, bastaba cargar un producto real para que el aviso de
+    simulación desapareciera y el dinero inventado se quedara en pantalla sin
+    marca ninguna. Es el dato de la consola que alguien querría cobrar.
+    """
+    sesion = SesionFalsa()
+    app = create_app()
+    app.dependency_overrides[get_session] = lambda: sesion
+    with TestClient(app) as c:
+        d = c.get("/dashboard").json()
+
+    assert "simuladas" in d["oportunidades"], "la cifra tiene que viajar a la consola"
+    censo = [
+        q
+        for q in sesion.sql
+        if "count(" in q.lower() and "opportunity_findings" in q and "is_simulation" in q
+    ]
+    assert censo, "las oportunidades simuladas no se cuentan"
+
+
+def test_una_oportunidad_puede_decir_si_es_simulacion() -> None:
+    """La columna faltaba y el repositorio se la pasaba igual.
+
+    `POST /pedimentos/{id}/review` reventaba con un 500 en cuanto un pedimento
+    producía una oportunidad —uno de dieciséis del corpus, por eso llevaba
+    meses escondido—. El 500 era el síntoma; el defecto era que un ahorro no
+    podía decir si sale de una operación inventada.
+    """
+    from database.models import OpportunityFinding
+
+    assert "is_simulation" in {c.name for c in OpportunityFinding.__table__.columns}
+    columna = OpportunityFinding.__table__.c.is_simulation
+    assert not columna.nullable, "igual que en RiskFinding: o es simulación o no lo es"

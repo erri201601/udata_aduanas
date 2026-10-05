@@ -324,6 +324,17 @@ _COMPROBACIONES: Final[tuple[tuple[str, str], ...]] = (
 )
 
 
+def comprobaciones_posibles() -> tuple[str, ...]:
+    """Las comprobaciones que el Espejo sabe hacer, en orden.
+
+    Existe para que el denominador no se escriba a mano en ningún otro sitio.
+    «9 de 10» sólo significa algo si el 10 sale de la misma lista que el 9: con
+    el total copiado en la pantalla, añadir una comprobación aquí dejaría a la
+    consola diciendo «10 de 10» sobre una partida a la que le falta una.
+    """
+    return tuple(nombre for nombre, _ in _COMPROBACIONES)
+
+
 def comprobaciones_hechas(expected: ExpectedItem) -> tuple[str, ...]:
     """Qué se pudo comprobar de esta partida.
 

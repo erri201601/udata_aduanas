@@ -244,10 +244,25 @@ export function ExecutiveDashboard() {
 
             <Tarjeta
               titulo="Impacto"
-              pie="Sólo lo que tiene monto. Lo demás no se estima: un hallazgo sin importe no es menos grave, es que no se puede presentar como dinero."
+              pie={
+                /* El sobrepago no entra en el total y tiene que decirse aquí:
+                   un hallazgo con importe que desaparece de la cifra sin
+                   explicación es peor que uno declarado fuera de ella. */
+                datos.hallazgos.sobrepagos > 0
+                  ? `Sólo lo que se debe. ${datos.hallazgos.sobrepagos} ${datos.hallazgos.sobrepagos === 1 ? 'hallazgo es un sobrepago y queda' : 'hallazgos son sobrepagos y quedan'} fuera de esta cifra: restarlo daría un neto que no se puede presentar ni como adeudo ni como recuperable. Ese dinero está en Oportunidad.`
+                  : 'Sólo lo que tiene monto. Lo demás no se estima: un hallazgo sin importe no es menos grave, es que no se puede presentar como dinero.'
+              }
             >
               <div className="kpis kpis--interno">
-                <Kpi valor={impacto ?? '—'} etiqueta="Cuantificado" />
+                <Kpi
+                  valor={datos.hallazgos.monedas_mezcladas ? '—' : (impacto ?? '—')}
+                  etiqueta="Cuantificado"
+                  nota={
+                    datos.hallazgos.monedas_mezcladas
+                      ? 'Hay montos en varias monedas: no se suman.'
+                      : undefined
+                  }
+                />
                 <Kpi
                   valor={datos.hallazgos.solo_investigables}
                   etiqueta="Sin monto"
@@ -257,17 +272,35 @@ export function ExecutiveDashboard() {
             </Tarjeta>
 
             {datos.oportunidades.total > 0 && (
-              <Tarjeta titulo="Oportunidad">
+              <Tarjeta
+                titulo="Oportunidad"
+                pie={
+                  /* El ahorro es el único número de esta pantalla que alguien
+                     querría cobrar. Si sale de un pedimento inventado hay que
+                     decirlo aquí, pegado a la cifra, y no fiarlo al aviso de
+                     arriba — que desaparece en cuanto se carga un dato real. */
+                  datos.oportunidades.simuladas > 0
+                    ? `${datos.oportunidades.simuladas} de las ${datos.oportunidades.total} salen de un pedimento simulado: ese dinero no se puede cobrar, el mecanismo que lo encuentra sí es el real.`
+                    : 'POTENTIAL, no garantizado: hay que sostenerlo ante la autoridad.'
+                }
+              >
                 <div className="kpis kpis--interno">
                   <Kpi valor={datos.oportunidades.total} etiqueta="Oportunidades" tono="bien" />
                   <Kpi
                     valor={
-                      formatearMonto(
-                        datos.oportunidades.ahorro_cuantificado,
-                        datos.oportunidades.ahorro_moneda,
-                      ) ?? '—'
+                      datos.oportunidades.monedas_mezcladas
+                        ? '—'
+                        : (formatearMonto(
+                            datos.oportunidades.ahorro_cuantificado,
+                            datos.oportunidades.ahorro_moneda,
+                          ) ?? '—')
                     }
                     etiqueta="Ahorro cuantificado"
+                    nota={
+                      datos.oportunidades.monedas_mezcladas
+                        ? 'Hay montos en varias monedas: no se suman.'
+                        : undefined
+                    }
                     tono="bien"
                   />
                 </div>
