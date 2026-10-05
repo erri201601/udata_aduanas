@@ -10,9 +10,10 @@ dictámenes humanos —trece casos— y hasta el 30-sep contaba como FALLO las
 veces que el motor se abstuvo, lo que daba un 0.00 % que no significaba lo que
 parecía.
 
-Aquí se mide contra otra verdad, y es mucho mayor: **las 126 partidas limpias
-del corpus**. Una partida sin anomalía sembrada tiene su fracción declarada
-correcta por construcción — ésa es la respuesta, y el motor no la ve.
+Aquí se mide contra otra verdad, y es mucho mayor: **todas las partidas cuya
+fracción declarada es correcta por construcción** — las limpias y también las
+sucias cuya anomalía no toca la fracción. Ésa es la respuesta, y el motor no la
+ve.
 
 LAS TRES CIFRAS, Y NO SE MEZCLAN
 
@@ -26,10 +27,41 @@ habla?»— y un solo porcentaje las confunde. Un motor que contesta dos veces y
 acierta las dos tiene 100 % de precisión y 1,6 % de cobertura, y decir sólo lo
 primero sería presumir de nada.
 
-NO SE MIDEN LAS PARTIDAS SUCIAS
+NO SE MIDEN LAS QUE TIENEN LA FRACCIÓN MUTADA — Y SÓLO ÉSAS
 
-Una partida con anomalía sembrada tiene la fracción declarada MAL a propósito.
-Compararse contra ella mediría al revés. De ésas se ocupa `deteccion_26`.
+Hasta el 5-oct se excluía cualquier partida con anomalía sembrada, sobre esta
+premisa escrita aquí mismo: «una partida con anomalía sembrada tiene la
+fracción declarada MAL a propósito».
+
+**Es falsa.** De las siete clases de anomalía, sólo dos tocan la fracción:
+
+    WRONG_FRACTION            7     SÍ la toca
+    WRONG_NICO                6     SÍ
+    WRONG_VALUE              24     no
+    WRONG_UNIT                6     no
+    INCONSISTENT_QUANTITY     6     no
+    MISSING_TECHNICAL_FIELD   6     no
+    WRONG_ORIGIN              6     no
+
+En las otras cinco la fracción declarada sigue siendo correcta, y el motor se
+podía contrastar contra ella desde el principio. Eran **42 partidas** sin
+mirar: un tercio de lo medible, y `deteccion_26` no las cubría porque sólo
+pregunta «¿señalamos la anomalía?», no «¿es absurda la fracción que propones?».
+
+LO QUE EL PUNTO CIEGO TAPABA (César, 5-oct)
+
+Lo encontró un clasificador revisando a mano, no la medición:
+
+    PED_SIM_015-005  CABLE DE ACERO >=25.4 MM   motor 85442001, declarada 73121099
+    PED_SIM_010-005  CABLE DE ACERO 12.7-25.4   motor 85442001, declarada 73121099
+
+8544 son cables ELÉCTRICOS aislados y coaxiales. Las dos partidas llevan
+sembrado un `MISSING_TECHNICAL_FIELD`, así que la vieja consulta las excluía —y
+con ellas la respuesta más absurda que el motor había dado en todo el corpus.
+
+Una métrica con un punto ciego es peor que no tenerla: da confianza sobre lo
+que no mira. «Precisión 100 %» era cierto y significaba menos de lo que
+parecía.
 """
 
 from __future__ import annotations
@@ -82,7 +114,7 @@ class Resultado:
         return (Decimal(self.contestadas) / Decimal(self.medibles) * 100).quantize(Decimal("0.01"))
 
 
-_LIMPIAS = sa.text(
+_CON_FRACCION_FIABLE = sa.text(
     """
     SELECT p.sku,
            i.declared_fraction_code AS declarada,
@@ -101,9 +133,24 @@ _LIMPIAS = sa.text(
     FROM operational.pedimento_items i
     JOIN operational.products p ON p.id = i.product_id
     WHERE i.declared_fraction_code IS NOT NULL
+      -- SÓLO LAS QUE TIENEN LA FRACCIÓN MUTADA, NO TODAS LAS SUCIAS
+      --
+      -- De las siete clases de anomalía sembrada, sólo dos tocan la fracción:
+      --
+      --     WRONG_FRACTION  7      SÍ toca la fracción
+      --     WRONG_NICO      6      SÍ
+      --     WRONG_VALUE    24      no
+      --     WRONG_UNIT      6      no
+      --     INCONSISTENT_QUANTITY 6  no
+      --     MISSING_TECHNICAL_FIELD 6  no
+      --     WRONG_ORIGIN    6      no
+      --
+      -- En las otras cinco la fracción declarada sigue siendo correcta por
+      -- construcción, así que se puede contrastar igual que en una limpia.
       AND NOT EXISTS (
         SELECT 1 FROM intelligence.ground_truth_records g
         WHERE g.pedimento_item_id = i.id
+          AND g.error_type IN ('WRONG_FRACTION', 'WRONG_NICO')
       )
     """
 )
@@ -112,7 +159,7 @@ _LIMPIAS = sa.text(
 def medir(sesion: sa.orm.Session) -> Resultado:
     """Compara lo propuesto con lo declarado, en las partidas limpias."""
     salida = Resultado()
-    for fila in sesion.execute(_LIMPIAS).all():
+    for fila in sesion.execute(_CON_FRACCION_FIABLE).all():
         if not fila.hubo_decision:
             salida.sin_decision += 1
         elif fila.propuesta is None:
@@ -129,8 +176,9 @@ def informe(r: Resultado) -> str:
     """El informe, con los límites declarados antes que los números."""
     lineas = [
         linea_de_procedencia(procedencia()),
-        "ÁMBITO  las 126 partidas LIMPIAS del corpus — su fracción declarada es",
-        "        correcta por construcción. Las sucias se miden en deteccion_26.",
+        "ÁMBITO  las partidas cuya fracción declarada es FIABLE: las limpias y",
+        "        las sucias cuya anomalía sembrada NO toca la fracción. Sólo se",
+        "        excluyen las de WRONG_FRACTION y WRONG_NICO, que son 13.",
         "",
         f"MEDIBLES  {r.medibles} partidas con decisión del motor",
         f"  sin clasificar nunca: {r.sin_decision} (no cuentan: nadie se lo pidió)",
