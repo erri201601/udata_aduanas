@@ -1832,3 +1832,128 @@ def test_solo_el_encabezado_decide_si_es_residual() -> None:
         group_text="Los demás:",
     )
     assert _cuelga_de_un_residual(con_grupo)
+
+
+# ── Una respuesta firmada también descarta subpartidas (César, 5-oct) ───────
+
+
+def _olla_de_aluminio(exclusiones: tuple[tuple[str, str], ...]) -> ClassificationContext:
+    return ClassificationContext(
+        description="ARTICULO PARA USO DOMESTICO; OLLA DE PRESIÓN DE ALUMINIO, 6 L",
+        operation_date=OPERACION,
+        facts=(
+            ProductFact(name="tipo", value="olla de presion", status="OBSERVED"),
+            ProductFact(name="uso", value="domestico/cocina", status="OBSERVED"),
+        ),
+        search_terms=("articulo", "domestico", "aluminio"),
+        exclusiones=exclusiones,
+    )
+
+
+def _catalogo_7615() -> CatalogoFalso:
+    """La partida 7615 y sus dos subpartidas, como están en la TIGIE."""
+    return CatalogoFalso(
+        headings=[
+            TariffCandidate(
+                code="7615",
+                text=("Artículos de uso doméstico, higiene o tocador, y sus partes, de aluminio."),
+                level="HEADING",
+                specificity=4,
+            )
+        ],
+        subheadings=[
+            TariffCandidate(
+                code="761510",
+                text="Artículos de uso doméstico y sus partes; esponjas, estropajos.",
+                level="SUBHEADING",
+                specificity=2,
+            ),
+            TariffCandidate(
+                code="761520",
+                text="Artículos de higiene o tocador, y sus partes.",
+                level="SUBHEADING",
+                specificity=2,
+            ),
+        ],
+        fractions=[
+            TariffCandidate(
+                code="76151002",
+                text="Artículos de uso doméstico y sus partes.",
+                level="FRACTION",
+                specificity=2,
+            )
+        ],
+    )
+
+
+def test_una_respuesta_firmada_descarta_una_subpartida() -> None:
+    """LA RESPUESTA DE SUBPARTIDA ERA INERTE, Y SE GUARDABA FIRMADA.
+
+    `_lo_aprendido_la_descarta` se aplicaba a las fracciones y a las partidas,
+    nunca a las subpartidas. César contestó el 5-oct que una olla de presión de
+    cocina NO es «Artículos de higiene o tocador» —lo que hace imposible la
+    761520 y deja sola a la 761510— y el motor siguió diciendo que las dos
+    comprenden la mercancía y ninguna es más específica, con su respuesta ya
+    guardada en la base.
+
+    Tercera vez que aparece el mismo patrón: un dato que se escribe en el
+    dominio y no se vuelve a leer.
+    """
+    traza = classify(
+        _olla_de_aluminio((("domestico/cocina", "Artículos de higiene o tocador"),)),
+        catalog=_catalogo_7615(),
+        notes=NotasFalsas(),
+    )
+
+    assert traza.final_status is RGIStatus.RESOLVED
+    assert traza.resolved_code == "76151002"
+
+
+def test_el_descarte_por_respuesta_firmada_se_enseña_en_la_traza() -> None:
+    """Un descarte que no se enseña es un candidato que desaparece.
+
+    Y tiene que decir que viene de una respuesta, no de un algoritmo: quien
+    audite ha de poder ver en qué se apoyó y quién lo firmó.
+    """
+    traza = classify(
+        _olla_de_aluminio((("domestico/cocina", "Artículos de higiene o tocador"),)),
+        catalog=_catalogo_7615(),
+        notes=NotasFalsas(),
+    )
+
+    razon = traza.steps[-1].reasoning_summary or ""
+    assert "761520" in razon
+    assert "respuesta firmada" in razon
+
+
+def test_sin_respuesta_la_olla_sigue_sin_resolverse() -> None:
+    """El contraste: lo que resuelve el caso es la respuesta, no el cambio.
+
+    Sin esta comprobación el test de arriba pasaría igual si la olla resolviera
+    por cualquier otro motivo, y no probaría nada de lo que dice probar.
+    """
+    traza = classify(
+        _olla_de_aluminio(()),
+        catalog=_catalogo_7615(),
+        notes=NotasFalsas(),
+    )
+
+    assert traza.final_status is RGIStatus.HUMAN_REVIEW_REQUIRED
+
+
+def test_con_varias_supervivientes_el_descarte_no_desempata() -> None:
+    """La regla que hace seguro descartar: sólo puede RESOLVER cuando queda una.
+
+    Si quedaran varias y se desempatara por `specificity` entre las
+    supervivientes, el motor convertiría una negativa honesta en una fracción
+    elegida con menos candidatas — que es lo que ya salió mal con el cable
+    6x19 en la RGI 3. Aquí la respuesta no descarta nada, quedan las dos, y la
+    negativa se mantiene.
+    """
+    traza = classify(
+        _olla_de_aluminio((("olla de presion", "Artículos de jardinería"),)),
+        catalog=_catalogo_7615(),
+        notes=NotasFalsas(),
+    )
+
+    assert traza.final_status is RGIStatus.HUMAN_REVIEW_REQUIRED

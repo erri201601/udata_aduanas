@@ -105,6 +105,7 @@ class RGI1:
         # 3 c) con la 3926 todavía en la lista.
         familia = _familia_de_la_mercancia(context)
         afirmado = _lo_que_la_ficha_afirma(context)
+        negado = _lo_que_la_ficha_niega(context)
         for c in encontrados:
             nota = notes.excludes(on_date=context.operation_date, heading=c.heading, terms=terminos)
             if nota:
@@ -127,7 +128,7 @@ class RGI1:
             # Es la misma función y el mismo criterio: si el texto legal niega
             # algo que la ficha afirma, esa posición es imposible. Que valga
             # para una fracción y no para su partida no tenía ninguna razón.
-            negacion = _contradice(c, afirmado)
+            negacion = _contradice(c, afirmado) or _la_ficha_la_niega(c, negado)
             if negacion:
                 excluidas.append(f"{c.code} descartada: {negacion}")
                 continue
@@ -321,6 +322,65 @@ class RGI3A:
                     f"La partida {c.code} («{c.text}») fija una condición medible que la "
                     f"mercancía cumple, y {', '.join(o.code for o in otras)} no. La RGI 3 a) "
                     f"la prefiere por describirla de forma más específica."
+                ),
+                source_ids=tuple(x.source_id for x in (c,) if x.source_id is not None),
+                confidence=_confianza(context),
+            )
+
+        # Después del umbral y antes de contar calificativos: LA QUE NOMBRA LA
+        # MATERIA DE LA MERCANCÍA.
+        #
+        # El peor resultado de todo el corpus salía de aquí (César, 5-oct):
+        #
+        #     ficha  «CABLE DE ACERO >=25.4 MM»
+        #     7312   «Cables, trenzas, eslingas…, DE HIERRO O ACERO, sin aislar
+        #             para electricidad.»
+        #     8544   «Hilos, cables… y demás conductores aislados para
+        #             electricidad…»
+        #
+        # El motor las declaraba «igual de específicas» y la RGI 3 c) elegía la
+        # última por numeración: **8544**, cables eléctricos coaxiales, para un
+        # cable de izado de acero. Tres productos del corpus acabaron ahí.
+        #
+        # Y la 7312 nombra la materia que la ficha declara mientras la 8544 no
+        # nombra ninguna. Nombrar la materia de la mercancía ES describirla de
+        # forma más específica, que es literalmente lo que pide la RGI 3 a).
+        #
+        # Sólo resuelve cuando UNA la nombra. Si la nombran varias o ninguna,
+        # no hay ventaja y se sigue al recuento de calificativos.
+        #
+        # Y NO PUEDE GANAR UNA CON UN UMBRAL SIN CONFIRMAR
+        #
+        # Dos guardas, y las dos las cazaron tests que ya existían:
+        #
+        #   ⌀200   la 7305 exige diámetro SUPERIOR a 406.4 mm y 200 no lo
+        #          cumple. Nombrar la materia no puede ganarle a incumplir una
+        #          condición explícita del texto legal.
+        #
+        #   sin ⌀  la 7305 tampoco puede ganar, porque elegirla AFIRMA que el
+        #          tubo supera 406.4 mm y la ficha no lo dice. El silencio de
+        #          la ficha no cumple ni incumple — y una posición se gana
+        #          cumpliendo, no por no poder comprobarse.
+        #
+        # Así que sólo compite la que no tiene condición medible, o la que
+        # tiene todas las suyas confirmadas.
+        nombran = [
+            c
+            for c in candidates
+            if _nombra_la_materia(c, context) and _umbral_confirmado(c, context)
+        ]
+        if len(nombran) == 1:
+            c = nombran[0]
+            otras = [o for o in candidates if o.code != c.code]
+            return RGIResult(
+                rule_id=self.rule_id,
+                status=RGIStatus.RESOLVED,
+                input_facts=hechos,
+                candidate_codes=(c,),
+                reasoning_summary=(
+                    f"La partida {c.code} («{c.text}») nombra la materia que declara la "
+                    f"ficha, y {', '.join(o.code for o in otras)} no nombra ninguna. La "
+                    f"RGI 3 a) la prefiere por describirla de forma más específica."
                 ),
                 source_ids=tuple(x.source_id for x in (c,) if x.source_id is not None),
                 confidence=_confianza(context),
@@ -648,6 +708,38 @@ class RGI6:
             else ""
         )
 
+        # Y las que hace imposibles una respuesta firmada.
+        #
+        # ESTO FALTABA Y DEJABA INERTES LAS RESPUESTAS DE SUBPARTIDA
+        #
+        # `_lo_aprendido_la_descarta` se aplicaba a las fracciones (más abajo) y
+        # a las partidas (en la RGI 1), nunca a las subpartidas. Así que una
+        # respuesta sobre una cláusula de subpartida se guardaba firmada y no
+        # cambiaba nada: tercera vez que aparece el mismo patrón —un dato que se
+        # escribe en el dominio y no se vuelve a leer— en esta misma función.
+        #
+        # Visto con la olla de presión de aluminio (César, 5-oct). Contestó que
+        # una olla de cocina NO es «Artículos de higiene o tocador», lo cual
+        # hace imposible la 761520 y deja sola a la 761510. El motor siguió
+        # diciendo «761510 y 761520 comprenden la mercancía y ninguna es más
+        # específica», con su respuesta guardada en la base.
+        #
+        # MISMA DISCIPLINA QUE EN LA RGI 3: descartar sólo puede RESOLVER
+        # cuando queda exactamente una. Con varias supervivientes se vuelve a
+        # la lista entera, porque desempatar por `specificity` entre los
+        # supervivientes es lo que convertiría una negativa honesta en una
+        # fracción equivocada.
+        aprendidos = {c.code: m for c in posibles if (m := _lo_aprendido_la_descarta(c, context))}
+        por_respuesta = (
+            "  Descartadas por respuesta firmada: "
+            + " · ".join(f"{c} ({m})" for c, m in aprendidos.items())
+            if aprendidos
+            else ""
+        )
+        sobreviven_a_lo_firmado = [c for c in posibles if c.code not in aprendidos]
+        if len(sobreviven_a_lo_firmado) == 1:
+            posibles = sobreviven_a_lo_firmado
+
         elegida = _unica_o_mas_especifica(posibles, mercancia=context.description, context=context)
         if elegida is None:
             return RGIResult(
@@ -661,7 +753,7 @@ class RGI6:
                 reasoning_summary=(
                     f"Varias subpartidas de {partida.heading} comprenden la mercancía "
                     f"({', '.join(s.code for s in subs)}) y ninguna es más específica. "
-                    f"El motor no elige entre ellas." + por_materia
+                    f"El motor no elige entre ellas." + por_materia + por_respuesta
                 ),
                 missing_information=("desempate de subpartida por un clasificador",),
                 # La pregunta concreta, si hay una corta que lo resuelva. No
@@ -697,7 +789,7 @@ class RGI6:
                 candidate_codes=(elegida,),
                 reasoning_summary=(
                     f"Subpartida {elegida.code} («{elegida.text}»). No hay fracciones "
-                    f"cargadas por debajo." + por_materia
+                    f"cargadas por debajo." + por_materia + por_respuesta
                 ),
                 source_ids=tuple(c.source_id for c in (elegida,) if c.source_id is not None),
                 confidence=_confianza(context),
@@ -722,10 +814,15 @@ class RGI6:
         # niega, que es la respuesta correcta. Una mejora que convierte una
         # negativa honesta en una fracción equivocada no es una mejora.
         afirmado = _lo_que_la_ficha_afirma(context)
+        negado = _lo_que_la_ficha_niega(context)
         descartes = {
             c.code: m
             for c in fracciones
-            if (m := _contradice(c, afirmado) or _lo_aprendido_la_descarta(c, context))
+            if (
+                m := _contradice(c, afirmado)
+                or _la_ficha_la_niega(c, negado)
+                or _lo_aprendido_la_descarta(c, context)
+            )
         }
         vivas = [c for c in fracciones if c.code not in descartes]
         # El motivo viene ya escrito de donde salga —negación del texto o
@@ -755,6 +852,7 @@ class RGI6:
                         else ""
                     )
                     + por_materia
+                    + por_respuesta
                 ),
                 source_ids=tuple(
                     c.source_id for c in (partida, elegida, unica) if c.source_id is not None
@@ -793,7 +891,7 @@ class RGI6:
             candidate_codes=(fraccion,),
             reasoning_summary=(
                 f"Partida {partida.heading} → subpartida {elegida.code} → "
-                f"fracción {fraccion.code} («{fraccion.text}»)." + por_materia
+                f"fracción {fraccion.code} («{fraccion.text}»)." + por_materia + por_respuesta
             ),
             source_ids=tuple(
                 c.source_id for c in (partida, elegida, fraccion) if c.source_id is not None
@@ -929,10 +1027,69 @@ def _lo_que_la_ficha_afirma(context: ClassificationContext) -> set[str]:
     documentos, y leerlos sólo en uno hacía que el acuerdo pareciera
     contradicción.
     """
+    negadas = {r for raices in _lo_que_la_ficha_niega(context).values() for r in raices}
+    todo = " ".join([context.description, *(f.value or "" for f in context.known_facts())])
+    return _raices(todo) - negadas
+
+
+def _lo_que_la_ficha_niega(context: ClassificationContext) -> dict[str, set[str]]:
+    """Palabra que la ficha niega → sus raíces. «NO PORCELANA» → porcelana.
+
+    Se devuelve la palabra y no sólo la raíz porque el motivo del descarte se
+    cita en la traza, y «la ficha dice "no porcel"» no es una frase que alguien
+    pueda auditar.
+    """
     todo = " ".join([context.description, *(f.value or "" for f in context.known_facts())])
     plano = _plano(todo)
-    negadas = {raiz for palabra in _FICHA_NIEGA.findall(plano) for raiz in _raices(str(palabra))}
-    return _raices(todo) - negadas
+    return {str(palabra): _raices(str(palabra)) for palabra in _FICHA_NIEGA.findall(plano)}
+
+
+def _lo_que_el_texto_afirma(candidata: TariffCandidate) -> set[str]:
+    """Las raíces que el texto legal AFIRMA, sin las que él mismo niega.
+
+    Las dos clases de negación del texto, porque las dos cuentan: «sin» y
+    «excepto». La 6912 dice «de cerámica, excepto porcelana» y NOMBRA la
+    palabra; sin descontar la excepción, la posición que explícitamente excluye
+    la porcelana pasaría por afirmarla.
+    """
+    plano = _plano(candidata.text)
+    negadas = {r for palabra in _NIEGA.findall(plano) for r in _raices(str(palabra))}
+    if (excluida := _lo_que_excepciona(candidata.text)) is not None:
+        negadas |= _raices(excluida)
+    return _raices(candidata.text) - negadas
+
+
+def _la_ficha_la_niega(candidata: TariffCandidate, negado: dict[str, set[str]]) -> str | None:
+    """La palabra por la que la FICHA hace imposible esta posición, o `None`.
+
+    EL ESPEJO QUE FALTABA, Y SON 14 VAJILLAS
+
+    `_contradice` mira las negaciones de la TARIFA contra lo que la ficha
+    afirma. La dirección contraria —la tarifa EXIGE lo que la ficha NIEGA— no
+    se miraba en ninguna parte:
+
+        ficha  «VAJILLA DE CERAMICA VIDRIADA, NO PORCELANA»
+        6911   «Vajilla y demás artículos de uso doméstico […] de porcelana.»
+
+    La ficha dice, con esas palabras, que no es de porcelana. La partida 6911
+    es de porcelana. No hay nada que interpretar y el motor resolvía ahí.
+
+    Es el mismo argumento de simetría que ya justificó leer las negaciones de
+    la ficha: «sin» y «no» niegan en los DOS documentos, y una negación que se
+    lee en un sentido y no en el otro deja medio mecanismo muerto.
+
+    Lo destapó la medición al activar los puentes de vocabulario: con «mesa»
+    llegando por fin a la consulta, la 6911 pasó a cubrir un término más que la
+    6912 y ganó. El puente no creó el defecto —estaba desde que existe
+    `_contradice`— sino que dejó de taparlo.
+    """
+    if not negado:
+        return None
+    afirma = _lo_que_el_texto_afirma(candidata)
+    for palabra, raices in negado.items():
+        if raices and raices & afirma:
+            return f"la ficha dice «no {palabra}» y el texto exige «{palabra}»"
+    return None
 
 
 def _contradice(candidata: TariffCandidate, afirmado: set[str]) -> str | None:
@@ -1196,6 +1353,37 @@ def _la_materia_de_una_hermana_descarta(
         return list(hermanas)
 
     return [c for c in hermanas if not nombradas[c.code] or (nombradas[c.code] & acepta)]
+
+
+def _umbral_confirmado(candidata: TariffCandidate, context: ClassificationContext) -> bool:
+    """¿O no tiene condición medible, o la ficha confirma todas las que tiene?
+
+    `_condiciones` no distingue «no tiene condición» de «la tiene y no se pudo
+    evaluar», y esa diferencia decide. Elegir una posición cuyo umbral no se ha
+    comprobado es afirmar que la mercancía lo cumple, y eso no lo dice nadie.
+    """
+    cuantas = len(_CONDICION.findall(_plano(candidata.text)))
+    if cuantas == 0:
+        return True
+    cumplidas, incumplidas = _condiciones(candidata, context)
+    return cumplidas == cuantas and not incumplidas
+
+
+def _nombra_la_materia(candidata: TariffCandidate, context: ClassificationContext) -> bool:
+    """¿El texto de esta posición nombra la materia que declara la ficha?
+
+    `_material_contradice` descarta la que nombra OTRA materia. Esto es la
+    mitad que faltaba: preferir la que nombra LA SUYA frente a una que no
+    nombra ninguna.
+
+    Se compara por término literal y no por familia: «de hierro o acero» para
+    un cable de acero, sin que «ferroso» arrastre a una posición de fundición.
+    """
+    ficha = _materias_declaradas(context)
+    if not ficha:
+        return False
+    acepta = frozenset().union(*(_MATERIAS[m] for m in ficha))
+    return bool(_materias_literales(candidata.text) & acepta)
 
 
 def _material_contradice(candidata: TariffCandidate, familia: str | None) -> str | None:
