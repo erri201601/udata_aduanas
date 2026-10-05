@@ -145,6 +145,20 @@ class Oportunidades(BaseModel):
     ahorro_moneda: str | None = None
     monedas_mezcladas: bool = False
     """Mismo criterio que en los hallazgos: con dos monedas no hay total."""
+    sin_corrida: int = 0
+    """Oportunidades que no dicen de qué corrida del Espejo salieron.
+
+    No se cuentan en `total` ni en el ahorro, y por eso se declaran aquí: se
+    escribieron antes de que la tabla tuviera `shadow_review_id`, así que no se
+    les puede atribuir una corrida sin adivinar. Quedan fuera del estado
+    vigente de forma permanente —no van a recibir un id nunca— y las de la
+    corrida nueva las sustituyen en el total.
+
+    No es lo mismo que en `RiskFinding`, donde el nulo SÍ cuenta: allí
+    significa «anterior al registro de corridas», un hecho legítimo. Aquí
+    significa «se escribió sin la columna que la identifica».
+    """
+
     simuladas: int = 0
     """Cuántas de esas oportunidades salen de un pedimento simulado.
 
@@ -465,7 +479,31 @@ def tablero(session: SessionDep) -> Dashboard:
         .limit(1)
     )
 
-    con_ahorro = OpportunityFinding.estimated_saving_amount.isnot(None)
+    # SÓLO LAS DE LA CORRIDA VIGENTE (Persona 1, 5-oct)
+    #
+    # Sin esto, cada re-auditoría dejaba otra fila y el tablero las sumaba
+    # todas: el pedimento 600010 tenía la misma oportunidad SEIS veces y el
+    # ahorro contaba ese dinero seis veces —259 959.97 donde el sobrepago real
+    # del corpus son 27 538.49—. Es el dato que un cliente querría cobrar.
+    #
+    # El nulo NO pasa, al contrario que en `RiskFinding`: allí significa
+    # «anterior al registro de corridas» y aquí «se escribió sin la columna».
+    # Se declaran aparte en `sin_corrida` para que no desaparezcan calladas.
+    ultima_del_pedimento = (
+        sa.select(ShadowReview.id)
+        .where(ShadowReview.pedimento_id == OpportunityFinding.pedimento_id)
+        .order_by(ShadowReview.created_at.desc())
+        .limit(1)
+        .correlate(OpportunityFinding)
+        .scalar_subquery()
+    )
+    vigentes_oportunidad = OpportunityFinding.shadow_review_id == ultima_del_pedimento
+    oportunidades_sin_corrida = _contar(
+        session, OpportunityFinding, OpportunityFinding.shadow_review_id.is_(None)
+    )
+    con_ahorro = sa.and_(
+        vigentes_oportunidad, OpportunityFinding.estimated_saving_amount.isnot(None)
+    )
     monedas_ahorro = {
         m
         for m in session.scalars(
@@ -479,7 +517,11 @@ def tablero(session: SessionDep) -> Dashboard:
     ahorro = (
         None
         if mezcla_ahorro
-        else session.scalar(sa.select(sa.func.sum(OpportunityFinding.estimated_saving_amount)))
+        else session.scalar(
+            sa.select(sa.func.sum(OpportunityFinding.estimated_saving_amount)).where(
+                vigentes_oportunidad
+            )
+        )
     )
     ahorro_moneda = next(iter(monedas_ahorro)) if len(monedas_ahorro) == 1 else None
 
@@ -495,9 +537,12 @@ def tablero(session: SessionDep) -> Dashboard:
     # aviso desapareciera y el dinero inventado se quedara en pantalla sin
     # marca ninguna.
     oportunidades_simuladas = _contar(
-        session, OpportunityFinding, OpportunityFinding.is_simulation.is_(True)
+        session,
+        OpportunityFinding,
+        vigentes_oportunidad,
+        OpportunityFinding.is_simulation.is_(True),
     )
-    total_oportunidades = _contar(session, OpportunityFinding)
+    total_oportunidades = _contar(session, OpportunityFinding, vigentes_oportunidad)
     simuladas += oportunidades_simuladas
     contadas = (
         pedimentos
@@ -531,6 +576,7 @@ def tablero(session: SessionDep) -> Dashboard:
             ahorro_cuantificado=ahorro,
             ahorro_moneda=ahorro_moneda,
             monedas_mezcladas=mezcla_ahorro,
+            sin_corrida=oportunidades_sin_corrida,
             simuladas=oportunidades_simuladas,
         ),
         productos=_contar(session, Product),

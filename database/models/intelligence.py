@@ -400,6 +400,16 @@ class OpportunityFinding(
     product_id: Mapped[uuid.UUID | None] = mapped_column(
         sa.ForeignKey("operational.products.id", ondelete="SET NULL"), nullable=True
     )
+    #: De qué corrida del Espejo salió. Sin esto, cada re-auditoría dejaba otra
+    #: fila y el tablero las sumaba todas: el pedimento 600010 tenía la MISMA
+    #: oportunidad seis veces y el «ahorro cuantificado» contaba ese dinero
+    #: seis veces. Es el dato que un cliente querría cobrar.
+    #:
+    #: `RiskFinding` lo tiene desde el #100 y aquí faltaba. Séptima vez que el
+    #: tablero cuenta el histórico donde debía contar el estado vigente.
+    shadow_review_id: Mapped[uuid.UUID | None] = mapped_column(
+        sa.ForeignKey(f"{_SCHEMA}.shadow_reviews.id", ondelete="CASCADE"), nullable=True
+    )
     opportunity_type: Mapped[str] = mapped_column(sa.String(48), nullable=False)
     status: Mapped[str] = mapped_column(
         check_enum(OPPORTUNITY_STATUS, "opportunity_status"),

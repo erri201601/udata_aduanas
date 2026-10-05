@@ -109,6 +109,7 @@ def save_review(
             session.add(
                 OpportunityFinding(
                     pedimento_id=pedimento_id,
+                    shadow_review_id=corrida.id,
                     pedimento_item_id=ids.get(oportunidad.line_number)
                     if oportunidad.line_number is not None
                     else None,

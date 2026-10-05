@@ -279,9 +279,19 @@ export function ExecutiveDashboard() {
                      querría cobrar. Si sale de un pedimento inventado hay que
                      decirlo aquí, pegado a la cifra, y no fiarlo al aviso de
                      arriba — que desaparece en cuanto se carga un dato real. */
-                  datos.oportunidades.simuladas > 0
-                    ? `${datos.oportunidades.simuladas} de las ${datos.oportunidades.total} salen de un pedimento simulado: ese dinero no se puede cobrar, el mecanismo que lo encuentra sí es el real.`
-                    : 'POTENTIAL, no garantizado: hay que sostenerlo ante la autoridad.'
+                  [
+                    datos.oportunidades.simuladas > 0
+                      ? `${datos.oportunidades.simuladas} de las ${datos.oportunidades.total} salen de un pedimento simulado: ese dinero no se puede cobrar, el mecanismo que lo encuentra sí es el real.`
+                      : 'POTENTIAL, no garantizado: hay que sostenerlo ante la autoridad.',
+                    /* Las que no dicen de qué corrida salieron quedan fuera
+                       del total. Se declaran porque un ahorro que desaparece
+                       sin decirlo es peor que uno que sobra. */
+                    (datos.oportunidades.sin_corrida ?? 0) > 0
+                      ? `Hay otras ${datos.oportunidades.sin_corrida} filas en la base que no dicen de qué auditoría salieron, de antes de que eso se registrara. No se cuentan y no van a volver a contar: atribuirles una corrida sería adivinar. Las de arriba son las de la auditoría vigente.`
+                      : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')
                 }
               >
                 <div className="kpis kpis--interno">

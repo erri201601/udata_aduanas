@@ -1493,6 +1493,11 @@ export interface components {
              */
             monedas_mezcladas: boolean;
             /**
+             * Sin Corrida
+             * @default 0
+             */
+            sin_corrida: number;
+            /**
              * Simuladas
              * @default 0
              */

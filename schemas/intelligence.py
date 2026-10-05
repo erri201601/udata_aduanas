@@ -281,6 +281,9 @@ class OpportunityFindingBase(DataOriginFields, AIDecisionFields, SyntheticFields
     pedimento_id: uuid.UUID | None = None
     pedimento_item_id: uuid.UUID | None = None
     product_id: uuid.UUID | None = None
+    shadow_review_id: uuid.UUID | None = None
+    """A qué corrida del Espejo pertenece. Sin esto, re-auditar sumaba el
+    mismo ahorro otra vez."""
     opportunity_type: str = Field(max_length=48)
     status: OpportunityStatus = OpportunityStatus.POTENTIAL
     rationale: str | None = None
