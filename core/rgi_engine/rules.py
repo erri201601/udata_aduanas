@@ -103,9 +103,7 @@ class RGI1:
         # plástico». Sin esto, la tubería de acero del corpus llegaba a la RGI
         # 3 c) con la 3926 todavía en la lista.
         familia = _familia_de_la_mercancia(context)
-        afirmado = _raices(
-            " ".join([context.description, *(f.value or "" for f in context.known_facts())])
-        )
+        afirmado = _lo_que_la_ficha_afirma(context)
         for c in encontrados:
             nota = notes.excludes(on_date=context.operation_date, heading=c.heading, terms=terminos)
             if nota:
@@ -687,9 +685,7 @@ class RGI6:
         # para una construcción de 114 alambres. Hoy el motor empata y se
         # niega, que es la respuesta correcta. Una mejora que convierte una
         # negativa honesta en una fracción equivocada no es una mejora.
-        afirmado = _raices(
-            " ".join([context.description, *(f.value or "" for f in context.known_facts())])
-        )
+        afirmado = _lo_que_la_ficha_afirma(context)
         descartes = {
             c.code: m
             for c in fracciones
@@ -863,6 +859,46 @@ def _raices(texto: str) -> set[str]:
     return {p[:_RAIZ] for p in _palabras(texto)}
 
 
+#: «no X» y «sin X» en una FICHA niegan X, igual que en la tarifa.
+_FICHA_NIEGA = re.compile(r"\b(?:no|sin)\s+([^\W\d_]+)")
+
+
+def _lo_que_la_ficha_afirma(context: ClassificationContext) -> set[str]:
+    """Las raíces que la ficha AFIRMA, sin las que ella misma niega.
+
+    EL MOTOR LEÍA LAS NEGACIONES DE LA TARIFA Y NO LAS DE LA FICHA
+
+    `_contradice` descarta una posición cuando el texto legal niega algo que la
+    mercancía afirma. Pero «lo que la mercancía afirma» se construía con todas
+    las palabras de la ficha, incluidas las que la propia ficha niega. Así que
+    una ficha que dice «NO PORCELANA» quedaba afirmando porcelana, y una que
+    dice «SIN RECUBRIMIENTO» quedaba afirmando recubrimiento.
+
+    Los dos casos están en el corpus y los dos salían mal:
+
+        ficha  «CABLE DE ACERO SIN RECUBRIMIENTO»
+        73121005 «De acero sin recubrimiento»
+        -> el motor DESCARTABA la fracción correcta
+
+        ficha  «VAJILLA DE CERAMICA VIDRIADA, NO PORCELANA»
+        6912   «de cerámica, excepto porcelana»
+        -> dicen lo MISMO y el motor los enfrentaba
+
+    El primero es anterior a todo esto y llevaba ahí desde que existe
+    `_contradice`; lo destapó la regla de «excepto», que hizo visible el mismo
+    error en ocho vajillas de golpe. La medición lo cazó: la precisión bajó de
+    100 % a 68 % y los ocho fallos eran el mismo.
+
+    Es simétrico y por eso es defendible: «sin» y «no» niegan en los dos
+    documentos, y leerlos sólo en uno hacía que el acuerdo pareciera
+    contradicción.
+    """
+    todo = " ".join([context.description, *(f.value or "" for f in context.known_facts())])
+    plano = _plano(todo)
+    negadas = {raiz for palabra in _FICHA_NIEGA.findall(plano) for raiz in _raices(str(palabra))}
+    return _raices(todo) - negadas
+
+
 def _contradice(candidata: TariffCandidate, afirmado: set[str]) -> str | None:
     """La palabra por la que esta candidata es imposible, o `None`.
 
@@ -883,7 +919,87 @@ def _contradice(candidata: TariffCandidate, afirmado: set[str]) -> str | None:
         raices = _raices(negada)
         if raices and raices & afirmado:
             return f"el texto dice «sin {negada}»"
+
+    excluida = _lo_que_excepciona(candidata.text)
+    if excluida:
+        raices = _raices(excluida)
+        if raices and raices & afirmado:
+            return f"el texto dice «excepto {excluida}»"
     return None
+
+
+#: Lo que puede ir entre «excepto» y la palabra excluida sin cambiar de quién
+#: se habla. Sólo artículos y la preposición: cualquier otra cosa en medio
+#: significa que la excepción es una frase y no una palabra, y ahí no se niega.
+_ARTICULOS: frozenset[str] = frozenset(
+    {"la", "el", "los", "las", "lo", "un", "una", "unos", "unas", "de", "del"}
+)
+
+#: «excepto» seguido de hasta dos palabras y la primera distintiva.
+_EXCEPTUA = re.compile(r"\bexcepto\s+((?:[^\W\d_]+\s+){0,2}?)([^\W\d_]{5,})")
+
+
+def _lo_que_excepciona(texto: str) -> str | None:
+    """La palabra que el texto legal EXCLUYE con «excepto», o `None`.
+
+    «EXCEPTO» NIEGA IGUAL QUE «SIN», Y EN 301 POSICIONES
+
+    La partida 6912 dice «Vajilla […] de cerámica, **excepto porcelana**» y la
+    6911 dice «de porcelana». Una vajilla de porcelana va en la 6911, y el
+    motor la metía en la 6912 —la que explícitamente la excluye— por dos
+    motivos que se sumaban: `_FAMILIAS` mete «porcelana» dentro de la familia
+    «cerámica», y encima la 6912 NOMBRA la palabra «porcelana» en su cláusula
+    de excepción, lo que la hacía parecer más compatible en vez de menos.
+
+    «sin» aparece en 369 posiciones de la tarifa y «excepto» en 301. La mitad
+    del mecanismo estaba sin leer.
+
+    LAS DOS GUARDAS, Y LA SEGUNDA ES LA QUE IMPORTA
+
+    No basta con coger la palabra siguiente, porque la excepción puede repetir
+    el sujeto de la propia posición:
+
+        151710  «Margarina, excepto la margarina líquida.»
+
+    Lo excluido ahí es *líquida*, no *margarina*, y negar la segunda
+    descartaría la posición para toda la margarina del arancel. Por eso:
+
+    1. Entre «excepto» y la palabra sólo pueden ir artículos. Cualquier otra
+       cosa significa que la excepción es una frase, y una frase no se niega
+       con una palabra.
+    2. La palabra **no puede aparecer en el resto del texto** de esa misma
+       posición. Si aparece, la posición habla de ella y la excepción sólo la
+       acota.
+
+    Medido sobre las 301: **121 pasan** y 180 se descartan. De las que pasan,
+    la muestra son negaciones reales —«excepto los filetes», «excepto el
+    rallado», «excepto el apionabo»—; de las que se descartan, los casos son
+    los que había que evitar —«excepto la harina de mostaza» en una partida de
+    harina, «excepto los de mar» donde «mar» no distingue—.
+
+    Se reporta de menos a propósito: una excepción que no se lee deja al motor
+    donde estaba, y una que se lee mal le hace descartar la partida correcta.
+    """
+    coincidencia = _EXCEPTUA.search(_plano(texto))
+    if coincidencia is None:
+        return None
+    intermedias = coincidencia.group(1).split()
+    if any(palabra not in _ARTICULOS for palabra in intermedias):
+        return None
+    excluida = coincidencia.group(2)
+    plano = _plano(texto)
+    # Una REFERENCIA CRUZADA no es una característica.
+    #
+    # «Tubos, excepto los comprendidos en la fracción 7304» excluye por dónde
+    # está clasificada otra mercancía, no por cómo es ésta. Negar
+    # «comprendidos» sería inerte —ninguna ficha dice esa palabra— pero la
+    # regla diría algo que no significa, y la inercia no es una garantía.
+    if re.search(r"\b(fraccion|partida|subpartida|capitulo|inciso)", plano[coincidencia.start() :]):
+        return None
+    resto = plano[: coincidencia.start()] + plano[coincidencia.end() :]
+    if re.search(r"\b" + re.escape(excluida), resto):
+        return None
+    return excluida
 
 
 #: Familias de materia que se excluyen entre sí. Una mercancía de acero no es

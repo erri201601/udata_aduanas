@@ -1099,3 +1099,171 @@ def test_media_coincidencia_no_arrastra_un_veredicto() -> None:
 
     ficha = _vajilla("PIEZA DE CERAMICA PARA HORNO INDUSTRIAL", "ceramica")
     assert _lo_aprendido_la_descarta(_TALAVERA_FR, ficha) is None
+
+
+# ── «Excepto» niega igual que «sin» (Persona 1, 5-oct) ─────────────────────
+
+
+def test_excepto_niega_como_sin() -> None:
+    """LA MITAD DEL MECANISMO ESTABA SIN LEER.
+
+    La 6912 dice «Vajilla […] de cerámica, EXCEPTO porcelana» y la 6911 dice
+    «de porcelana». Una vajilla de porcelana va en la 6911, y el motor la metía
+    en la 6912 —la que explícitamente la excluye— porque `_FAMILIAS` mete
+    «porcelana» dentro de la familia «cerámica» y porque la 6912 NOMBRA la
+    palabra en su cláusula de excepción, lo que la hacía parecer más compatible
+    en vez de menos.
+
+    «sin» aparece en 369 posiciones de la tarifa y «excepto» en 301.
+    """
+    from core.rgi_engine.rules import _contradice, _raices
+
+    ceramica = TariffCandidate(
+        code="6912",
+        text=(
+            "Vajilla y demás artículos de uso doméstico, higiene o tocador, "
+            "de cerámica, excepto porcelana."
+        ),
+        level="HEADING",
+        specificity=2,
+    )
+    afirmado = _raices("JUEGO DE VAJILLA DE PORCELANA PARA SERVICIO DE MESA")
+    motivo = _contradice(ceramica, afirmado)
+    assert motivo is not None, "una porcelana no puede caer en «excepto porcelana»"
+    assert "excepto" in motivo and "porcelana" in motivo
+
+
+def test_una_excepcion_que_repite_el_sujeto_no_niega() -> None:
+    """LA GUARDA QUE EVITA DESCARTAR EL ARANCEL ENTERO.
+
+        151710  «Margarina, excepto la margarina líquida.»
+
+    Lo excluido es *líquida*, no *margarina*. Negar la segunda descartaría esa
+    posición para toda la margarina. La palabra no puede aparecer en el resto
+    del texto: si aparece, la posición habla de ella y la excepción la acota.
+    """
+    from core.rgi_engine.rules import _lo_que_excepciona
+
+    assert _lo_que_excepciona("Margarina, excepto la margarina liquida.") is None
+    assert _lo_que_excepciona("Harina de semillas, excepto la harina de mostaza.") is None
+
+
+def test_una_excepcion_con_una_frase_en_medio_no_niega() -> None:
+    """Entre «excepto» y la palabra sólo pueden ir artículos.
+
+    Cualquier otra cosa significa que la excepción es una frase, y una frase no
+    se niega con una palabra suelta.
+    """
+    from core.rgi_engine.rules import _lo_que_excepciona
+
+    assert _lo_que_excepciona("Tubos, excepto los comprendidos en la fraccion 7304.") is None
+    assert _lo_que_excepciona("Apio, excepto el apionabo.") == "apionabo"
+
+
+def test_una_excepcion_sin_palabra_distintiva_no_niega() -> None:
+    """«Caracoles, excepto los de mar»: «mar» no distingue nada."""
+    from core.rgi_engine.rules import _lo_que_excepciona
+
+    assert _lo_que_excepciona("Caracoles, excepto los de mar.") is None
+
+
+def test_el_silencio_sigue_sin_ser_negacion() -> None:
+    """La regla de siempre no se afloja: que la ficha no mencione algo no
+    significa que no lo tenga."""
+    from core.rgi_engine.rules import _contradice, _raices
+
+    ceramica = TariffCandidate(
+        code="6912",
+        text="Vajilla de cerámica, excepto porcelana.",
+        level="HEADING",
+        specificity=2,
+    )
+    # Una ficha que NO dice de qué es: no se descarta nada.
+    assert _contradice(ceramica, _raices("VAJILLA PARA SERVICIO DE MESA")) is None
+
+
+# ── La ficha también niega (Persona 1, 5-oct) ──────────────────────────────
+
+
+def _ficha(descripcion: str) -> ClassificationContext:
+    return ClassificationContext(
+        description=descripcion,
+        operation_date=OPERACION,
+        facts=(),
+        search_terms=("x",),
+    )
+
+
+def test_un_cable_sin_recubrimiento_no_descarta_su_propia_fraccion() -> None:
+    """EL DEFECTO MÁS VIEJO DE LOS ENCONTRADOS HOY.
+
+        ficha     «CABLE DE ACERO SIN RECUBRIMIENTO»
+        73121005  «De acero sin recubrimiento»
+
+    Dicen LO MISMO y el motor los enfrentaba: «lo que la mercancía afirma» se
+    construía con todas las palabras de la ficha, incluidas las que ella misma
+    niega, así que la ficha quedaba afirmando «recubrimiento» y la fracción
+    correcta se descartaba.
+
+    Llevaba ahí desde que existe `_contradice` y nadie lo vio, porque no
+    producía un fallo medido: hacía al motor abstenerse, no equivocarse.
+    """
+    from core.rgi_engine.rules import _contradice, _lo_que_la_ficha_afirma
+
+    pos = TariffCandidate(
+        code="73121005",
+        text="De acero sin recubrimiento, con o sin lubricación.",
+        level="FRACTION",
+        specificity=1,
+    )
+    ficha = _ficha("CABLE DE ACERO SIN RECUBRIMIENTO, CONSTRUCCION 6X36, DIAMETRO 18 MM")
+    assert _contradice(pos, _lo_que_la_ficha_afirma(ficha)) is None
+
+
+def test_una_ficha_que_dice_no_porcelana_cabe_en_excepto_porcelana() -> None:
+    """La tarifa dice «excepto porcelana» y la ficha dice «NO PORCELANA».
+
+    Están de acuerdo. El motor los enfrentaba porque leía la palabra sin ver el
+    «NO» de delante, y eso hundió la precisión de 100 % a 68 % en cuanto la
+    regla de «excepto» hizo visible el error: ocho vajillas, el mismo fallo.
+    """
+    from core.rgi_engine.rules import _contradice, _lo_que_la_ficha_afirma
+
+    pos = TariffCandidate(
+        code="6912",
+        text="Vajilla de cerámica, excepto porcelana.",
+        level="HEADING",
+        specificity=2,
+    )
+    ficha = _ficha("VAJILLA DE CERAMICA VIDRIADA, NO PORCELANA, PARA SERVICIO DE MESA")
+    assert _contradice(pos, _lo_que_la_ficha_afirma(ficha)) is None
+
+
+def test_una_ficha_que_si_afirma_porcelana_queda_excluida() -> None:
+    """La simetría no puede comerse el descarte legítimo.
+
+    Una vajilla DE porcelana no cabe en «de cerámica, excepto porcelana»: va en
+    la 6911. Ésa es la mitad de la regla que corrige respuestas.
+    """
+    from core.rgi_engine.rules import _contradice, _lo_que_la_ficha_afirma
+
+    pos = TariffCandidate(
+        code="6912",
+        text="Vajilla de cerámica, excepto porcelana.",
+        level="HEADING",
+        specificity=2,
+    )
+    ficha = _ficha("JUEGO DE VAJILLA DE PORCELANA PARA SERVICIO DE MESA, 24 PIEZAS")
+    motivo = _contradice(pos, _lo_que_la_ficha_afirma(ficha))
+    assert motivo is not None
+    assert "porcelana" in motivo
+
+
+def test_lo_negado_por_la_ficha_sale_de_lo_afirmado() -> None:
+    """La cuenta, directa: lo que la ficha niega no está en lo que afirma."""
+    from core.rgi_engine.rules import _lo_que_la_ficha_afirma, _raices
+
+    afirma = _lo_que_la_ficha_afirma(_ficha("TUBO DE ACERO SIN COSTURA, SIN ALEAR"))
+    assert _raices("costura") <= _raices("TUBO DE ACERO SIN COSTURA, SIN ALEAR")
+    assert not (_raices("costura") & afirma), "la ficha NIEGA la costura"
+    assert _raices("acero") & afirma, "pero sí afirma el acero"
