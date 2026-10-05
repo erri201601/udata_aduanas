@@ -12,6 +12,7 @@ No escribe nada. Quien quiera guardar el resultado —el router— llama despué
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -23,7 +24,7 @@ from database.repositories.notes import LegalNotesRepository
 from database.repositories.tariff import TariffCatalogRepository
 from rag import a_legal_refs, embedder_opcional, recuperar
 
-from apps.api.dna import MAX_TERMINOS, palabras_de
+from apps.api.dna import MAX_TERMINOS, MIN_LONGITUD_TERMINO, palabras_de
 
 if TYPE_CHECKING:
     import uuid
@@ -75,6 +76,43 @@ def _busqueda(session: Session, borrador: ProductDnaDraft, on_date: date) -> lis
     palabras = palabras_de(borrador)
     puentes = _con_sinonimos(session, palabras, on_date=on_date)
     nuevos = [t for t in puentes if t not in palabras]
+    # EL PUENTE NO LLEGA A LA CONSULTA, Y HOY ESO ES LO CORRECTO
+    #
+    # `palabras_de` devuelve la ficha ENTERA sin truncar —once palabras en la
+    # tubería del corpus, ocho en el estropajo, diez en el cable galvanizado—
+    # así que este corte cae siempre antes del primer puente. Medido ficha por
+    # ficha el 5-oct: TODAS las del corpus tienen seis palabras o más, así que
+    # ningún puente puede aplicarse a nada. La mesa de vocabulario —tabla,
+    # endpoint, tests y documentación— no puede cambiar ni una clasificación.
+    #
+    # Lo probé. Dejé pasar los puentes por encima del tope y medí:
+    #
+    #                        contestó  acertó  falló  precisión  cobertura
+    #     sin puentes             54      54      0    100.00 %    32.14 %
+    #     con puentes             60      43     17     71.67 %    35.71 %
+    #
+    # Los 17 fallos son dos familias, y las dos dicen lo mismo: el puente no
+    # sólo ayuda a ENCONTRAR candidatas, también le da un punto de cobertura a
+    # la posición de cuyo texto salió, y con eso le hace GANAR el recorte por
+    # cobertura máxima.
+    #
+    #     14 vajillas  «VAJILLA DE CERAMICA VIDRIADA, NO PORCELANA»
+    #                  el puente «vajilla» → «mesa» sale del texto de la 6911
+    #                  («de porcelana»), que pasó a cubrir un término más que
+    #                  la 6912 y a expulsarla de las candidatas. Las 14 estaban
+    #                  BIEN antes.
+    #      3 utensilios de acero inoxidable
+    #                  se abstenían, y con el puente pasaron a resolver 732310
+    #                  —lana, esponjas, estropajos—, que no es lo que son.
+    #
+    # Y el código de la RGI 3 ya tiene escrita la regla que decide esto: «una
+    # mejora que convierte una negativa honesta en una fracción equivocada no
+    # es una mejora». Aquí además convierte catorce aciertos en errores.
+    #
+    # Así que el puente se queda fuera hasta que la cobertura sepa distinguir
+    # un término de la ficha de un puente: buscar con él, sí; ganar con él, no.
+    # Eso toca el puerto `TariffCatalog` y su SQL, y pide su propia medición.
+    # El emparejamiento (`_lo_dice_la_ficha`) ya está arreglado y esperando.
     return (palabras + nuevos)[:MAX_TERMINOS]
 
 
@@ -103,6 +141,38 @@ def _exclusiones(session: Session, *, on_date: date) -> list[tuple[str, str]]:
     return [(f.commercial_term, f.nomenclature_term) for f in filas]
 
 
+def _lo_dice_la_ficha(termino_comercial: str, palabras_ficha: set[str]) -> bool:
+    """¿Están en la ficha todas las palabras distintivas del término?
+
+    UN TÉRMINO DE DOS PALABRAS NO PODÍA CASAR NUNCA
+
+    Esto comparaba `commercial_term` con igualdad exacta contra cada palabra de
+    la ficha (`lower(commercial_term) IN base`), y `palabras_de` devuelve
+    PALABRAS sueltas. Así que `«acero inoxidable»`, `«sin recubrimiento»` o
+    `«domestico/cocina»` no podían casar con nada: no son una palabra.
+
+    No se había notado porque las nueve filas que había eran de una sola
+    palabra —`conduccion`, `limpieza`, `galvanizado`—. La primera vez que un
+    clasificador contestó mirando dos palabras de la ficha, su respuesta quedó
+    firmada, guardada y sin efecto.
+
+    Ahora se empareja como lo hace la exclusión en el motor: por subconjunto de
+    palabras distintivas. Con una sola palabra el resultado es idéntico al de
+    antes, así que las nueve filas viejas se comportan igual.
+
+    Un término sin ninguna palabra distintiva —`«6x19»`, todo dígitos— devuelve
+    `False` y no puede disparar un puente. Es deliberado y es el límite de esta
+    vía: un número no ensancha una búsqueda de texto. Para descartar sí sirve,
+    porque la exclusión compara contra el texto entero de la ficha.
+    """
+    distintivas = {
+        p.casefold()
+        for p in re.findall(r"[^\W\d_]+", termino_comercial)
+        if len(p) >= MIN_LONGITUD_TERMINO
+    }
+    return bool(distintivas) and distintivas <= palabras_ficha
+
+
 def _con_sinonimos(session: Session, terminos_base: list[str], *, on_date: date) -> list[str]:
     """Añade los términos de nomenclatura equivalentes a los de la ficha.
 
@@ -110,6 +180,18 @@ def _con_sinonimos(session: Session, terminos_base: list[str], *, on_date: date)
     original sigue ahí y la búsqueda no pierde nada. Un puente sólo puede
     hacer que el motor encuentre MÁS candidatas, nunca menos, y de ahí en
     adelante las reglas deciden igual que siempre.
+
+    SÓLO `EQUIVALE`
+
+    La consulta no filtraba por `kind` y usaba también el término de las filas
+    `EXCLUYE`. Una exclusión dice que la ficha NO es eso; meterlo como término
+    de búsqueda empujaría al motor justo hacia la posición que el clasificador
+    descartó. Con `«ceramica vidriada» → «talavera»` cargada, una vajilla que
+    no es Talavera habría buscado «talavera».
+
+    No llegó a pasar porque ninguna de las dos filas `EXCLUYE` de dos palabras
+    podía casar con la igualdad exacta de antes. Al arreglar el emparejamiento,
+    sí habría pasado.
     """
     vigentes = sa.and_(
         NomenclatureSynonym.valid_from <= on_date,
@@ -118,18 +200,22 @@ def _con_sinonimos(session: Session, terminos_base: list[str], *, on_date: date)
             NomenclatureSynonym.valid_to >= on_date,
         ),
     )
-    base = {t.casefold() for t in terminos_base}
-    extra = session.scalars(
-        sa.select(NomenclatureSynonym.nomenclature_term).where(
-            vigentes, sa.func.lower(NomenclatureSynonym.commercial_term).in_(base)
+    filas = session.execute(
+        sa.select(NomenclatureSynonym.commercial_term, NomenclatureSynonym.nomenclature_term).where(
+            vigentes, NomenclatureSynonym.kind == "EQUIVALE"
         )
     ).all()
 
+    base = {t.casefold() for t in terminos_base}
+    palabras_ficha = {t.casefold() for t in terminos_base}
     salida = list(terminos_base)
-    for termino in extra:
-        if termino.casefold() not in base:
-            base.add(termino.casefold())
-            salida.append(termino)
+    for comercial, nomenclatura in filas:
+        if not _lo_dice_la_ficha(comercial, palabras_ficha):
+            continue
+        if nomenclatura.casefold() in base:
+            continue
+        base.add(nomenclatura.casefold())
+        salida.append(nomenclatura)
     return salida
 
 
