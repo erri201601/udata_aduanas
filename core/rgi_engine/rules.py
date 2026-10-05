@@ -647,7 +647,22 @@ class RGI6:
                 # sustituye al aviso de arriba: lo acota. Sobre las posibles, no
                 # sobre todas: preguntar por una posición que la tarifa ya
                 # descartó gasta el tiempo de quien contesta.
-                preguntas=tuple(formular(context, posibles)),
+                #
+                # SI NO SE PUEDE PREGUNTAR POR LAS SUBPARTIDAS, SE PREGUNTA POR
+                # LA PARTIDA (Persona 1, 5-oct)
+                #
+                # `formular` se calla cuando hay más de cuatro candidatas: seis
+                # preguntas de sí o no no son una pregunta, son el trabajo
+                # entero. Pero callarse ahí dejaba 44 productos del corpus sin
+                # ninguna pregunta y sin salida posible —la olla de presión con
+                # seis subpartidas de 8481, el sartén con doce de 7318—.
+                #
+                # Y en esos casos el problema no está en la subpartida: está en
+                # la PARTIDA. Una olla de presión no es un «artículo de
+                # grifería», y preguntarlo es UNA pregunta en vez de seis, y es
+                # la que importa. Si la respuesta es «no», la partida entera se
+                # cae y el motor deja de insistir en un sitio equivocado.
+                preguntas=tuple(formular(context, posibles) or formular(context, [partida])),
             )
 
         fracciones = list(

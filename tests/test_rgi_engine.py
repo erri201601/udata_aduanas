@@ -1536,3 +1536,53 @@ def test_no_se_pregunta_por_una_frase_que_permite_las_dos() -> None:
     )
     exigencias = {p.codigo: p.exige for p in formular(_cable(), [lubricacion])}
     assert "con o sin" not in exigencias.get("73121005", "")
+
+
+# ── Si no se puede preguntar la subpartida, se pregunta la partida ─────────
+
+
+def test_con_demasiadas_subpartidas_se_pregunta_por_la_partida() -> None:
+    """LOS 44 PRODUCTOS QUE NO TENÍAN NINGUNA PREGUNTA NI SALIDA.
+
+    `formular` se calla con más de cuatro candidatas, y hace bien: seis
+    preguntas de sí o no no son una pregunta, son el trabajo entero. Pero
+    callarse ahí dejaba sin salida a la olla de presión —seis subpartidas de
+    8481— y al sartén —doce de 7318—.
+
+    Y en esos casos el problema no está en la subpartida: está en la PARTIDA.
+    Una olla de presión no es un «artículo de grifería». Preguntarlo es UNA
+    pregunta en vez de seis, y es la que importa: un «no» tumba la partida
+    entera y el motor deja de insistir en un sitio equivocado.
+    """
+    from core.rgi_engine.pregunta import formular
+
+    griferia = TariffCandidate(
+        code="8481",
+        text=(
+            "Artículos de grifería y órganos similares para tuberías, calderas, "
+            "depósitos, cubas o continentes similares, incluidas las válvulas "
+            "reductoras de presión."
+        ),
+        level="HEADING",
+        specificity=2,
+    )
+    olla = ClassificationContext(
+        description="OLLA DE PRESION DE ALUMINIO PARA USO DOMESTICO, CAPACIDAD 6 L",
+        operation_date=OPERACION,
+        facts=(
+            ProductFact(name="material", value="aluminio", status="OBSERVED"),
+            ProductFact(name="uso", value="domestico", status="OBSERVED"),
+        ),
+        search_terms=("presion",),
+    )
+
+    preguntas = formular(olla, [griferia])
+    assert len(preguntas) == 1, "una pregunta sobre la partida, no seis sobre sus hijas"
+    assert preguntas[0].codigo == "8481"
+    assert "griferia" in _plano_test(preguntas[0].exige)
+
+
+def _plano_test(texto: str) -> str:
+    import unicodedata
+
+    return unicodedata.normalize("NFKD", texto.casefold()).encode("ascii", "ignore").decode()
