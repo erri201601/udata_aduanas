@@ -1458,6 +1458,24 @@ def _el_grupo_la_describe(candidata: TariffCandidate, mercancia: str) -> bool:
     return bool(_palabras_con_singular(candidata.group_text) & _palabras_con_singular(mercancia))
 
 
+def _cuelga_de_un_residual(candidata: TariffCandidate) -> bool:
+    """¿Su encabezado de guion es un residual —«Los demás:»?
+
+    La LIGIE agrupa subpartidas bajo una línea sin código, y cuando esa línea
+    dice «Los demás:» todo lo que cuelga de ella es residual: recoge lo que no
+    cayó en las hermanas específicas. Compararlas de igual a igual es tratar la
+    excepción como si fuera la regla.
+
+    Se mira SÓLO el encabezado y no el texto propio: «Los demás. De acero
+    inoxidable» es específica DENTRO de su grupo residual, y eso sigue
+    valiendo para desempatar entre las de su mismo grupo.
+    """
+    if not candidata.group_text:
+        return False
+    plano = _plano(candidata.group_text).strip(" .:")
+    return plano in {"los demas", "las demas", "otros", "otras"}
+
+
 def _algo_la_sostiene(candidata: TariffCandidate, mercancia: str) -> bool:
     """¿Hay algo en la mercancía que respalde lo que esta candidata añade?
 
@@ -1556,6 +1574,35 @@ def _unica_o_mas_especifica(
         cumplen = [c for c, (ok, mal) in con_condicion if ok and not mal]
         if len(cumplen) == 1:
             return cumplen[0]
+
+    # ── UN RESIDUAL NO EMPATA CON LA ESPECÍFICA (César, 5-oct) ──────────────
+    #
+    # La partida 7323 abre cinco subpartidas y el motor les daba la misma
+    # especificidad a todas:
+    #
+    #     732310  spec 2  grupo: —             «Lana de hierro o acero;
+    #                                           esponjas, estropajos, guantes…»
+    #     732393  spec 2  grupo: «Los demás:»  «Los demás. De acero inoxidable.»
+    #     732394  spec 2  grupo: «Los demás:»  «Los demás. De hierro o acero…»
+    #
+    # La 732310 cuelga DIRECTA de la partida; las otras cuatro cuelgan de un
+    # grupo «Los demás:». Y un residual no puede empatar con la específica:
+    # por construcción recoge lo que NO cayó en ella. La LIGIE lo dice con la
+    # línea de guion, y `group_text` ya la traía.
+    #
+    # Lo encontró un clasificador revisando un estropajo de acero inoxidable:
+    # «el motor llegó correctamente a la partida 7323, pero no identificó que
+    # existe una subpartida específica para lana de hierro o acero, esponjas y
+    # estropajos: 7323.10. Por ello no debía continuar comparando 7323.94 como
+    # si fuera igualmente específica.»
+    #
+    # Sólo se aplica cuando hay de las dos clases: si todas cuelgan de un
+    # residual, ninguna tiene ventaja y el desempate sigue como estaba.
+    especificas = [c for c in cands if not _cuelga_de_un_residual(c)]
+    if especificas and len(especificas) < len(cands):
+        cands = especificas
+        if len(cands) == 1:
+            return cands[0]
 
     maximo = max(c.specificity for c in cands)
     lideres = [c for c in cands if c.specificity == maximo]

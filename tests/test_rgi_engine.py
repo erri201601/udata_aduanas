@@ -1723,3 +1723,112 @@ def test_no_se_recupera_nada_sin_una_condicion_cumplida() -> None:
         ("estropajo",),
     )
     assert {c.code for c in recuperadas} == {"7323"}, "la 9605 no cumple ningún umbral"
+
+
+# ── Un residual no empata con la específica (César, 5-oct) ─────────────────
+
+
+def test_un_residual_no_empata_con_la_posicion_especifica() -> None:
+    """LO ENCONTRÓ UN CLASIFICADOR, NO UNA MEDICIÓN.
+
+    La partida 7323 abre cinco subpartidas y el motor les daba la misma
+    especificidad:
+
+        732310  spec 2  grupo: —             «Lana de hierro o acero;
+                                              esponjas, estropajos, guantes…»
+        732393  spec 2  grupo: «Los demás:»  «Los demás. De acero inoxidable.»
+        732394  spec 2  grupo: «Los demás:»  «Los demás. De hierro o acero…»
+
+    La 732310 cuelga DIRECTA de la partida; las otras cuelgan de un grupo «Los
+    demás:». Empataban, y el motor se negaba a elegir.
+
+    En sus palabras: «el motor llegó correctamente a la partida 7323, pero no
+    identificó que existe una subpartida específica para lana de hierro o
+    acero, esponjas y estropajos: 7323.10. Por ello no debía continuar
+    comparando 7323.94 como si fuera igualmente específica.»
+
+    Un residual recoge lo que NO cayó en la específica. La LIGIE lo dice con la
+    línea de guion y `group_text` ya la traía.
+    """
+    from core.rgi_engine.rules import _unica_o_mas_especifica
+
+    estropajos = TariffCandidate(
+        code="732310",
+        text="Lana de hierro o acero; esponjas, estropajos, guantes y artículos similares.",
+        level="SUBHEADING",
+        specificity=2,
+    )
+    residual_inox = TariffCandidate(
+        code="732393",
+        text="Los demás. De acero inoxidable.",
+        level="SUBHEADING",
+        specificity=2,
+        group_text="Los demás:",
+    )
+    residual_acero = TariffCandidate(
+        code="732394",
+        text="Los demás. De hierro o acero, esmaltados.",
+        level="SUBHEADING",
+        specificity=2,
+        group_text="Los demás:",
+    )
+
+    elegida = _unica_o_mas_especifica(
+        [estropajos, residual_inox, residual_acero],
+        mercancia="ESTROPAJO DE ACERO INOXIDABLE PARA LIMPIEZA DOMESTICA",
+    )
+    assert elegida is not None, "ya no empatan: una es específica y dos son residuales"
+    assert elegida.code == "732310"
+
+
+def test_entre_residuales_el_desempate_sigue_como_estaba() -> None:
+    """Si TODAS cuelgan de un residual, ninguna tiene ventaja.
+
+    «Los demás. De acero inoxidable» sigue siendo más específica que «Los
+    demás. Los demás» dentro de su propio grupo, y la regla no se mete ahí.
+    """
+    from core.rgi_engine.rules import _unica_o_mas_especifica
+
+    inox = TariffCandidate(
+        code="732393",
+        text="Los demás. De acero inoxidable.",
+        level="SUBHEADING",
+        specificity=2,
+        group_text="Los demás:",
+    )
+    los_demas = TariffCandidate(
+        code="732399",
+        text="Los demás. Los demás.",
+        level="SUBHEADING",
+        specificity=0,
+        group_text="Los demás:",
+    )
+
+    elegida = _unica_o_mas_especifica(
+        [inox, los_demas], mercancia="SARTEN DE ACERO INOXIDABLE PARA COCINA"
+    )
+    assert elegida is not None and elegida.code == "732393"
+
+
+def test_solo_el_encabezado_decide_si_es_residual() -> None:
+    """Se mira el grupo, no el texto propio.
+
+    «Los demás. De acero inoxidable» empieza por «Los demás» en su texto
+    completo porque el guion se le pone delante (ADR 0004). Lo que la hace
+    residual es su ENCABEZADO, no esa repetición.
+    """
+    from core.rgi_engine.rules import _cuelga_de_un_residual
+
+    sin_grupo = TariffCandidate(
+        code="732310", text="Los demás tubos y perfiles huecos.", level="HEADING", specificity=1
+    )
+    assert not _cuelga_de_un_residual(sin_grupo), "sin encabezado no es residual"
+
+    con_grupo = TariffCandidate(
+        code="732393",
+        text="De acero inoxidable.",
+        level="SUBHEADING",
+        specificity=2,
+        group_text="Los demás:",
+    )
+    assert _cuelga_de_un_residual(con_grupo)
