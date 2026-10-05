@@ -130,6 +130,26 @@ class RGI1:
             if negacion:
                 excluidas.append(f"{c.code} descartada: {negacion}")
                 continue
+
+            # Y EL VOCABULARIO FIRMADO TAMBIÉN DESCARTA AQUÍ (Persona 1, 5-oct)
+            #
+            # Mismo argumento que la negación de arriba, y el mismo error de
+            # haberlo puesto sólo un nivel más abajo: estaba sólo al elegir
+            # fracción.
+            #
+            # Lo destapó probar la cadena de punta a punta. El bucle de captura
+            # pregunta «¿una olla de presión es un "artículo de grifería"?» —la
+            # pregunta que desatasca 32 productos—, la respuesta se guardaba
+            # firmada… y el motor seguía resolviendo 8481 porque nadie leía el
+            # vocabulario al elegir partida. La respuesta quedaba INERTE:
+            # alguien contestaba y no pasaba nada.
+            #
+            # Preguntar algo cuya respuesta no se usa es peor que no preguntar:
+            # gasta el tiempo de un clasificador y encima no se nota.
+            aprendido = _lo_aprendido_la_descarta(c, context)
+            if aprendido:
+                excluidas.append(f"{c.code} descartada: {aprendido}")
+                continue
             sobreviven.append(c)
 
         fuentes = tuple(c.source_id for c in sobreviven if c.source_id is not None)

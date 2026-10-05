@@ -14,6 +14,7 @@
 import { useState } from 'react'
 
 import { ComoSeLeeUnCodigo } from '../components/ComoSeLeeUnCodigo'
+import { ContestarPregunta } from '../components/ContestarPregunta'
 import { SyntheticBanner } from '../components/DataOriginBadge'
 import { QUE_ES_EL_ESTADO, QUE_PREGUNTA, comoLeerLaConfianza } from '../components/glosas'
 import { EvidenceKindBadge } from '../components/EvidenceKindBadge'
@@ -368,6 +369,17 @@ export function Classification({ decisionInicial = null }: Props = {}) {
                                   <strong>{q.exige}</strong>
                                 </span>
                               </p>
+                              {/* Y aquí se contesta. Sin este formulario el
+                                  motor generaba la pregunta, la pantalla la
+                                  mostraba y no había dónde responderla: la
+                                  respuesta viajaba por un chat y alguien la
+                                  metía a mano. Una cadena así no se usa dos
+                                  veces. */}
+                              <ContestarPregunta
+                                exige={q.exige}
+                                codigo={q.codigo}
+                                mercancia={q.mercancia}
+                              />
                             </li>
                           ))}
                         </ul>
