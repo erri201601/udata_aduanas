@@ -34,6 +34,7 @@ from database.models.operational import (
 )
 from database.models.regulatory import (
     CustomsOffice,
+    FractionNomRequirement,
     LegalChunkRecord,
     LegalDocument,
     LegalRule,
@@ -58,6 +59,7 @@ __all__ = [
     "Cove",
     "CustomsOffice",
     "EvidenceRecord",
+    "FractionNomRequirement",
     "GroundTruthRecord",
     "Invoice",
     "InvoiceItem",

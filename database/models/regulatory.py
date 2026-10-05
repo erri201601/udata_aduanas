@@ -514,6 +514,60 @@ class NomenclatureSynonym(
     """
 
 
+class FractionNomRequirement(
+    UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base
+):
+    """Qué NOM exige una fracción — el Anexo 2.4.1 (ADR 0003).
+
+    Tabla propia y no una columna en `tariff_fractions`, por lo mismo que el
+    ADR 0002: una fracción puede tener 0, 1 o varias NOM según el numeral y la
+    acotación. No es un escalar, y forzarlo perdería la acotación.
+
+    LA ACOTACIÓN DECIDE SI ESTO PUEDE ACUSAR A ALGUIEN
+
+    `scope_note` guarda el «Únicamente: …» tal cual lo escribe el anexo. De 456
+    filas cargadas, 306 lo traen: limitan la NOM a un subconjunto de la
+    fracción, a veces por producto —sólo leche descremada, dentro de una
+    fracción de leche en polvo— y a veces por punto de la norma.
+
+    Una fila CON acotación no puede alimentar `required_nom_codes` sin más:
+    `MISSING_NOM` es una acusación contra el agente aduanal, y afirmar una NOM
+    que a su mercancía no le aplica es acusar sin fundamento. Las acotadas se
+    reportan aparte, para que las lea una persona.
+    """
+
+    __tablename__ = "fraction_nom_requirements"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "fraction_code",
+            "nom_code",
+            "numeral",
+            "valid_from",
+            name="uq_fraction_nom_requirements_fila",
+        ),
+        sa.Index(
+            "ix_fraction_nom_requirements_vigencia",
+            "fraction_code",
+            "valid_from",
+            "valid_to",
+        ),
+        {"schema": _SCHEMA},
+    )
+
+    fraction_code: Mapped[str] = mapped_column(sa.String(8), nullable=False)
+    """Ocho dígitos, sin puntos — como `tariff_fractions.code`."""
+
+    nom_code: Mapped[str] = mapped_column(sa.String(48), nullable=False)
+    """«NOM-186-SSA1/SCFI-2013», tal como lo nombra el anexo."""
+
+    numeral: Mapped[int] = mapped_column(sa.SmallInteger, nullable=False)
+    """1, 2 o 4 — los tabulares. El 3 (etiquetado) tiene otra estructura y
+    queda fuera; el 5 (emergencia) está vacío en la versión vigente."""
+
+    scope_note: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    """El «Únicamente: …» íntegro. `None` = la NOM aplica a toda la fracción."""
+
+
 class RegulatoryEvent(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base):
     """Salida del DOF Regulatory Watcher: una publicación relevante y su alcance."""
 

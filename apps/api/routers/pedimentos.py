@@ -70,7 +70,14 @@ from core.review import LineInput, PedimentoReview, review_pedimento
 from core.shadow import DeclaredItem, ExpectedItem
 from core.shadow.types import ORIGEN_DEL_PROVEEDOR
 from core.taxation import Money, TaxRates
-from database.models import Invoice, InvoiceItem, Pedimento, PedimentoItem, Supplier
+from database.models import (
+    FractionNomRequirement,
+    Invoice,
+    InvoiceItem,
+    Pedimento,
+    PedimentoItem,
+    Supplier,
+)
 from database.repositories import save_review
 from database.repositories.tariff import TariffCatalogRepository
 from fastapi import APIRouter, HTTPException, status
@@ -338,6 +345,59 @@ def _espejo_documental(
     }
 
 
+def _nom_exigidas(
+    session: SessionDep, fecha: date, fraccion: str | None
+) -> tuple[tuple[str, ...] | None, tuple[str, ...]]:
+    """Qué NOM exige esta fracción, y cuáles quedan por comprobar a mano.
+
+    Devuelve `(exigidas, acotadas)`:
+
+    - `exigidas` son las que aplican a TODA la fracción. `()` significa «no
+      exige ninguna» y permite declarar la partida limpia en ese campo;
+      `None` significa «no lo sé» y la manda a `unverifiable`.
+    - `acotadas` son las que el anexo limita con un «Únicamente: …». No entran
+      en `exigidas` y se reportan aparte.
+
+    POR QUÉ LAS ACOTADAS NO ACUSAN
+
+    De las 456 correlaciones cargadas, 306 traen acotación: la NOM aplica sólo
+    a una parte de la fracción —sólo leche descremada dentro de una fracción de
+    leche en polvo, o sólo el punto 9.2 de la norma—. Decidir si la mercancía
+    cae dentro exige leerla, y `MISSING_NOM` es una acusación contra el agente
+    aduanal. Se le enseña el texto a una persona en vez de adivinar por ella.
+
+    `None` SÓLO SI NO HAY CATÁLOGO
+
+    Si el Anexo 2.4.1 está cargado y esta fracción no aparece en él, eso no es
+    desconocimiento: es que no exige NOM. Devolver `None` ahí dejaría la
+    partida como no verificable para siempre. Misma disciplina que
+    `hay_unidades` con el Anexo 22.
+    """
+    if not fraccion:
+        return None, ()
+
+    vigentes = sa.and_(
+        FractionNomRequirement.valid_from <= fecha,
+        sa.or_(
+            FractionNomRequirement.valid_to.is_(None),
+            FractionNomRequirement.valid_to >= fecha,
+        ),
+    )
+    hay_catalogo = session.scalar(sa.select(FractionNomRequirement.id).where(vigentes).limit(1))
+    if hay_catalogo is None:
+        return None, ()
+
+    filas = session.execute(
+        sa.select(FractionNomRequirement.nom_code, FractionNomRequirement.scope_note).where(
+            vigentes, FractionNomRequirement.fraction_code == fraccion
+        )
+    ).all()
+
+    exigidas = tuple(dict.fromkeys(f.nom_code for f in filas if not f.scope_note))
+    acotadas = tuple(f"{f.nom_code} — Únicamente: {f.scope_note}" for f in filas if f.scope_note)
+    return exigidas, acotadas
+
+
 def _nico_esperado(
     catalogo: TariffCatalogRepository, fecha: date, fraccion: str | None
 ) -> str | None:
@@ -436,9 +496,13 @@ def _construir_espejo(
         # Lo que el extractor declaró que le faltó. Aquí sí es `()` cuando la
         # ficha está completa: se consultó y no falta nada.
         missing_technical_fields=borrador.missing_information,
-        # `None`, no `()`: no existe la correlación fracción → NOM ni el
-        # Apéndice 8. Decir «no exige ninguna» sería afirmar sin fuente.
-        required_nom_codes=None,
+        # Desde el 4-oct el Anexo 2.4.1 está cargado: ya se puede decir qué NOM
+        # exige una fracción. Las acotadas van aparte, a la vista de una
+        # persona — ver `_nom_exigidas`.
+        required_nom_codes=_nom_exigidas(session, fecha, outcome.code)[0],
+        # Los identificadores siguen en `None`: el Apéndice 8 cargado es el
+        # CATÁLOGO de códigos, y saber cuáles existen no dice cuáles exige una
+        # operación. Decir «no exige ninguno» sería afirmar sin fuente.
         required_identifiers=None,
         **documental,
     )
