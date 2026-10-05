@@ -278,7 +278,7 @@ def _la_frase_que_la_distingue(
 ) -> str | None:
     """La primera frase que separa a esta candidata y la ficha no resuelve.
 
-    Cuatro condiciones, y las cuatro hacen falta:
+    Cinco condiciones, y las cinco hacen falta:
 
     1. **Que distinga.** Una frase que comparten varias hermanas no desatasca
        nada: contestarla deja el empate igual.
@@ -292,6 +292,11 @@ def _la_frase_que_la_distingue(
     4. **Que la ficha no la resuelva ya.** Si todas sus palabras constan en la
        ficha, el motor tenía con qué y preguntarlo gasta el tiempo de la única
        persona cuyo tiempo no se puede gastar.
+    5. **Que se pueda contestar MIRANDO LA MERCANCÍA.** Una referencia cruzada
+       —«excepto los comprendidos en la fracción arancelaria 7312.10.08»— no
+       habla de cómo es la mercancía: habla de dónde está clasificada otra. La
+       respuesta está en la tarifa, no en la ficha, y quien contesta no la
+       tiene.
     """
     for frase in frases:
         if veces.get(_plano(frase), 0) > 1:
@@ -302,10 +307,47 @@ def _la_frase_que_la_distingue(
             continue
         if _permite_las_dos(frase):
             continue
+        if _es_referencia_cruzada(frase):
+            continue
         if not _palabras(frase) or _la_ficha_cubre(frase, consta):
             continue
         return frase
     return None
+
+
+#: Con qué palabra la tarifa se refiere a otra posición en vez de a la
+#: mercancía. Es el mismo criterio que ya usa `_lo_que_excepciona` para no
+#: negar por una referencia cruzada, y al generador de preguntas le faltaba.
+_SEÑALA_OTRA_POSICION = re.compile(r"\b(fraccion|partida|subpartida|capitulo|inciso)")
+
+
+def _es_referencia_cruzada(frase: str) -> bool:
+    """¿La frase habla de otra posición de la tarifa y no de la mercancía?
+
+    LA PREGUNTA MÁS RENTABLE DEL MOTOR ERA IMPOSIBLE DE CONTESTAR
+
+    Medido el 5-oct sobre el corpus, la primera de la lista por rendimiento
+    —14 casos, más que las otras dos juntas— era ésta, sobre la 73121005:
+
+        La tarifa exige: «excepto los comprendidos en la fracción
+                          arancelaria 7312.10.08»
+        La ficha dice:   material = «acero» · construccion = «6x36» · …
+        ¿La cumple?      [sí / no]
+
+    Eso no tiene respuesta. No es una característica del cable: es dónde está
+    clasificado otro cable. Quien contesta tendría que resolver primero la
+    7312.10.08 —que es justo el empate que la pregunta venía a romper— y nada
+    de lo que mire en la ficha se lo va a decir.
+
+    `_lo_que_excepciona` ya se niega a NEGAR por una referencia cruzada, con
+    este mismo criterio y por la misma razón. Aquí faltaba, y el precio es
+    peor: una exclusión inerte no molesta a nadie, y una pregunta imposible
+    gasta el tiempo del clasificador y encima parece trabajo hecho.
+
+    Al descartarla, el motor baja a la siguiente frase que sí distingue y sí se
+    puede mirar en la ficha.
+    """
+    return _SEÑALA_OTRA_POSICION.search(_plano(frase)) is not None
 
 
 #: Palabras con las que la tarifa fija un umbral. Si además hay un número, es

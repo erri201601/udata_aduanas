@@ -1957,3 +1957,95 @@ def test_con_varias_supervivientes_el_descarte_no_desempata() -> None:
     )
 
     assert traza.final_status is RGIStatus.HUMAN_REVIEW_REQUIRED
+
+
+# ── Una pregunta que nadie puede contestar (5-oct) ──────────────────────────
+
+
+def test_no_se_pregunta_por_una_referencia_a_otra_fraccion() -> None:
+    """LA PREGUNTA MÁS RENTABLE DEL MOTOR NO TENÍA RESPUESTA.
+
+    Medido el 5-oct sobre el corpus, la primera de la lista por rendimiento
+    —14 casos, más que las otras dos juntas— era ésta:
+
+        La tarifa exige: «excepto los comprendidos en la fracción
+                          arancelaria 7312.10.08»
+        ¿La cumple?      [sí / no]
+
+    No es una característica del cable: es dónde está clasificado OTRO cable.
+    Quien contesta tendría que resolver primero la 7312.10.08 —que es justo el
+    empate que la pregunta venía a romper— y nada de lo que mire en la ficha se
+    lo va a decir.
+
+    `_lo_que_excepciona` ya se niega a NEGAR por una referencia cruzada, con
+    este mismo criterio. Aquí faltaba, y el precio es peor: una exclusión
+    inerte no molesta a nadie; una pregunta imposible gasta el tiempo del
+    clasificador y encima parece trabajo hecho.
+    """
+    from core.rgi_engine.pregunta import formular
+
+    cable = ClassificationContext(
+        description="CABLE DE ACERO SIN RECUBRIMIENTO, CONSTRUCCION 6X36, DIAMETRO 18 MM",
+        operation_date=OPERACION,
+        facts=(ProductFact(name="construccion", value="6x36", status="OBSERVED"),),
+        search_terms=("cables",),
+    )
+    candidatas = [
+        TariffCandidate(
+            code="73121005",
+            text=(
+                "De acero sin recubrimiento, con o sin lubricación, excepto los "
+                "comprendidos en la fracción arancelaria 7312.10.08."
+            ),
+            level="FRACTION",
+            specificity=3,
+        ),
+        TariffCandidate(
+            code="73121008",
+            text="Sin galvanizar, constituidos por 7 alambres.",
+            level="FRACTION",
+            specificity=3,
+        ),
+    ]
+
+    for p in formular(cable, candidatas):
+        assert "fracción" not in p.exige, f"pregunta por una referencia cruzada: {p.exige}"
+
+
+def test_la_frase_que_si_distingue_se_sigue_preguntando() -> None:
+    """Callarse en la referencia cruzada no es callarse del todo.
+
+    El motor baja a la siguiente frase que sí distingue y sí se puede mirar en
+    la ficha. Sin este test, la guarda podría dejar muda la pregunta entera y
+    el caso quedaría sin salida, que es peor que una pregunta mala.
+    """
+    from core.rgi_engine.pregunta import formular
+
+    cable = ClassificationContext(
+        description="CABLE DE ACERO SIN RECUBRIMIENTO, CONSTRUCCION 6X36",
+        operation_date=OPERACION,
+        facts=(ProductFact(name="construccion", value="6x36", status="OBSERVED"),),
+        search_terms=("cables",),
+    )
+    candidatas = [
+        TariffCandidate(
+            code="73121001",
+            text="Galvanizados, con núcleos sin torcer de la misma materia.",
+            level="FRACTION",
+            specificity=3,
+        ),
+        TariffCandidate(
+            code="73121005",
+            text=(
+                "De acero sin recubrimiento, excepto los comprendidos en la "
+                "fracción arancelaria 7312.10.08."
+            ),
+            level="FRACTION",
+            specificity=3,
+        ),
+    ]
+
+    preguntas = formular(cable, candidatas)
+
+    assert preguntas, "se calló del todo"
+    assert all("fracción" not in p.exige for p in preguntas)
