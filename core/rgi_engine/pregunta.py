@@ -203,16 +203,53 @@ def _singulares_de(palabra: str) -> set[str]:
     return formas
 
 
-def _frases(texto: str) -> list[str]:
+#: Los separadores con los que la tarifa encadena condiciones, capturados para
+#: saber CUÁL cerró cada frase. El punto sólo separa si no está entre dígitos:
+#: partir «406.4 mm» daba «superior a 406» y «4 mm», dos frases que no dicen
+#: nada y una de ellas con un umbral falso.
+_SEPARA = re.compile(r"([,;:]|(?<!\d)\.(?!\d))")
+
+
+def _frases(texto: str, *, nivel: str = "") -> list[str]:
     """El texto legal partido en las frases con las que la tarifa califica.
 
     La nomenclatura encadena condiciones con comas y punto y coma —«Galvanizados,
     con un diámetro mayor a 4 mm, constituidos por 7 alambres, lubricados»— y
     cada trozo es una exigencia distinta. Preguntar por el texto entero obliga
     a quien contesta a leer cuatro condiciones para responder a una.
+
+    LOS DOS PUNTOS NO CIERRAN UNA EXIGENCIA: ABREN UN GRUPO
+
+    En una PARTIDA, una frase terminada en «:» es un encabezado de guion — el
+    título de las subpartidas que vienen debajo (ADR 0004)— y no una condición
+    de la partida. 344 descripciones de partida llevan dos puntos y la muestra
+    es inequívoca: «Bovinos domésticos:», «Fresca o refrigerada:», «Mamíferos:».
+
+    Preguntarlo a nivel de partida es destructivo, y lo comprobé simulando la
+    respuesta sobre el corpus. La partida 7305 guarda pegado su primer
+    encabezado —«Tubos de los tipos utilizados en oleoductos o gasoductos:»— y
+    el motor lo preguntaba a 20 tuberías de la bandeja. Un «no» honesto —una
+    tubería de conducción de agua industrial NO es de las de oleoducto— borraba
+    la partida 7305 entera y el motor caía a `73063004`. César dictaminó
+    `73051999`. La pregunta más repetida de la bandeja producía una fracción
+    equivocada.
+
+    En una SUBPARTIDA el mismo encabezado va DELANTE y sí la califica: es el
+    nivel de guion inmediatamente superior, que es lo que distingue la 730511
+    de la 730520. Ahí preguntarlo es correcto y un «no» descarta sólo su grupo.
+    Por eso la diferencia es de nivel, no de puntuación.
     """
-    partes = re.split(r"[,;:.]", texto)
-    return [t for t in (p.strip() for p in partes) if len(t) >= _MINIMO]
+    piezas = _SEPARA.split(texto)
+    frases: list[str] = []
+    # `split` con grupo capturador devuelve [cuerpo, sep, cuerpo, sep, …, cuerpo].
+    for i in range(0, len(piezas), 2):
+        cuerpo = piezas[i].strip()
+        cierre = piezas[i + 1] if i + 1 < len(piezas) else ""
+        if cierre == ":" and nivel == "HEADING":
+            continue
+        if len(cuerpo) >= _MINIMO:
+            frases.append(cuerpo)
+    return frases
 
 
 def formular(context: ClassificationContext, candidatas: list[TariffCandidate]) -> list[Pregunta]:
@@ -265,14 +302,14 @@ def formular(context: ClassificationContext, candidatas: list[TariffCandidate]) 
     veces: dict[str, int] = {}
     por_candidata: dict[str, list[str]] = {}
     for candidata in candidatas:
-        propias = _frases(candidata.text)
+        propias = _frases(candidata.text, nivel=candidata.level)
         por_candidata[candidata.code] = propias
         for normalizada in {_plano(f) for f in propias}:
             veces[normalizada] = veces.get(normalizada, 0) + 1
 
     preguntas: list[Pregunta] = []
     for candidata in candidatas:
-        if _la_ficha_ya_cae_en_una_alternativa(candidata.text, consta):
+        if _la_ficha_ya_cae_en_una_alternativa(candidata.text, consta, candidata.level):
             continue
         frase = _la_frase_que_la_distingue(
             por_candidata[candidata.code], veces=veces, consta=consta, context=context
@@ -294,7 +331,7 @@ def formular(context: ClassificationContext, candidatas: list[TariffCandidate]) 
     return preguntas
 
 
-def _la_ficha_ya_cae_en_una_alternativa(texto: str, consta: set[str]) -> bool:
+def _la_ficha_ya_cae_en_una_alternativa(texto: str, consta: set[str], nivel: str = "") -> bool:
     """¿El texto ofrece ALTERNATIVAS y la ficha cumple una?
 
     EL PUNTO Y COMA SEPARA ALTERNATIVAS; LA COMA ACUMULA CONDICIONES
@@ -321,7 +358,7 @@ def _la_ficha_ya_cae_en_una_alternativa(texto: str, consta: set[str]) -> bool:
     """
     if ";" not in texto:
         return False
-    return any(_la_ficha_cubre(frase, consta) for frase in _frases(texto))
+    return any(_la_ficha_cubre(frase, consta) for frase in _frases(texto, nivel=nivel))
 
 
 def _la_frase_que_la_distingue(
