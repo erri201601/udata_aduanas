@@ -275,3 +275,284 @@ def test_es_simulacion_por_defecto() -> None:
     """§33: mientras no conste que los datos son reales."""
     assert auditar().is_simulation is True
     assert all(f.is_simulation for f in auditar().findings)
+
+
+# ── Las dos clases de monto (Persona 1, 5-oct) ──────────────────────────────
+
+
+def test_un_igi_mal_calculado_lleva_su_monto_sin_clasificar() -> None:
+    """EL CASO QUE DESBLOQUEA EL DINERO DE LA CONSOLA.
+
+    Un IGI mal calculado no compara tasas: compara lo que el importador
+    ESCRIBIÓ contra lo que la ley da para la fracción que él mismo declaró. No
+    hace falta clasificar nada para afirmarlo, así que el monto existe aunque
+    el motor no haya podido sostener una fracción esperada — que es el caso de
+    3 de cada 4 partidas del corpus.
+
+    Mientras dependió del motor fiscal, 199 hallazgos de IGI y 289 de IVA
+    salían en la consola como «sin monto» con los dos importes dentro.
+    """
+    r = auditar(
+        comparison=comparacion(
+            # La MISMA fracción en los dos lados: sin disputa, la tasa contra
+            # la que se mide es la que la ley le asigna a ese código.
+            declarado={"fraction_code": "84713001", "igi_amount": Decimal("4822.95")},
+            esperado={"igi_amount": Decimal("14468.85")},
+        ),
+        # SIN tasas: el motor fiscal no puede cuantificar nada aquí.
+        transaction_value=None,
+        declared_rates=None,
+        expected_rates=None,
+    )
+
+    h = next(f for f in r.findings if f.divergence.kind is DivergenceType.IGI_RATE_MISMATCH)
+    assert h.impact_amount == Decimal("9645.90"), "la diferencia de los dos importes"
+    assert h.impact_direction == "OMISION"
+    assert h.is_actionable, "con monto se puede presentar, no sólo investigar"
+
+
+def test_el_igi_y_el_iva_mal_calculados_se_suman() -> None:
+    """Son contribuciones DISTINTAS y se deben las dos.
+
+    Deduplicarlas con un `max()` se quedaría con la mayor y perdería la otra:
+    el importador debe el IGI que faltó Y el IVA que faltó.
+    """
+    r = auditar(
+        comparison=comparacion(
+            declarado={
+                "fraction_code": "84713001",
+                "igi_amount": Decimal("5000.00"),
+                "vat_amount": Decimal("17000.00"),
+            },
+            esperado={"igi_amount": Decimal("15000.00"), "vat_amount": Decimal("18528.00")},
+        ),
+        transaction_value=None,
+        declared_rates=None,
+        expected_rates=None,
+    )
+
+    assert r.total_exposure == Decimal("11528.00"), "10,000 de IGI + 1,528 de IVA"
+
+
+def test_las_dos_clases_de_monto_no_coinciden_nunca_en_una_partida() -> None:
+    """Y por eso la pregunta de «¿se suman?» ya no se puede dar.
+
+    Se intentó sumarlas. Parecía que telescopaban —y telescopan, pero sólo
+    contribución por contribución—: con valor 100 000, tasa declarada 0.05,
+    correcta 0.15, IGI escrito 1 000 e IVA escrito 18 528, la suma daba 15 600
+    donde se debían 13 872.
+
+    La respuesta no fue elegir una precedencia: fue darse cuenta de que el
+    error de cálculo **no se puede afirmar** cuando una causa está abierta,
+    porque las tres causas atacan justamente las dos entradas con las que se
+    calcula. Así quedan mutuamente excluyentes por construcción.
+    """
+    from core.audit import ALCANCE_CONTRIBUCION
+
+    r = auditar(
+        comparison=comparacion(
+            declarado={"fraction_code": "84713099", "igi_amount": Decimal("1000.00")},
+            esperado={"igi_amount": Decimal("5000.00")},
+        ),
+        transaction_value=VALOR,
+        declared_rates=TASAS_DECLARADAS,
+        expected_rates=TASAS_ESPERADAS,
+    )
+
+    alcances = {f.impact_scope for f in r.findings if f.impact_amount is not None}
+    assert ALCANCE_CONTRIBUCION not in alcances, (
+        "con la fracción abierta no se afirma ningún error de cálculo"
+    )
+    assert r.total_exposure == Decimal("11600.00"), "el delta de la fracción, que sí se sostiene"
+    assert r.total_exposure != Decimal("15600.00"), "nunca la suma de dos bases"
+
+
+def test_las_causas_siguen_sin_contarse_dos_veces() -> None:
+    """La regla vieja no se afloja: fracción y origen explican el MISMO delta.
+
+    Es el test de arriba —`test_el_total_no_cuenta_el_mismo_dinero_dos_veces`—
+    visto desde el alcance: las dos llevan `LINEA_COMPLETA` y el total toma
+    una, no las suma.
+    """
+    from core.audit import ALCANCE_LINEA
+
+    r = auditar(
+        comparison=comparacion(
+            declarado={"fraction_code": "84713099", "country_of_origin": "US"},
+            esperado={"country_of_origin": "CN"},
+        )
+    )
+
+    cuantificados = [f for f in r.findings if f.impact_amount is not None]
+    assert {f.impact_scope for f in cuantificados} == {ALCANCE_LINEA}
+    assert r.total_exposure == Decimal("11600.00"), "una, no la suma de las dos"
+
+
+def test_un_importe_que_no_es_numero_no_se_fuerza_a_cero() -> None:
+    """Un campo que no es dinero no tiene delta.
+
+    Convertirlo a cero lo presentaría como «comprobado y sin diferencia», que
+    es la mentira que este proyecto persigue en todas sus formas.
+    """
+    from core.audit.engine import _error_de_calculo
+    from core.shadow import Divergence
+
+    d = Divergence(
+        kind=DivergenceType.IGI_RATE_MISMATCH,
+        line_number=1,
+        field="igi_amount",
+        declared_value="sin dato",
+        expected_value="14468.85",
+        severity="CRITICAL",
+        reasoning="x",
+    )
+    assert _error_de_calculo(d) is None
+
+
+def test_el_motor_escribe_importes_en_los_dos_tipos_por_contribucion() -> None:
+    """EL CONTRATO CON `core/shadow/compare.py`.
+
+    `_error_de_calculo` resta `expected_value` menos `declared_value` y los
+    trata como dinero. El tipo se llama `IGI_RATE_MISMATCH` —por historia— y si
+    alguien lo emitiera comparando TASAS en vez de importes, el delta saldría
+    en céntimos y la consola presentaría 0.10 pesos como la deuda.
+
+    Se comprueba contra el motor de verdad, no contra una cadena escrita a
+    mano: si el campo cambia de significado, esto falla en vez de que el
+    importe se vuelva absurdo en silencio.
+    """
+    from decimal import InvalidOperation
+
+    from core.audit import POR_CONTRIBUCION
+
+    r = auditar(
+        comparison=comparacion(
+            declarado={
+                "fraction_code": "84713001",
+                "igi_amount": Decimal("4822.95"),
+                "vat_amount": Decimal("16328.58"),
+            },
+            esperado={"igi_amount": Decimal("14468.85"), "vat_amount": Decimal("17871.92")},
+        ),
+        transaction_value=None,
+        declared_rates=None,
+        expected_rates=None,
+    )
+
+    por_contribucion = [f for f in r.findings if f.divergence.kind in POR_CONTRIBUCION]
+    assert len(por_contribucion) == 2, "IGI e IVA, los dos tipos"
+    for f in por_contribucion:
+        assert f.divergence.field in {"igi_amount", "vat_amount"}, (
+            f"{f.divergence.kind} ya no compara un importe: {f.divergence.field}"
+        )
+        for valor in (f.divergence.declared_value, f.divergence.expected_value):
+            try:
+                importe = Decimal(valor or "")
+            except InvalidOperation:  # pragma: no cover - es el fallo que se vigila
+                pytest.fail(f"{f.divergence.kind} escribió algo que no es dinero: {valor!r}")
+            assert importe > 1, "una tasa (0.15) no es un importe: el campo cambió de sentido"
+
+
+def test_todo_lo_que_el_hallazgo_mapea_llega_a_la_tabla() -> None:
+    """EL TEST QUE CAZA UNA FAMILIA ENTERA DE DEFECTOS.
+
+    `impact_scope` se calculó en el motor, viajó en `to_finding_fields()` y el
+    repositorio —que construye la fila con campos nombrados uno a uno— no lo
+    incluía. El importe se guardaba bien y la INSTRUCCIÓN DE CÓMO AGREGARLO se
+    perdía: el agregador leía el nulo como «delta entero de la partida» y
+    deduplicaba con un máximo dos contribuciones que se deben las dos. La fila
+    quedaba bien y el total mal.
+
+    Es la sexta vez en este proyecto que un campo se escribe en el dominio y
+    nadie lo lee de vuelta —`document_ref`, `data_origin`, la vigencia,
+    `rule_id`/`prompt_id`, `input_kinds`—. Este test no comprueba un campo:
+    comprueba que NINGUNO de los que el hallazgo mapea se quede por el camino.
+    """
+    import inspect
+
+    from database.models import RiskFinding
+    from database.repositories.review import save_review
+
+    campos = (
+        auditar(
+            comparison=comparacion(
+                declarado={"fraction_code": "84713099", "igi_amount": Decimal("1000.00")},
+                esperado={"igi_amount": Decimal("5000.00")},
+            ),
+            transaction_value=VALOR,
+            declared_rates=TASAS_DECLARADAS,
+            expected_rates=TASAS_ESPERADAS,
+        )
+        .findings[0]
+        .to_finding_fields()
+    )
+
+    columnas = {c.name for c in RiskFinding.__table__.columns}
+    fuente = inspect.getsource(save_review)
+
+    perdidos = [nombre for nombre in campos if nombre in columnas and f"{nombre}=" not in fuente]
+    assert perdidos == [], (
+        f"el hallazgo mapea {perdidos} y `save_review` no los pasa: se calculan y se tiran"
+    )
+
+
+def test_no_se_afirma_un_error_de_calculo_sobre_una_fraccion_en_disputa() -> None:
+    """LO QUE LA VALIDACIÓN CONTRA LA BASE DESTAPÓ, Y ES EL PEOR CASO.
+
+    El error de cálculo se mide contra la tasa de la fracción DECLARADA. Si el
+    sistema dice que esa fracción está mal, la base del cálculo está en disputa
+    y el número no se sostiene.
+
+    Línea 9 del pedimento 600002 del corpus:
+
+        IGI       -20 952.72
+        IVA        -3 352.44
+        fracción  +24 305.14
+
+    Ese importador escribió el dinero correcto bajo un código equivocado. Sin
+    esta puerta, la consola le decía «puedes recuperar 24 305» — y no puede
+    recuperar nada.
+
+    Reportar de menos es el lado prudente del error. Prometer una devolución
+    que no existe es el otro, y es peor: el primero se corrige con una revisión
+    y el segundo se cobra.
+    """
+    r = auditar(
+        comparison=comparacion(
+            declarado={"fraction_code": "84713099", "igi_amount": Decimal("25000.00")},
+            esperado={"igi_amount": Decimal("5000.00")},
+        ),
+        transaction_value=VALOR,
+        declared_rates=TASAS_DECLARADAS,
+        expected_rates=TASAS_ESPERADAS,
+    )
+
+    igi = next(f for f in r.findings if f.divergence.kind is DivergenceType.IGI_RATE_MISMATCH)
+    assert igi.impact_amount is None, "la base contra la que se mediría está en disputa"
+    assert igi.impact_scope is None
+
+    # El hallazgo sigue existiendo —el IGI declarado no cuadra y eso es cierto—
+    # y el número que SÍ se puede dar es el de la fracción.
+    assert r.total_exposure == Decimal("11600.00"), "el delta de la fracción, que sí se sostiene"
+
+
+def test_sin_fraccion_en_disputa_el_error_de_calculo_si_se_afirma() -> None:
+    """La puerta no puede comerse el caso normal.
+
+    Si la fracción declarada no está en disputa, la tasa contra la que se mide
+    es la que la ley le asigna a ese código, y el error de cálculo es exacto.
+    """
+    r = auditar(
+        comparison=comparacion(
+            # La MISMA fracción en los dos lados: sin disputa, la tasa contra
+            # la que se mide es la que la ley le asigna a ese código.
+            declarado={"fraction_code": "84713001", "igi_amount": Decimal("4822.95")},
+            esperado={"igi_amount": Decimal("14468.85")},
+        ),
+        transaction_value=None,
+        declared_rates=None,
+        expected_rates=None,
+    )
+
+    igi = next(f for f in r.findings if f.divergence.kind is DivergenceType.IGI_RATE_MISMATCH)
+    assert igi.impact_amount == Decimal("9645.90")

@@ -1090,6 +1090,8 @@ export interface components {
             impact_amount?: string | null;
             /** Impact Amount Currency */
             impact_amount_currency?: string | null;
+            /** Impact Scope */
+            impact_scope?: string | null;
             /**
              * Is Simulation
              * @default false
@@ -1490,6 +1492,11 @@ export interface components {
              * @default false
              */
             monedas_mezcladas: boolean;
+            /**
+             * Sin Corrida
+             * @default 0
+             */
+            sin_corrida: number;
             /**
              * Simuladas
              * @default 0
@@ -2392,6 +2399,8 @@ export interface components {
             impact_amount?: string | null;
             /** Impact Amount Currency */
             impact_amount_currency?: string | null;
+            /** Impact Scope */
+            impact_scope?: string | null;
             /**
              * Is Simulation
              * @default false

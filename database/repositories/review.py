@@ -78,12 +78,27 @@ def save_review(
                 declared_value=divergencia.declared_value,
                 expected_value=divergencia.expected_value,
                 severity=hallazgo.severity,
+                # Estos dos también los mapeaba el hallazgo y también se
+                # tiraban. Hoy no cambian nada —`confidence` nunca se puebla y
+                # `requires_human_review` es True en las 1 098 filas, que es el
+                # default de la columna— así que la consistencia era una
+                # coincidencia. Pasarlos la convierte en garantía: el día que
+                # una divergencia diga «ésta no necesita a nadie», la fila lo
+                # dirá en vez de contradecirla en silencio.
+                confidence=divergencia.confidence,
+                requires_human_review=divergencia.requires_human_review,
                 # El motivo de la severidad va con el razonamiento: una
                 # severidad elevada sin explicación es una decisión que nadie
                 # puede revisar después.
                 rationale=_razonamiento(divergencia.reasoning, hallazgo.severity_reason),
                 impact_amount=hallazgo.impact_amount,
                 impact_amount_currency=hallazgo.impact_currency,
+                # Sin esto el importe se guarda y la INSTRUCCIÓN DE CÓMO
+                # AGREGARLO se pierde: el agregador trata el nulo como «delta
+                # entero de la partida» y deduplicaría con un máximo dos
+                # contribuciones que se deben las dos. El monto quedaría bien
+                # en la fila y mal en el total.
+                impact_scope=hallazgo.impact_scope,
                 is_simulation=hallazgo.is_simulation,
                 data_origin=data_origin,
             )
@@ -94,6 +109,7 @@ def save_review(
             session.add(
                 OpportunityFinding(
                     pedimento_id=pedimento_id,
+                    shadow_review_id=corrida.id,
                     pedimento_item_id=ids.get(oportunidad.line_number)
                     if oportunidad.line_number is not None
                     else None,

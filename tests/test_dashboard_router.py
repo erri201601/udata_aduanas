@@ -368,3 +368,104 @@ def test_una_decision_sin_ficha_tambien_puede_estar_dictaminada() -> None:
 
     assert sql.count("reviews_decision_id") >= 2, "los dos caminos, no sólo el de la ficha"
     assert "OR" in sql.upper()
+
+
+# ── El SQL del tablero y el agregador del motor, de acuerdo ────────────────
+
+
+@pytest.mark.parametrize(
+    ("montos", "esperado"),
+    [
+        # Sólo causas: se toma UNA, la mayor. Explican el mismo delta.
+        ([("11600.00", "LINEA_COMPLETA"), ("11600.00", "LINEA_COMPLETA")], "11600.00"),
+        ([("11600.00", "LINEA_COMPLETA"), ("4000.00", "LINEA_COMPLETA")], "11600.00"),
+        # Sólo contribuciones: se suman. Son deudas distintas.
+        ([("9645.90", "UNA_CONTRIBUCION"), ("1543.34", "UNA_CONTRIBUCION")], "11189.24"),
+        # Las dos clases: manda el error de cálculo y NO se suma el de la
+        # fracción. Sumar daba 15,600 donde se deben 13,872.
+        ([("4000.00", "UNA_CONTRIBUCION"), ("11600.00", "LINEA_COMPLETA")], "4000.00"),
+        # Sin alcance: las filas anteriores a la columna eran de línea completa.
+        ([("11600.00", None), ("11600.00", None)], "11600.00"),
+    ],
+)
+def test_el_agregador_del_motor_decide_cada_combinacion(
+    montos: list[tuple[str, str | None]], esperado: str
+) -> None:
+    """El criterio vive en una sola función, y éstos son sus cuatro casos.
+
+    El SQL del tablero hace lo mismo sobre la base; el test de abajo comprueba
+    que la consulta tenga las dos ramas en vez de un `max()` a secas.
+    """
+    from core.audit import total_por_partida
+
+    total = total_por_partida((Decimal(m), a) for m, a in montos)
+    assert total == Decimal(esperado)
+
+
+def test_la_consulta_del_tablero_no_deduplica_las_contribuciones() -> None:
+    """Un `max()` a secas se quedaría con la mayor y perdería la otra.
+
+    Se comprueba sobre el SQL porque la sesión falsa ignora los WHERE. Lo que
+    se fija es que la consulta distinga el alcance: sin eso, un IGI y un IVA
+    mal calculados en la misma partida reportarían sólo el mayor.
+    """
+    from apps.api.routers.dashboard import _por_partida
+
+    sql = str(_por_partida().original.compile(compile_kwargs={"literal_binds": True}))
+
+    assert "impact_scope" in sql, "la consulta tiene que leer el alcance"
+    assert "sum(" in sql.lower(), "las contribuciones se suman"
+    assert "max(" in sql.lower(), "las causas se deduplican"
+
+
+# ── Un ahorro no se cobra dos veces (Persona 1, 5-oct) ─────────────────────
+
+
+def test_el_ahorro_se_acota_a_la_corrida_vigente() -> None:
+    """Re-auditar no multiplica el dinero recuperable.
+
+    Sin acotar, cada corrida dejaba otra fila de oportunidad y el tablero las
+    sumaba todas: el pedimento 600010 del corpus acabó con la MISMA oportunidad
+    seis veces, y el «ahorro cuantificado» mostraba 259 959.97 donde el
+    sobrepago real son 27 538.49. Es el dato que un cliente querría cobrar.
+
+    Mismo razonamiento que el #100 dejó escrito para la exposición: «auditarlo
+    dos veces no lo hace deber el doble». Séptima vez que el tablero cuenta el
+    histórico donde debía contar el estado vigente.
+    """
+    sesion = SesionFalsa()
+    app = create_app()
+    app.dependency_overrides[get_session] = lambda: sesion
+    with TestClient(app) as c:
+        d = c.get("/dashboard").json()
+
+    sumas = [q for q in sesion.sql if "sum(" in q.lower() and "estimated_saving_amount" in q]
+    assert sumas, "no se sumó el ahorro"
+    assert all("shadow_reviews" in q for q in sumas), (
+        "el ahorro se suma sin acotar a la corrida vigente: re-auditar lo multiplica"
+    )
+    assert "sin_corrida" in d["oportunidades"], (
+        "las que quedan fuera tienen que declararse, no desaparecer"
+    )
+
+
+def test_las_oportunidades_sin_corrida_no_se_esconden() -> None:
+    """Quedan fuera del total y se dicen por número.
+
+    El nulo aquí NO es como en `RiskFinding`: allí significa «anterior al
+    registro de corridas», un hecho legítimo que sí cuenta. Aquí significa «se
+    escribió sin la columna que la identifica», y atribuirle una corrida sería
+    adivinar.
+    """
+    sesion = SesionFalsa()
+    app = create_app()
+    app.dependency_overrides[get_session] = lambda: sesion
+    with TestClient(app) as c:
+        c.get("/dashboard")
+
+    nulos = [
+        q
+        for q in sesion.sql
+        if "count(" in q.lower() and "shadow_review_id IS NULL" in q and "opportunity" in q
+    ]
+    assert nulos, "nadie cuenta las oportunidades sin corrida"

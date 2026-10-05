@@ -247,6 +247,12 @@ class RiskFindingBase(DataOriginFields, AIDecisionFields, SyntheticFields):
     rationale: str | None = None
     impact_amount: Decimal | None = None
     impact_amount_currency: str | None = None
+    impact_scope: str | None = None
+    """`LINEA_COMPLETA` se deduplica · `UNA_CONTRIBUCION` se suma.
+
+    No es descriptivo: es la instrucción de agregación, y viaja con la fila
+    para que no haya tres copias del criterio en tres lectores.
+    """
     is_simulation: bool = False
     evidence_id: uuid.UUID | None = None
 
@@ -275,6 +281,9 @@ class OpportunityFindingBase(DataOriginFields, AIDecisionFields, SyntheticFields
     pedimento_id: uuid.UUID | None = None
     pedimento_item_id: uuid.UUID | None = None
     product_id: uuid.UUID | None = None
+    shadow_review_id: uuid.UUID | None = None
+    """A qué corrida del Espejo pertenece. Sin esto, re-auditar sumaba el
+    mismo ahorro otra vez."""
     opportunity_type: str = Field(max_length=48)
     status: OpportunityStatus = OpportunityStatus.POTENTIAL
     rationale: str | None = None

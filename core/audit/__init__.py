@@ -52,13 +52,23 @@ que verificar si la vía de recuperación sigue abierta.
 
 from __future__ import annotations
 
-from core.audit.engine import CUANTIFICABLES, audit
+from core.audit.engine import (
+    ALCANCE_CONTRIBUCION,
+    ALCANCE_LINEA,
+    CUANTIFICABLES,
+    POR_CONTRIBUCION,
+    audit,
+    total_por_partida,
+)
 from core.audit.findings import AuditReport, Finding, empty_report
 from core.audit.severity import ESCALA, UMBRALES, adjust, severity_for_amount
 
 __all__ = [
+    "ALCANCE_CONTRIBUCION",
+    "ALCANCE_LINEA",
     "CUANTIFICABLES",
     "ESCALA",
+    "POR_CONTRIBUCION",
     "UMBRALES",
     "AuditReport",
     "Finding",
@@ -66,4 +76,5 @@ __all__ = [
     "audit",
     "empty_report",
     "severity_for_amount",
+    "total_por_partida",
 ]

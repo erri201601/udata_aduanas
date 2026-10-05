@@ -41,6 +41,16 @@ CLASSIFICATION_STATUS: Final = (
 # §21 maestro — severidad de un hallazgo de auditoría/riesgo.
 FINDING_SEVERITY: Final = ("INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL")
 
+# Cómo se agrega el monto de un hallazgo. No es una categoría descriptiva: es
+# la instrucción de si ese importe se suma con el de su partida o lo sustituye.
+#
+#   LINEA_COMPLETA     el delta ENTERO de la partida. Una fracción mal, un valor
+#                      mal y un origen mal explican el MISMO delta, así que
+#                      sumar dos contaría el mismo dinero dos veces.
+#   UNA_CONTRIBUCION   el error de cálculo de UNA contribución. El IGI mal y el
+#                      IVA mal se deben los dos: éstos sí se suman.
+IMPACT_SCOPE: Final = ("LINEA_COMPLETA", "UNA_CONTRIBUCION")
+
 # §23 maestro — ciclo de vida de una oportunidad. POTENTIAL != ahorro garantizado.
 OPPORTUNITY_STATUS: Final = ("POTENTIAL", "VALIDATED", "REJECTED")
 
