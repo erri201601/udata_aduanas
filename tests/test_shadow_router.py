@@ -71,11 +71,14 @@ def _partida(**kwargs: Any) -> Any:
     return item
 
 
-def _revision(*, unverifiable: list[str], is_complete: bool = False) -> Any:
+def _revision(
+    *, unverifiable: list[str], is_complete: bool = False, verified: list[str] | None = None
+) -> Any:
     r = ShadowReview(
         pedimento_id=PEDIMENTO_ID,
         is_complete=is_complete,
         unverifiable=unverifiable,
+        verified=verified or [],
         engine_version="review-1.0",
         data_origin="SYNTHETIC",
     )
@@ -379,3 +382,180 @@ def test_partidas_distintas_si_suman() -> None:
         d = c.get(f"/pedimentos/{PEDIMENTO_ID}/shadow").json()
 
     assert d["exposicion_cuantificada"] == "150.00"
+
+
+# ── PARCIAL tiene su contador (Persona 1, 5-oct) ───────────────────────────
+
+
+def test_una_partida_parcial_cuenta_como_comprobada() -> None:
+    """PARCIAL existía en la línea y no lo contaba ningún total.
+
+    Los cuatro contadores no sumaban `partidas`, y la consola —que calculaba
+    «comprobadas» como divergentes + conformes— daba cero sobre un pedimento
+    donde cada partida enseñaba nueve de diez comprobaciones hechas. El cartel
+    rojo de «no se pudo comprobar nada» volvía a salir encima de la pantalla
+    que acababa de enumerar lo comprobado.
+
+    Séptima vez en este proyecto que dos estados se colapsan o que un estado
+    se queda sin su rama.
+    """
+    with _cliente(
+        pedimento=_pedimento(),
+        partidas=[_partida()],
+        revision=_revision(
+            unverifiable=["línea 1: no se conoce qué NOM exige la fracción esperada"],
+            verified=["línea 1: fracción arancelaria", "línea 1: valor en aduana"],
+        ),
+        hallazgos=[],
+    ) as c:
+        d = c.get(f"/pedimentos/{PEDIMENTO_ID}/shadow").json()
+
+    assert d["lineas"][0]["estado"] == "PARCIAL"
+    assert d["parciales"] == 1, "PARCIAL tiene que tener su contador"
+    assert d["sin_verificar"] == 0, "se comprobó algo: no es «sin verificar»"
+    assert d["conformes"] == 0, "y le falta algo: tampoco es conforme"
+    suma = d["divergentes"] + d["parciales"] + d["sin_verificar"] + d["conformes"]
+    assert suma == d["partidas"], "los estados tienen que sumar las partidas"
+
+
+def test_una_partida_parcial_dice_que_comprobo() -> None:
+    """La mitad que faltaba: lo que SÍ se comprobó, por nombre."""
+    with _cliente(
+        pedimento=_pedimento(),
+        partidas=[_partida()],
+        revision=_revision(
+            unverifiable=["línea 1: no se conoce qué NOM exige la fracción esperada"],
+            verified=["línea 1: fracción arancelaria", "línea 1: valor en aduana"],
+        ),
+        hallazgos=[],
+    ) as c:
+        d = c.get(f"/pedimentos/{PEDIMENTO_ID}/shadow").json()
+
+    assert d["lineas"][0]["comprobado"] == ["fracción arancelaria", "valor en aduana"]
+
+
+def test_el_denominador_sale_del_motor_no_de_la_pantalla() -> None:
+    """«9 de 10» sólo significa algo si el 10 sale de la misma lista que el 9.
+
+    Con el total escrito a mano en la consola, añadir una comprobación al
+    motor dejaría la pantalla diciendo «10 de 10» sobre una partida a la que
+    le falta una.
+    """
+    from core.shadow import comprobaciones_posibles
+
+    with _cliente(
+        pedimento=_pedimento(),
+        partidas=[_partida()],
+        revision=_revision(unverifiable=[], verified=["línea 1: fracción arancelaria"]),
+        hallazgos=[],
+    ) as c:
+        d = c.get(f"/pedimentos/{PEDIMENTO_ID}/shadow").json()
+
+    assert d["comprobaciones_posibles"] == list(comprobaciones_posibles())
+    assert "fracción arancelaria" in d["comprobaciones_posibles"], (
+        "el nombre que viaja en `comprobado` tiene que estar en la lista, "
+        "o la pantalla no puede restar los que faltan"
+    )
+
+
+def test_una_revision_vieja_sin_comprobaciones_se_sigue_leyendo() -> None:
+    """Las corridas anteriores a la columna no la tienen.
+
+    Tienen que seguir leyéndose, y sin comprobaciones registradas: ésa es la
+    verdad sobre ellas, no un cero que haya que esconder.
+    """
+    with _cliente(
+        pedimento=_pedimento(),
+        partidas=[_partida()],
+        revision=_revision(unverifiable=["línea 1: no se consultó la ficha técnica"]),
+        hallazgos=[],
+    ) as c:
+        d = c.get(f"/pedimentos/{PEDIMENTO_ID}/shadow").json()
+
+    assert d["lineas"][0]["comprobado"] == []
+    assert d["lineas"][0]["estado"] == "SIN_VERIFICAR", (
+        "sin comprobaciones registradas no se puede llamar parcial"
+    )
+
+
+def test_los_nombres_que_escribe_el_motor_son_los_de_la_lista() -> None:
+    """EL OTRO CONTRATO CON `core/shadow/compare.py`.
+
+    La consola resta `comprobado` de `comprobaciones_posibles` para nombrar lo
+    que falta. Eso sólo es correcto si los nombres son LOS MISMOS: si el motor
+    escribiera «fracción» donde la lista dice «fracción arancelaria», la
+    pantalla diría que no se comprobó la fracción justo después de enseñarla
+    como comprobada.
+
+    Se comprueba contra el motor de verdad, igual que el formato de los
+    motivos, y no contra una cadena escrita a mano.
+    """
+    from apps.api.routers.shadow import _repartir_motivos
+    from core.shadow import DeclaredItem, ExpectedItem, comprobaciones_posibles
+    from core.shadow.compare import compare
+
+    comparacion = compare(
+        [DeclaredItem(line_number=7, fraction_code="84714902", country_of_origin="CN")],
+        [
+            ExpectedItem(
+                line_number=7,
+                fraction_code="84713001",
+                is_resolved=True,
+                country_of_origin="CN",
+            )
+        ],
+    )
+    assert comparacion.verified, "el motor debería reportar comprobaciones aquí"
+
+    por_linea, sueltos = _repartir_motivos(list(comparacion.verified))
+
+    assert sueltos == [], f"el formato del motor cambió: {sueltos}"
+    posibles = set(comprobaciones_posibles())
+    desconocidos = [n for n in por_linea[7] if n not in posibles]
+    assert desconocidos == [], (
+        f"el motor escribe nombres que no están en la lista: {desconocidos}. "
+        "La pantalla los contaría como no comprobados."
+    )
+
+
+# ── Un sobrepago no resta de la exposición (Persona 1, 5-oct) ──────────────
+
+
+def test_un_sobrepago_no_resta_de_la_exposicion() -> None:
+    """El pedimento 600012 enseñaba «exposición cuantificada» en negativo.
+
+    Un importe con un signo menos delante, en el sitio donde la pantalla dice
+    cuánto hay en juego. No es exposición: es dinero que se pagó de más, y
+    mezclar las dos direcciones da un neto que no se puede presentar ni como
+    adeudo ni como recuperable.
+    """
+    with _cliente(
+        pedimento=_pedimento(),
+        partidas=[_partida()],
+        revision=_revision(unverifiable=[]),
+        hallazgos=[_hallazgo(impact_amount=Decimal("-29674.51"))],
+    ) as c:
+        d = c.get(f"/pedimentos/{PEDIMENTO_ID}/shadow").json()
+
+    assert d["exposicion_cuantificada"] is None, "un sobrepago no es exposición"
+    assert d["sobrepagos"] == 1, "y no puede desaparecer sin decirlo"
+
+
+def test_un_adeudo_y_un_sobrepago_no_se_netean() -> None:
+    """50 000 que se deben y 30 000 pagados de más no son 20 000 de nada."""
+    otra = uuid.uuid4()
+    with _cliente(
+        pedimento=_pedimento(),
+        partidas=[_partida()],
+        revision=_revision(unverifiable=[]),
+        hallazgos=[
+            _hallazgo(impact_amount=Decimal("50000.00")),
+            _hallazgo(pedimento_item_id=otra, impact_amount=Decimal("-30000.00")),
+        ],
+    ) as c:
+        d = c.get(f"/pedimentos/{PEDIMENTO_ID}/shadow").json()
+
+    assert Decimal(d["exposicion_cuantificada"]) == Decimal("50000.00"), (
+        "la exposición es lo que se debe, sin descontar lo que se pagó de más"
+    )
+    assert d["sobrepagos"] == 1

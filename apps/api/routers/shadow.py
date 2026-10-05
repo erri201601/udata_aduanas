@@ -39,6 +39,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Final
 
 import sqlalchemy as sa
+from core.shadow import comprobaciones_posibles
 from database.models import Pedimento, PedimentoItem, RiskFinding, ShadowReview
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
@@ -106,7 +107,11 @@ class LineaEspejo(BaseModel):
 
     # ── el veredicto ────────────────────────────────────────────────────────
     estado: str
-    """`DIVERGENTE`, `SIN_VERIFICAR` o `CONFORME`. Nunca dos a la vez."""
+    """`DIVERGENTE`, `PARCIAL`, `SIN_VERIFICAR` o `CONFORME`. Nunca dos a la vez.
+
+    `PARCIAL` es el único que admite buenas y malas noticias en la misma
+    partida: se comprobó parte y pasó, y otra parte no se pudo comprobar.
+    """
 
     verificacion_parcial: bool = False
     """Hay hallazgos Y huecos: parte se comprobó y parte no.
@@ -167,6 +172,23 @@ class PedimentoEspejo(BaseModel):
     sin_verificar: int = 0
     conformes: int = 0
     """Sólo las que se comprobaron y coincidieron. Nada más puede llamarse así."""
+    parciales: int = 0
+    """Se comprobó parte y pasó; otra parte no se pudo comprobar.
+
+    PARCIAL existía ya en la línea y no lo contaba nadie, así que los cuatro
+    totales no sumaban `partidas` y la pantalla —que calculaba «comprobadas»
+    como divergentes + conformes— daba cero sobre un pedimento donde cada
+    partida enseñaba nueve de diez comprobaciones hechas. Es la séptima vez en
+    este proyecto que un estado se queda sin su contador o sin su rama.
+    """
+
+    comprobaciones_posibles: list[str] = Field(default_factory=list)
+    """Las diez comprobaciones que el Espejo sabe hacer, en orden.
+
+    Viaja en la respuesta para que el denominador de «9 de 10» salga del motor
+    y no de un 10 escrito a mano en la consola. Añadir una comprobación al
+    motor tiene que mover ese número solo.
+    """
 
     exposicion_cuantificada: Decimal | None = None
     """Suma SÓLO de los hallazgos con monto. Los demás no se estiman."""
@@ -178,6 +200,13 @@ class PedimentoEspejo(BaseModel):
     la duda no hay total, y se dice por qué.
     """
     hallazgos_sin_monto: int = 0
+    sobrepagos: int = 0
+    """Hallazgos con monto negativo: se pagó de más.
+
+    Fuera de `exposicion_cuantificada`, porque restarlos daría un neto que no
+    es ni lo que se debe ni lo que se puede recuperar. Se cuentan para que no
+    desaparezcan sin decirlo.
+    """
 
     motivos_sin_atribuir: list[str] = Field(default_factory=list)
     """Motivos de no-verificación que no se pudieron colgar de una partida.
@@ -364,18 +393,32 @@ def espejo(pedimento_id: uuid.UUID, session: SessionDep) -> PedimentoEspejo:
         )
 
     con_monto = [h for h in hallazgos if h.impact_amount is not None]
-    monedas = {h.impact_amount_currency for h in con_monto if h.impact_amount_currency}
+    # SÓLO LO QUE SE DEBE (Persona 1, 5-oct)
+    #
+    # Un sobrepago llega con monto negativo y, sumado aquí, resta. El pedimento
+    # 600012 del corpus enseñaba «exposición cuantificada: menos 29 674.51 MXN»: un
+    # importe en rojo con un signo menos delante, en el sitio donde la pantalla
+    # dice cuánto hay en juego. No es exposición —es dinero que se pagó de
+    # más—, y mezclar las dos direcciones en una cifra da un neto que no se
+    # puede presentar ni como adeudo ni como recuperable.
+    #
+    # Son dos conversaciones distintas, y la de recuperar ya tiene su sitio: el
+    # Money Finder la emite como oportunidad, en positivo. Aquí se suma lo que
+    # se debe y los sobrepagos se cuentan aparte.
+    adeudos = [h for h in con_monto if h.impact_amount and h.impact_amount > 0]
+    sobrepagos = len([h for h in con_monto if h.impact_amount and h.impact_amount < 0])
+    monedas = {h.impact_amount_currency for h in adeudos if h.impact_amount_currency}
     mezcladas = len(monedas) > 1
     # UN monto por partida, no uno por hallazgo: dos divergencias de la misma
     # partida explican la MISMA diferencia y el motor le da a cada una el monto
     # entero (`core.audit.engine._total`). Sumarlos contaría ese dinero dos
     # veces, y con el corpus una partida puede traer valor y origen a la vez.
     monto_por_partida: dict[uuid.UUID, Decimal] = {}
-    for h in con_monto:
+    for h in adeudos:
         if h.impact_amount is None:
             continue
         clave = h.pedimento_item_id or h.id
-        if abs(h.impact_amount) > abs(monto_por_partida.get(clave, Decimal(0))):
+        if h.impact_amount > monto_por_partida.get(clave, Decimal(0)):
             monto_por_partida[clave] = h.impact_amount
     # Con más de una moneda no hay total: sumar pesos con dólares da un número
     # que parece dinero y no lo es.
@@ -407,9 +450,12 @@ def espejo(pedimento_id: uuid.UUID, session: SessionDep) -> PedimentoEspejo:
         divergentes=sum(1 for x in lineas if x.estado == "DIVERGENTE"),
         sin_verificar=sum(1 for x in lineas if x.estado == "SIN_VERIFICAR"),
         conformes=sum(1 for x in lineas if x.estado == "CONFORME"),
+        parciales=sum(1 for x in lineas if x.estado == "PARCIAL"),
+        comprobaciones_posibles=list(comprobaciones_posibles()),
         exposicion_cuantificada=suma,
         exposicion_moneda=next(iter(monedas)) if len(monedas) == 1 else None,
         monedas_mezcladas=mezcladas,
         hallazgos_sin_monto=len(hallazgos) - len(con_monto),
+        sobrepagos=sobrepagos,
         motivos_sin_atribuir=sueltos,
     )

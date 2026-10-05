@@ -26,6 +26,13 @@ const ORDEN: Record<AttributeStatus, number> = {
   MISSING: 3,
 }
 
+/** De qué tipo de entrada salió el DNA, en castellano. */
+const ENTRADAS: Record<string, string> = {
+  text: 'una ficha técnica',
+  image: 'una fotografía',
+  pdf: 'un PDF',
+}
+
 function porCercania(a: ProductAttributeRead, b: ProductAttributeRead): number {
   return ORDEN[a.status] - ORDEN[b.status] || a.name.localeCompare(b.name)
 }
@@ -58,7 +65,7 @@ export function ProductDna({ onClasificado }: Props = {}) {
         </button>
       </header>
 
-      <SyntheticBanner />
+      <SyntheticBanner origin={dna?.data_origin} />
 
       {activo && <SubirImagen productId={activo} onExtraido={recargar} />}
 
@@ -116,6 +123,15 @@ export function ProductDna({ onClasificado }: Props = {}) {
               <div>
                 <dt>Revisión humana</dt>
                 <dd>{dna.requires_human_review ? 'requerida' : 'no requerida'}</dd>
+              </div>
+              {/* `input_kinds` se escribía en la base desde el principio y
+                  ninguna pantalla lo leía. Importa: un atributo leído de una
+                  foto no es la misma evidencia que uno leído de una ficha
+                  técnica, y hasta ahora los dos salían en la misma tabla sin
+                  nada que los distinguiera. */}
+              <div>
+                <dt>Leído de</dt>
+                <dd>{dna.input_kinds.map((k) => ENTRADAS[k] ?? k).join(' + ') || '—'}</dd>
               </div>
             </dl>
           </div>

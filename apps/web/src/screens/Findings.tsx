@@ -46,6 +46,10 @@ export function Findings() {
 
   const hallazgos = revision?.findings ?? []
   const accionables = hallazgos.filter((h) => esAccionable(h.impact_amount))
+  /* El aviso habla de lo que hay en pantalla, no del proyecto entero. Cada
+     fila lleva además su propia marca, así que una lista mixta queda marcada
+     fila a fila y no de golpe. */
+  const haySimulados = hallazgos.some((h) => h.is_simulation)
 
   return (
     <section className="pantalla">
@@ -58,7 +62,7 @@ export function Findings() {
         </div>
       </header>
 
-      <SyntheticBanner />
+      {haySimulados && <SyntheticBanner />}
 
       {(errorLista || error) && (
         <div className="alerta" role="alert">

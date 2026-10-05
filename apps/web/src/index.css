@@ -235,6 +235,22 @@ code {
   color: var(--acento);
 }
 
+/* Lo que una persona sostuvo con su nombre. En verde y no en azul: no es una
+   fuente más, es alguien que se hizo responsable. */
+.badge-origen--human_validated {
+  background: rgba(48, 164, 108, 0.14);
+  border: 1px solid rgba(48, 164, 108, 0.45);
+  color: var(--ok);
+}
+
+/* Un origen fuera de los cinco de la regla 3. Sale en rojo porque es un
+   defecto nuestro, no una categoría: antes salía en blanco y pasaba por bueno. */
+.badge-origen--desconocido {
+  background: rgba(229, 72, 77, 0.14);
+  border: 1px solid rgba(229, 72, 77, 0.45);
+  color: var(--mal);
+}
+
 .aviso-sintetico {
   display: flex;
   align-items: center;
@@ -247,6 +263,14 @@ code {
 }
 
 .aviso-sintetico p { margin: 0; font-size: 0.87rem; }
+
+/* El mismo aviso cuando el dato NO es simulado: deja de gritar en ámbar y se
+   queda informando. Que la marca de simulado valga algo depende de que no
+   salga sobre lo que es real. */
+.aviso-sintetico--real {
+  background: rgba(48, 164, 108, 0.07);
+  border-color: rgba(48, 164, 108, 0.35);
+}
 
 .pendiente {
   padding: 3rem;
@@ -1160,6 +1184,42 @@ code {
   padding-left: 0.8rem;
   font-size: 0.82rem;
   line-height: 1.55;
+  max-width: 78ch;
+}
+
+/* Lo comprobado va en verde y SIN peso: es la mitad buena de la partida, y
+   tiene que verse sin competir con el hallazgo, que es lo que se actúa. */
+.comprobaciones {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.5rem;
+}
+
+.comprobaciones > li {
+  font-size: 0.76rem;
+  color: var(--tenue);
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--borde);
+  background: var(--bien, transparent);
+}
+
+.comprobado__cuenta {
+  margin-left: 0.4rem;
+  color: var(--ok);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+/* Lo que falta se nombra aquí, no sólo se resta: nueve de diez no es limpia. */
+.comprobado__faltan {
+  margin: 0.5rem 0 0;
+  font-size: 0.78rem;
+  color: var(--aviso);
+  line-height: 1.5;
   max-width: 78ch;
 }
 

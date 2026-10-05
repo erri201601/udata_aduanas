@@ -398,6 +398,15 @@ class OpportunityFinding(
     rationale: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     estimated_saving_amount: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
     estimated_saving_amount_currency: Mapped[str | None] = mapped_column(_CCY, nullable=True)
+    #: `RiskFinding` la tenía desde el principio y aquí faltaba, así que la
+    #: corrida reventaba con un 500 en cuanto un pedimento producía una
+    #: oportunidad —raro, por eso llevaba meses escondido—. Y el defecto de
+    #: fondo no era el 500: un ahorro que no puede decir si sale de un
+    #: pedimento inventado es el dato más peligroso de la consola. «Puedes
+    #: recuperar 17 400» sobre una simulación es la regla 4 al revés.
+    is_simulation: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, server_default=sa.false()
+    )
     legal_rule_ids: Mapped[list[uuid.UUID]] = mapped_column(
         ARRAY(sa.Uuid(as_uuid=True)), nullable=False, server_default="{}"
     )

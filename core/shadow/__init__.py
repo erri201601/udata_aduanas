@@ -47,7 +47,12 @@ expectativa.
 
 from __future__ import annotations
 
-from core.shadow.compare import VALUE_TOLERANCE, compare, compare_item
+from core.shadow.compare import (
+    VALUE_TOLERANCE,
+    compare,
+    compare_item,
+    comprobaciones_posibles,
+)
 from core.shadow.divergences import DEFAULT_SEVERITY, DivergenceType
 from core.shadow.types import (
     DeclaredItem,
@@ -67,5 +72,6 @@ __all__ = [
     "ShadowComparison",
     "compare",
     "compare_item",
+    "comprobaciones_posibles",
     "default_severity",
 ]

@@ -428,6 +428,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/review/vocabulario": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Responde una pregunta de desempate y la guarda para siempre
+         * @description Convierte un minuto de un clasificador en conocimiento reutilizable.
+         *
+         *     POR QUÉ ESTO EXISTE
+         *
+         *     Hoy un dictamen resuelve UN caso. Medido sobre el corpus el 2-oct, las 52
+         *     decisiones atascadas se concentran en ocho familias —8528 con 12, 7305 con
+         *     11, 7312 con 8—: la misma duda, una y otra vez, y cada vez el trabajo
+         *     entero otra vez.
+         *
+         *     Una respuesta aquí resuelve la familia. La próxima tubería HFW ya no
+         *     pregunta, ni la siguiente, ni las mil siguientes.
+         *
+         *     EL «NO» VALE TANTO COMO EL «SÍ»
+         *
+         *     `son_lo_mismo = false` no es una no-respuesta: es la que descarta. Que HFW
+         *     NO sea arco sumergido hace imposible la 730511, y eso es una afirmación
+         *     sólida que deja al motor con dos candidatas en vez de nueve. Hasta hoy los
+         *     noes se perdían porque no había dónde guardarlos.
+         *
+         *     ENTRA COMO `HUMAN_VALIDATED`, Y ESA COLUMNA ES TODO
+         *
+         *     Lo mismo escrito por nosotros sería `SYNTHETIC` — conjetura. Firmado por un
+         *     clasificador es criterio profesional, y es la diferencia entre algo que un
+         *     agente aduanal puede defender y algo que no.
+         */
+        post: operations["responder_vocabulario_review_vocabulario_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/review/{decision_id}": {
         parameters: {
             query?: never;
@@ -1251,6 +1294,16 @@ export interface components {
             impacto_cuantificado?: string | null;
             /** Impacto Moneda */
             impacto_moneda?: string | null;
+            /**
+             * Sobrepagos
+             * @default 0
+             */
+            sobrepagos: number;
+            /**
+             * Monedas Mezcladas
+             * @default false
+             */
+            monedas_mezcladas: boolean;
         };
         /**
          * ImpactoEnDecisiones
@@ -1317,6 +1370,8 @@ export interface components {
             divergencias?: components["schemas"]["DivergenciaRead"][];
             /** No Verificable Por */
             no_verificable_por?: string[];
+            /** Comprobado */
+            comprobado?: string[];
             /** Peor Severidad */
             peor_severidad?: string | null;
         };
@@ -1400,6 +1455,16 @@ export interface components {
             ahorro_cuantificado?: string | null;
             /** Ahorro Moneda */
             ahorro_moneda?: string | null;
+            /**
+             * Monedas Mezcladas
+             * @default false
+             */
+            monedas_mezcladas: boolean;
+            /**
+             * Simuladas
+             * @default 0
+             */
+            simuladas: number;
         };
         /**
          * Pasaje
@@ -1490,6 +1555,13 @@ export interface components {
              * @default 0
              */
             conformes: number;
+            /**
+             * Parciales
+             * @default 0
+             */
+            parciales: number;
+            /** Comprobaciones Posibles */
+            comprobaciones_posibles?: string[];
             /** Exposicion Cuantificada */
             exposicion_cuantificada?: string | null;
             /** Exposicion Moneda */
@@ -1504,6 +1576,11 @@ export interface components {
              * @default 0
              */
             hallazgos_sin_monto: number;
+            /**
+             * Sobrepagos
+             * @default 0
+             */
+            sobrepagos: number;
             /** Motivos Sin Atribuir */
             motivos_sin_atribuir?: string[];
         };
@@ -2055,6 +2132,22 @@ export interface components {
             redacta_respuesta: boolean;
         };
         /**
+         * RespuestaVocabulario
+         * @description Lo que un clasificador contesta a la pregunta de desempate.
+         */
+        RespuestaVocabulario: {
+            /** Termino Ficha */
+            termino_ficha: string;
+            /** Termino Tarifa */
+            termino_tarifa: string;
+            /** Son Lo Mismo */
+            son_lo_mismo: boolean;
+            /** Reviewer */
+            reviewer: string;
+            /** Nota */
+            nota?: string | null;
+        };
+        /**
          * ReviewRequest
          * @description Las tasas de la operación. Todas opcionales; sin ellas no hay monto.
          */
@@ -2369,6 +2462,18 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** VocabularioGuardado */
+        VocabularioGuardado: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Data Origin */
+            data_origin: string;
         };
     };
     responses: never;
@@ -2930,6 +3035,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PendienteRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    responder_vocabulario_review_vocabulario_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RespuestaVocabulario"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VocabularioGuardado"];
                 };
             };
             /** @description Validation Error */

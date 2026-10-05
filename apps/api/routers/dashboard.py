@@ -111,8 +111,29 @@ class Hallazgos(BaseModel):
     """Sin monto. NO son menos graves — una NOM faltante no cambia lo que se
     paga y aun así detiene la mercancía."""
     impacto_cuantificado: Decimal | None = None
-    """Suma SÓLO de los hallazgos con monto. Los demás no se estiman."""
+    """Suma SÓLO de los hallazgos con monto. Los demás no se estiman.
+
+    `None` cuando hay más de una moneda: ver `monedas_mezcladas`.
+    """
     impacto_moneda: str | None = None
+    sobrepagos: int = 0
+    """Hallazgos cuyo monto es negativo: se pagó de más.
+
+    No entran en `impacto_cuantificado`, porque restarlos de la exposición
+    daría un neto que no es ni lo que se debe ni lo que se puede recuperar. Se
+    cuentan aquí para que no desaparezcan: el importe está en la tarjeta de
+    Oportunidad, que es donde esa conversación tiene sentido.
+    """
+
+    monedas_mezcladas: bool = False
+    """Hay montos en más de una moneda, así que no hay total.
+
+    El Espejo ya aplicaba esta disciplina (`PedimentoEspejo.monedas_mezcladas`)
+    y el tablero no: sumaba a ciegas y etiquetaba el resultado con la PRIMERA
+    moneda que encontraba. Con dos monedas eso da un número que parece dinero,
+    no lo es, y encima lleva una divisa que afirma de qué moneda es. Ante la
+    duda no hay total, y se dice por qué.
+    """
 
 
 class Oportunidades(BaseModel):
@@ -121,6 +142,15 @@ class Oportunidades(BaseModel):
     total: int = 0
     ahorro_cuantificado: Decimal | None = None
     ahorro_moneda: str | None = None
+    monedas_mezcladas: bool = False
+    """Mismo criterio que en los hallazgos: con dos monedas no hay total."""
+    simuladas: int = 0
+    """Cuántas de esas oportunidades salen de un pedimento simulado.
+
+    Un ahorro es el dato de esta consola que alguien querría cobrar. Que no
+    dijera si sale de una operación inventada era la regla 4 al revés, y el
+    censo de `filas_simuladas` ni siquiera contaba esta tabla.
+    """
 
 
 class Dashboard(BaseModel):
@@ -163,6 +193,20 @@ def _por_partida() -> sa.Subquery:
 
     Los hallazgos sin revisión —el del seed— siguen contando: son un hecho
     registrado aunque no conste de qué corrida salieron.
+
+    SÓLO LO QUE SE DEBE, NO LO QUE SE PAGÓ DE MÁS (Persona 1, 5-oct)
+
+    Un sobrepago llega con monto negativo, y sumado a la exposición la resta.
+    Un pedimento que dejó de pagar 50 000 y pagó 30 000 de más mostraba 20 000
+    de exposición: ni los 50 000 que hay que regularizar ni los 30 000 que se
+    pueden recuperar, sino un neto que no es ninguna de las dos cosas y que
+    nadie puede presentar.
+
+    Son dos conversaciones distintas con el cliente —«esto lo debes» y «esto lo
+    puedes recuperar»— y el dinero recuperable ya tiene su tarjeta: el Money
+    Finder lo emite como oportunidad, en positivo. Aquí se cuenta sólo lo que
+    se debe, y los sobrepagos se declaran por número en `sobrepagos` para que
+    no desaparezcan en silencio.
     """
     ultimas = (
         sa.select(ShadowReview.id)
@@ -174,8 +218,10 @@ def _por_partida() -> sa.Subquery:
     return (
         sa.select(monto)
         .where(
-            RiskFinding.impact_amount.isnot(None),
-            RiskFinding.impact_amount != 0,
+            # `> 0` ya excluye el nulo y el cero; se deja explícito porque lo
+            # que esta condición significa es «lo que se debe», no «lo que
+            # tiene monto».
+            RiskFinding.impact_amount > 0,
             sa.or_(
                 RiskFinding.shadow_review_id.is_(None),
                 RiskFinding.shadow_review_id.in_(sa.select(ultimas.c.id)),
@@ -305,10 +351,27 @@ def tablero(session: SessionDep) -> Dashboard:
     con_monto = sa.and_(RiskFinding.impact_amount.isnot(None), RiskFinding.impact_amount != 0)
     total_hallazgos = _contar(session, RiskFinding, vigentes)
     accionables = _contar(session, RiskFinding, vigentes, con_monto)
-    suma = session.scalar(sa.select(sa.func.sum(_por_partida().c.monto)))
-    moneda = session.scalar(
-        sa.select(RiskFinding.impact_amount_currency).where(vigentes, con_monto).limit(1)
+    # Los sobrepagos no entran en la exposición, pero se dicen por número: un
+    # hallazgo que desaparece de la pantalla sin explicación es peor que uno
+    # que se declara fuera del total.
+    sobrepagos = _contar(session, RiskFinding, vigentes, RiskFinding.impact_amount < 0)
+    # Las monedas presentes, no «la primera»: con dos, no hay total que dar.
+    # Las de lo que SE DEBE, que es lo que se suma — una moneda que sólo
+    # aparece en un sobrepago no puede invalidar el total de la exposición.
+    monedas_hallazgos = {
+        m
+        for m in session.scalars(
+            sa.select(RiskFinding.impact_amount_currency)
+            .where(vigentes, RiskFinding.impact_amount > 0)
+            .distinct()
+        )
+        if m
+    }
+    mezcla_hallazgos = len(monedas_hallazgos) > 1
+    suma = (
+        None if mezcla_hallazgos else session.scalar(sa.select(sa.func.sum(_por_partida().c.monto)))
     )
+    moneda = next(iter(monedas_hallazgos)) if len(monedas_hallazgos) == 1 else None
     reparto = {
         fila.severity: fila.cuantos
         for fila in session.execute(
@@ -331,12 +394,23 @@ def tablero(session: SessionDep) -> Dashboard:
         .limit(1)
     )
 
-    ahorro = session.scalar(sa.select(sa.func.sum(OpportunityFinding.estimated_saving_amount)))
-    ahorro_moneda = session.scalar(
-        sa.select(OpportunityFinding.estimated_saving_amount_currency)
-        .where(OpportunityFinding.estimated_saving_amount.isnot(None))
-        .limit(1)
+    con_ahorro = OpportunityFinding.estimated_saving_amount.isnot(None)
+    monedas_ahorro = {
+        m
+        for m in session.scalars(
+            sa.select(OpportunityFinding.estimated_saving_amount_currency)
+            .where(con_ahorro)
+            .distinct()
+        )
+        if m
+    }
+    mezcla_ahorro = len(monedas_ahorro) > 1
+    ahorro = (
+        None
+        if mezcla_ahorro
+        else session.scalar(sa.select(sa.func.sum(OpportunityFinding.estimated_saving_amount)))
     )
+    ahorro_moneda = next(iter(monedas_ahorro)) if len(monedas_ahorro) == 1 else None
 
     # Los hallazgos van acotados aquí también, o el pie compararía poblaciones
     # distintas: «N de las filas contadas son simulación» con una N del
@@ -345,7 +419,22 @@ def tablero(session: SessionDep) -> Dashboard:
         _contar(session, modelo, modelo.data_origin == "SYNTHETIC")  # type: ignore[attr-defined]
         for modelo in (Product, Pedimento, ClassificationDecision)
     ) + _contar(session, RiskFinding, vigentes, RiskFinding.data_origin == "SYNTHETIC")
-    contadas = pedimentos + decisiones.total + total_hallazgos + _contar(session, Product)
+    # Las oportunidades no entraban en el censo, así que un ahorro simulado no
+    # contaba para `todo_simulado`: bastaba cargar un producto real para que el
+    # aviso desapareciera y el dinero inventado se quedara en pantalla sin
+    # marca ninguna.
+    oportunidades_simuladas = _contar(
+        session, OpportunityFinding, OpportunityFinding.is_simulation.is_(True)
+    )
+    total_oportunidades = _contar(session, OpportunityFinding)
+    simuladas += oportunidades_simuladas
+    contadas = (
+        pedimentos
+        + decisiones.total
+        + total_hallazgos
+        + _contar(session, Product)
+        + total_oportunidades
+    )
 
     return Dashboard(
         clasificaciones=decisiones,
@@ -363,11 +452,15 @@ def tablero(session: SessionDep) -> Dashboard:
             solo_investigables=total_hallazgos - accionables,
             impacto_cuantificado=suma,
             impacto_moneda=moneda,
+            sobrepagos=sobrepagos,
+            monedas_mezcladas=mezcla_hallazgos,
         ),
         oportunidades=Oportunidades(
-            total=_contar(session, OpportunityFinding),
+            total=total_oportunidades,
             ahorro_cuantificado=ahorro,
             ahorro_moneda=ahorro_moneda,
+            monedas_mezcladas=mezcla_ahorro,
+            simuladas=oportunidades_simuladas,
         ),
         productos=_contar(session, Product),
         filas_simuladas=simuladas,
