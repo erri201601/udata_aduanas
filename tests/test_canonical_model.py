@@ -39,8 +39,8 @@ def _business_tables() -> list[sa.Table]:
 # ── Estructura ──────────────────────────────────────────────────────────────
 
 
-def test_hay_33_entidades() -> None:
-    assert len(_tables()) == 33
+def test_hay_34_entidades() -> None:
+    assert len(_tables()) == 34
 
 
 def test_todas_las_tablas_en_los_tres_esquemas() -> None:
