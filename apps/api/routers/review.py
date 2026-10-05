@@ -87,7 +87,18 @@ router = APIRouter(prefix="/review", tags=["review"])
 LIMITE_MAXIMO = 200
 
 #: Lo que puede decir quien revisa.
-Veredicto = Literal["CONFIRMA", "CORRIGE"]
+#:
+#: `FALTA_INFORMACION` no es una no-respuesta, y no es lo mismo que no revisar:
+#: la persona MIRÓ la ficha y dice que con lo que trae no se puede determinar
+#: la fracción, nombrando el dato que falta.
+#:
+#: Hasta hoy no cabía en el tipo. En el dictamen del 5-oct, César escribió en
+#: tres casos «NO DETERMINABLE, pidan el dato, no inventen una fracción», y las
+#: dos únicas formas de guardarlo eran `CORRIGE` —que exige una fracción que él
+#: no dio, y que habría que inventar— o no guardarlo. Inventarla es justo lo
+#: que prohíbe la regla 2; no guardarlo tira el único dato que nadie más
+#: produce.
+Veredicto = Literal["CONFIRMA", "CORRIGE", "FALTA_INFORMACION"]
 
 #: La regla de desempate de último recurso: «la última por orden de
 #: numeración». Aplica correctamente y no distingue nada.
@@ -204,6 +215,24 @@ class RevisionRequest(BaseModel):
     """Quién revisa. Una corrección anónima no es auditable."""
     fraction_code: str | None = Field(default=None, max_length=8)
     """La fracción correcta. Obligatoria si se corrige."""
+    nico_code: str | None = Field(default=None, pattern=r"^\d{2}$")
+    """El NICO, cuando quien revisa lo determina. Dos dígitos, nunca un entero.
+
+    «La fracción de 8 dígitos y el NICO son niveles distintos; no deben
+    mezclarse» (César, 5-oct). Son dos decisiones: la fracción sale de las RGI,
+    el NICO de la Regla Complementaria y del catálogo de la fracción ya
+    elegida. Un `02` sólo significa algo DENTRO de su fracción — el de la
+    73121005 y el de la 73051102 no tienen nada que ver.
+
+    Que esté aquí es lo que decide si el trabajo del revisor se conserva. En su
+    dictamen del 5-oct César dio NICO en casi todos los casos y el endpoint no
+    tenía dónde ponerlo: se habría guardado la fracción y se habría tirado la
+    mitad de lo que dijo, sin que nada avisara.
+
+    El patrón de dos dígitos no es cosmético. `2` no es `02`: no empataría con
+    ningún código del catálogo y el rechazo habría parecido un NICO inexistente
+    en vez de un dígito que falta.
+    """
     nota: str | None = None
     """Por qué. Es lo que hace utilizable la corrección para entrenar."""
 
@@ -214,6 +243,12 @@ class RevisionResponse(BaseModel):
     """La fila nueva con el veredicto humano. La original se conserva."""
     veredicto: Veredicto
     fraction_code: str | None = None
+    nico_code: str | None = None
+    """Se devuelve para que quien lo envió pueda comprobar que se guardó.
+
+    Un campo que se acepta y no se confirma es indistinguible de uno que se
+    ignora en silencio.
+    """
 
 
 @router.get("", summary="Decisiones esperando revisión humana")
@@ -431,7 +466,7 @@ def responder_vocabulario(
 @router.post(
     "/{decision_id}",
     status_code=status.HTTP_201_CREATED,
-    summary="Confirma o corrige una decisión",
+    summary="Confirma, corrige o declara que falta información",
 )
 def revisar(
     decision_id: uuid.UUID, peticion: RevisionRequest, session: SessionDep
@@ -441,6 +476,14 @@ def revisar(
     Crea una decisión nueva marcada `HUMAN_VALIDATED` que apunta a la original
     por `reviews_decision_id`, y saca la original de la bandeja. Ese puntero es
     lo que la métrica usa para emparejarlas (§39).
+
+    LA ORIGINAL SALE DE LA BANDEJA TAMBIÉN CUANDO FALTA INFORMACIÓN
+
+    Puede parecer al contrario —el caso no está resuelto—, pero lo que le falta
+    no es una opinión más: es un dato de la mercancía. Dejarlo en la bandeja
+    garantizaría que el siguiente revisor gaste su rato en llegar a la misma
+    conclusión, y el veredicto existe justamente para que eso no pase. Queda
+    con `status = INSUFFICIENT_INFORMATION` y con la nota diciendo qué pedir.
     """
     # FOR UPDATE: dos veredictos simultáneos sobre el mismo caso tienen que
     # ordenarse, o los dos verían la decisión pendiente y los dos escribirían.
@@ -466,7 +509,36 @@ def revisar(
             "corregir exige la fracción correcta: sin ella la corrección no dice nada",
         )
 
-    codigo = peticion.fraction_code if peticion.veredicto == "CORRIGE" else original.fraction_code
+    if peticion.veredicto == "FALTA_INFORMACION":
+        if peticion.fraction_code:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "«falta información» y una fracción se contradicen: si hay fracción "
+                "que proponer, el veredicto es CORRIGE",
+            )
+        if not (peticion.nota or "").strip():
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "«falta información» exige decir QUÉ dato falta: sin eso el veredicto "
+                "cierra el caso sin desatascarlo, y nadie sabe qué pedir",
+            )
+
+    if peticion.veredicto == "CORRIGE":
+        codigo = peticion.fraction_code
+    elif peticion.veredicto == "FALTA_INFORMACION":
+        # Sin fracción A PROPÓSITO: es exactamente lo que la persona afirma.
+        # Heredar la del motor convertiría un «no se puede determinar» en una
+        # confirmación de lo que el motor propuso.
+        codigo = None
+    else:
+        codigo = original.fraction_code
+
+    if peticion.nico_code and not codigo:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "un NICO sin fracción no identifica nada: el mismo «02» existe en miles "
+            "de fracciones y sólo significa algo dentro de la suya",
+        )
 
     # La fracción del veredicto se comprueba contra la tarifa. Un clasificador
     # es la autoridad sobre el CRITERIO, no sobre qué códigos existen, y un
@@ -503,6 +575,28 @@ def revisar(
                 f"{codigo[:6]} existen: {existen}",
             )
 
+        # EL NICO SE COMPRUEBA APARTE Y DESPUÉS, PORQUE ES OTRO NIVEL
+        #
+        # Aparte, porque sólo tiene sentido DENTRO de la fracción ya validada:
+        # preguntar si el «02» existe sin decir en qué fracción no tiene
+        # respuesta. Y después, porque con una fracción inexistente el catálogo
+        # no puede decir nada de sus NICO y el error que importa es el primero.
+        #
+        # Vale la misma disciplina de tres respuestas de `nicos()`: `None` (la
+        # fracción no está vigente ese día) y `()` (existe y no tiene NICO
+        # cargados) son huecos NUESTROS y no autorizan a rechazar el veredicto
+        # de nadie. Sólo con códigos cargados se puede afirmar que el dígito
+        # está mal — el mismo criterio que `hay_tarifa` para la fracción.
+        if peticion.nico_code:
+            vigentes = catalogo.nicos(on_date=original.operation_date, fraction_code=codigo)
+            if vigentes and peticion.nico_code not in vigentes:
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    f"el NICO {peticion.nico_code} no existe en la fracción {codigo} "
+                    f"vigente al {original.operation_date.isoformat()}. En esa "
+                    f"fracción existen: {', '.join(vigentes)}",
+                )
+
     revision = ClassificationDecision(
         product_id=original.product_id,
         product_dna_id=original.product_dna_id,
@@ -511,11 +605,24 @@ def revisar(
         reviews_decision_id=original.id,
         trade_flow=original.trade_flow,
         operation_date=original.operation_date,
-        status="RESOLVED" if codigo else "HUMAN_REVIEW_REQUIRED",
+        # `INSUFFICIENT_INFORMATION` es literalmente lo que la persona dijo, y
+        # es distinto de `HUMAN_REVIEW_REQUIRED`: el segundo pide otra opinión,
+        # el primero pide un DATO. Confundirlos devolvería el caso a una
+        # bandeja donde el siguiente revisor llegaría a la misma conclusión.
+        status=(
+            "INSUFFICIENT_INFORMATION"
+            if peticion.veredicto == "FALTA_INFORMACION"
+            else ("RESOLVED" if codigo else "HUMAN_REVIEW_REQUIRED")
+        ),
         chapter=codigo[:2] if codigo else None,
         heading=codigo[:4] if codigo else None,
         subheading=codigo[:6] if codigo else None,
         fraction_code=codigo,
+        # El segundo nivel de la decisión. `nico_id` se queda en NULL: ligarlo
+        # al catálogo exigiría resolver la fila de `regulatory.nicos` y el
+        # código ya se validó contra ella — igual que el motor, que escribe el
+        # código y no el puntero.
+        nico_code=peticion.nico_code,
         reasoning=_razonamiento(peticion, original),
         rgi_path=list(original.rgi_path or []),
         # La traza es del motor. Copiarla aquí haría parecer que la persona
@@ -551,6 +658,7 @@ def revisar(
         revision_id=revision.id,
         veredicto=peticion.veredicto,
         fraction_code=codigo,
+        nico_code=peticion.nico_code,
     )
 
 
@@ -566,6 +674,17 @@ def _razonamiento(peticion: RevisionRequest, original: ClassificationDecision) -
             f"El motor propuso {original.fraction_code or 'sin fracción'}; "
             f"se corrige a {peticion.fraction_code}."
         )
+    elif peticion.veredicto == "FALTA_INFORMACION":
+        partes.append(
+            f"El motor propuso {original.fraction_code or 'sin fracción'}; "
+            "quien revisa dice que la ficha no alcanza para determinarla y "
+            "que el dato hay que pedirlo, no suponerlo."
+        )
+    if peticion.nico_code:
+        # En su propia frase, no pegado a la fracción: son dos niveles y
+        # escribirlos juntos («7312100502») es el error que esta nota existe
+        # para no cometer.
+        partes.append(f"NICO {peticion.nico_code}.")
     if peticion.nota:
         partes.append(peticion.nota)
     return " ".join(partes)

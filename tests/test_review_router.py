@@ -80,6 +80,7 @@ class SesionFalsa:
         fraccion_en_catalogo: bool = True,
         hay_tarifa: bool = True,
         hermanas: tuple[str, ...] = (),
+        nicos_vigentes: tuple[str, ...] = (),
     ) -> None:
         self._decision = decision
         self._ya_revisada = ya_revisada
@@ -90,6 +91,9 @@ class SesionFalsa:
         #: nadie: un catálogo vacío no demuestra que la fracción no exista.
         self._hay_tarifa = hay_tarifa
         self._hermanas = hermanas
+        #: Los NICO cargados de la fracción del veredicto. Vacío por defecto,
+        #: que es el hueco NUESTRO: sin códigos no se rechaza nada.
+        self._nicos_vigentes = nicos_vigentes
         self.agregadas: list[Any] = []
         self.commits = 0
         self.rollbacks = 0
@@ -125,7 +129,12 @@ class SesionFalsa:
         #: mirando la sentencia.
         self.sql_bandeja.append(str(sentencia))
         r = type("R", (), {})()
-        if "tariff_fractions" in str(sentencia):
+        # Los NICO van PRIMERO: su consulta hace JOIN con `tariff_fractions`,
+        # así que la rama de las hermanas la atraparía y devolvería fracciones
+        # donde se esperan dos dígitos.
+        if "regulatory.nicos" in str(sentencia):
+            r.all = lambda: list(self._nicos_vigentes)
+        elif "tariff_fractions" in str(sentencia):
             # Las hermanas de una fracción que no existe: son códigos, no
             # decisiones. Devolver la decisión aquí metía un objeto en el
             # mensaje de error.
@@ -646,3 +655,223 @@ def test_una_decision_sin_ficha_no_se_pierde() -> None:
         c.get("/review")
 
     assert "IS NULL" in sesion.sql_bandeja[0].upper()
+
+
+# ── El NICO es otro nivel, y antes se perdía (César, 5-oct) ─────────────────
+
+
+def _revision(cuerpo: dict[str, Any], **kw: Any) -> tuple[SesionFalsa, Any]:
+    """Manda un veredicto y devuelve la sesión y la respuesta."""
+    app = create_app()
+    sesion = SesionFalsa(decision=kw.pop("decision", None) or _decision(), **kw)
+    app.dependency_overrides[get_session] = lambda: sesion
+    with TestClient(app) as c:
+        return sesion, c.post(f"/review/{DECISION_ID}", json=cuerpo)
+
+
+def test_el_nico_del_veredicto_se_guarda() -> None:
+    """Sin esto se guardaba la fracción y se tiraba la mitad de lo que dijo.
+
+    En el dictamen del 5-oct César dio NICO en casi todos los casos. El
+    endpoint no tenía dónde ponerlo: Pydantic descarta los campos que no
+    declara, así que el `02` del cable se habría perdido en silencio, con la
+    pantalla diciendo «guardado» y la respuesta confirmando sólo la fracción.
+    """
+    sesion, r = _revision(
+        {
+            "veredicto": "CORRIGE",
+            "reviewer": "cesar",
+            "fraction_code": "73121005",
+            "nico_code": "02",
+        },
+        nicos_vigentes=("01", "02"),
+    )
+
+    assert r.status_code == 201
+    assert sesion.agregadas[0].nico_code == "02"
+    # Y se devuelve: un campo que se acepta y no se confirma es indistinguible
+    # de uno que se ignora.
+    assert r.json()["nico_code"] == "02"
+
+
+def test_un_nico_que_no_existe_en_la_fraccion_se_rechaza() -> None:
+    """Mismo criterio que la fracción: la persona manda en el criterio, no en
+    qué códigos existen."""
+    sesion, r = _revision(
+        {
+            "veredicto": "CORRIGE",
+            "reviewer": "cesar",
+            "fraction_code": "73121005",
+            "nico_code": "07",
+        },
+        nicos_vigentes=("01", "02"),
+    )
+
+    assert r.status_code == 422
+    detalle = r.json()["detail"]
+    assert "07" in detalle
+    # Enseña los que hay, no elige uno.
+    assert "01, 02" in detalle
+    assert sesion.agregadas == []
+
+
+def test_sin_nico_cargados_el_veredicto_no_se_rechaza() -> None:
+    """`()` es un hueco NUESTRO, no un error del revisor.
+
+    Misma disciplina que `hay_tarifa` para la fracción: que el catálogo no
+    tenga los NICO de esa fracción no demuestra que el `02` no exista. Sin esta
+    condición el guardarraíl rechazaría todos los veredictos con NICO en
+    cualquier entorno donde los NICO no estén cargados.
+    """
+    sesion, r = _revision(
+        {
+            "veredicto": "CORRIGE",
+            "reviewer": "cesar",
+            "fraction_code": "73121005",
+            "nico_code": "02",
+        },
+        nicos_vigentes=(),
+    )
+
+    assert r.status_code == 201
+    assert sesion.agregadas[0].nico_code == "02"
+
+
+def test_un_nico_sin_fraccion_no_identifica_nada() -> None:
+    """El mismo «02» existe en miles de fracciones."""
+    sin_fraccion = _decision()
+    sin_fraccion.fraction_code = None
+
+    sesion, r = _revision(
+        {"veredicto": "CONFIRMA", "reviewer": "cesar", "nico_code": "02"},
+        decision=sin_fraccion,
+    )
+
+    assert r.status_code == 422
+    assert sesion.agregadas == []
+
+
+def test_un_nico_de_un_digito_se_rechaza() -> None:
+    """`2` no es `02`.
+
+    No empataría con ningún código del catálogo, y el rechazo habría parecido
+    un NICO inexistente en vez de un dígito que falta — que es un error
+    distinto y se arregla de otra forma.
+    """
+    _, r = _revision(
+        {
+            "veredicto": "CORRIGE",
+            "reviewer": "cesar",
+            "fraction_code": "73121005",
+            "nico_code": "2",
+        },
+        nicos_vigentes=("01", "02"),
+    )
+
+    assert r.status_code == 422
+
+
+def test_el_razonamiento_no_pega_el_nico_a_la_fraccion() -> None:
+    """Son dos niveles. Escribirlos juntos es el error que César advirtió."""
+    sesion, _ = _revision(
+        {
+            "veredicto": "CORRIGE",
+            "reviewer": "cesar",
+            "fraction_code": "73121005",
+            "nico_code": "02",
+        },
+        nicos_vigentes=("02",),
+    )
+
+    razon = sesion.agregadas[0].reasoning
+    assert "NICO 02" in razon
+    assert "7312100502" not in razon
+
+
+# ── «Falta información» es un veredicto, no una ausencia ────────────────────
+
+
+def test_falta_informacion_no_hereda_la_fraccion_del_motor() -> None:
+    """Heredarla convertiría un «no se puede determinar» en una confirmación.
+
+    La original propone 84714902. Si el veredicto la copiara, la fila humana
+    diría que esa fracción es correcta —firmada, `HUMAN_VALIDATED`, contada en
+    la métrica— cuando la persona dijo exactamente lo contrario.
+    """
+    sesion, r = _revision(
+        {
+            "veredicto": "FALTA_INFORMACION",
+            "reviewer": "cesar",
+            "nota": "Falta el diámetro exterior: sin él no se separan 730511 y 730519.",
+        }
+    )
+
+    assert r.status_code == 201
+    fila = sesion.agregadas[0]
+    assert fila.fraction_code is None
+    # Pide un DATO, no otra opinión: `HUMAN_REVIEW_REQUIRED` mandaría el caso a
+    # una bandeja donde el siguiente revisor llegaría a lo mismo.
+    assert fila.status == "INSUFFICIENT_INFORMATION"
+    assert fila.data_origin == "HUMAN_VALIDATED"
+
+
+def test_falta_informacion_con_fraccion_se_contradice() -> None:
+    sesion, r = _revision(
+        {
+            "veredicto": "FALTA_INFORMACION",
+            "reviewer": "cesar",
+            "fraction_code": "73051999",
+            "nota": "falta el espesor",
+        }
+    )
+
+    assert r.status_code == 422
+    assert sesion.agregadas == []
+
+
+def test_falta_informacion_exige_decir_que_dato_falta() -> None:
+    """Sin eso el veredicto cierra el caso sin desatascarlo.
+
+    Es la diferencia entre «pidan el diámetro exterior» —que un agente aduanal
+    puede convertir en un correo al importador— y «no sé», que deja el caso
+    igual de parado pero ya sin bandeja donde aparecer.
+    """
+    sesion, r = _revision({"veredicto": "FALTA_INFORMACION", "reviewer": "cesar"})
+
+    assert r.status_code == 422
+    assert sesion.agregadas == []
+
+    sesion, r = _revision({"veredicto": "FALTA_INFORMACION", "reviewer": "cesar", "nota": "   "})
+    assert r.status_code == 422
+    assert sesion.agregadas == []
+
+
+def test_falta_informacion_saca_el_caso_de_la_bandeja() -> None:
+    """Lo que falta es un dato de la mercancía, no una opinión más."""
+    original = _decision()
+    _, r = _revision(
+        {
+            "veredicto": "FALTA_INFORMACION",
+            "reviewer": "cesar",
+            "nota": "Falta la construcción del cable (6x19 o 6x36).",
+        },
+        decision=original,
+    )
+
+    assert r.status_code == 201
+    assert original.requires_human_review is False
+
+
+def test_el_razonamiento_dice_que_el_dato_hay_que_pedirlo() -> None:
+    sesion, _ = _revision(
+        {
+            "veredicto": "FALTA_INFORMACION",
+            "reviewer": "cesar",
+            "nota": "Falta el proceso de soldadura.",
+        }
+    )
+
+    razon = sesion.agregadas[0].reasoning
+    assert "84714902" in razon
+    assert "pedirlo" in razon
+    assert "Falta el proceso de soldadura." in razon

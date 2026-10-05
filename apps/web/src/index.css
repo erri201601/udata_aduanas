@@ -991,6 +991,16 @@ code {
 .revision-fila__forma span { font-size: 0.72rem; color: var(--tenue); }
 .revision-fila__forma .ancho { grid-column: 1 / -1; }
 
+/* El aviso del veredicto «falta información»: dice qué le va a pasar al caso
+   ANTES de guardarlo. Que salga de la bandeja y no vuelva es lo que hace útil
+   ese veredicto, y también lo que nadie espera de un botón. */
+.revision-fila__aviso {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 0.74rem;
+  color: var(--tenue);
+}
+
 /* Confirmar y corregir pesan lo mismo: si aceptar fuera más barato
    visualmente, la bandeja se vaciaría sin leer. */
 .revision-fila__acciones { display: flex; gap: 0.6rem; flex-wrap: wrap; }

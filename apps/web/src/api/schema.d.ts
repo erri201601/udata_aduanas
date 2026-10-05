@@ -481,12 +481,20 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Confirma o corrige una decisión
+         * Confirma, corrige o declara que falta información
          * @description Registra el veredicto humano SIN borrar el de la máquina.
          *
          *     Crea una decisión nueva marcada `HUMAN_VALIDATED` que apunta a la original
          *     por `reviews_decision_id`, y saca la original de la bandeja. Ese puntero es
          *     lo que la métrica usa para emparejarlas (§39).
+         *
+         *     LA ORIGINAL SALE DE LA BANDEJA TAMBIÉN CUANDO FALTA INFORMACIÓN
+         *
+         *     Puede parecer al contrario —el caso no está resuelto—, pero lo que le falta
+         *     no es una opinión más: es un dato de la mercancía. Dejarlo en la bandeja
+         *     garantizaría que el siguiente revisor gaste su rato en llegar a la misma
+         *     conclusión, y el veredicto existe justamente para que eso no pase. Queda
+         *     con `status = INSUFFICIENT_INFORMATION` y con la nota diciendo qué pedir.
          */
         post: operations["revisar_review__decision_id__post"];
         delete?: never;
@@ -2299,11 +2307,13 @@ export interface components {
              * Veredicto
              * @enum {string}
              */
-            veredicto: "CONFIRMA" | "CORRIGE";
+            veredicto: "CONFIRMA" | "CORRIGE" | "FALTA_INFORMACION";
             /** Reviewer */
             reviewer: string;
             /** Fraction Code */
             fraction_code?: string | null;
+            /** Nico Code */
+            nico_code?: string | null;
             /** Nota */
             nota?: string | null;
         };
@@ -2323,9 +2333,11 @@ export interface components {
              * Veredicto
              * @enum {string}
              */
-            veredicto: "CONFIRMA" | "CORRIGE";
+            veredicto: "CONFIRMA" | "CORRIGE" | "FALTA_INFORMACION";
             /** Fraction Code */
             fraction_code?: string | null;
+            /** Nico Code */
+            nico_code?: string | null;
         };
         /** RiskFindingRead */
         RiskFindingRead: {

@@ -15,6 +15,19 @@
  * Y no se muestra la confianza del motor como una nota grande antes de que la
  * persona decida: un 0.91 predispone a confirmar. Aparece, pero junto al
  * resto, no como titular.
+ *
+ * TRES SALIDAS, NO DOS
+ *
+ * «Falta información» es una tercera, y es un veredicto: la persona miró la
+ * ficha y dice que con lo que trae no se puede determinar la fracción. En el
+ * dictamen del 5-oct César escribió eso en tres casos, y hasta entonces la
+ * pantalla sólo sabía confirmar o corregir — así que la única forma de
+ * registrarlo era corregir con una fracción inventada.
+ *
+ * EL NICO SE TECLEA APARTE DE LA FRACCIÓN
+ *
+ * Son dos niveles y dos campos, no diez dígitos en una caja. «La fracción de 8
+ * dígitos y el NICO son niveles distintos; no deben mezclarse» (César, 5-oct).
  */
 
 import { useEffect, useState } from 'react'
@@ -64,8 +77,12 @@ export function HumanReview() {
 
   // Estado del formulario de la fila abierta.
   const [abierta, setAbierta] = useState<string | null>(null)
+  /** Qué formulario está abierto. Corregir pide fracción; «falta información»
+   *  pide el dato que falta, y son preguntas distintas. */
+  const [modo, setModo] = useState<'CORRIGE' | 'FALTA_INFORMACION'>('CORRIGE')
   const [revisor, setRevisor] = useState('')
   const [fraccion, setFraccion] = useState('')
+  const [nico, setNico] = useState('')
   const [nota, setNota] = useState('')
 
   useEffect(() => {
@@ -87,7 +104,10 @@ export function HumanReview() {
     return () => control.abort()
   }, [])
 
-  async function enviar(id: string, veredicto: 'CONFIRMA' | 'CORRIGE') {
+  async function enviar(
+    id: string,
+    veredicto: 'CONFIRMA' | 'CORRIGE' | 'FALTA_INFORMACION',
+  ) {
     setEnCurso(id)
     setError(null)
 
@@ -96,11 +116,16 @@ export function HumanReview() {
         veredicto,
         reviewer: revisor,
         fraction_code: veredicto === 'CORRIGE' ? fraccion : null,
+        // Sólo con fracción: un NICO suelto no identifica nada, y el endpoint
+        // lo rechaza. Mandarlo igual daría un 422 que no se entendería desde
+        // aquí.
+        nico_code: veredicto === 'CORRIGE' && nico ? nico : null,
         nota: nota || null,
       })
       setHechas((h) => ({ ...h, [id]: veredicto }))
       setAbierta(null)
       setFraccion('')
+      setNico('')
       setNota('')
     } catch (causa: unknown) {
       setError(causa instanceof Error ? causa.message : 'No se pudo registrar')
@@ -207,7 +232,7 @@ export function HumanReview() {
                 {p.confidence != null && ` · confianza ${p.confidence}`}
               </p>
 
-              {abierta === p.id ? (
+              {abierta === p.id && modo === 'CORRIGE' ? (
                 <div className="revision-fila__forma">
                   <label>
                     <span>Fracción correcta</span>
@@ -216,6 +241,19 @@ export function HumanReview() {
                       onChange={(e) => setFraccion(e.target.value)}
                       placeholder="84713001"
                       maxLength={8}
+                    />
+                  </label>
+                  {/* Campo propio, no los dos últimos dígitos de la fracción:
+                      son dos decisiones distintas y juntarlas en una caja
+                      invita a escribir 7312100502. Opcional — se deja vacío
+                      cuando sólo se determina la fracción. */}
+                  <label>
+                    <span>NICO (opcional)</span>
+                    <input
+                      value={nico}
+                      onChange={(e) => setNico(e.target.value)}
+                      placeholder="02"
+                      maxLength={2}
                     />
                   </label>
                   <label className="ancho">
@@ -239,6 +277,35 @@ export function HumanReview() {
                     </button>
                   </div>
                 </div>
+              ) : abierta === p.id ? (
+                <div className="revision-fila__forma">
+                  {/* Sin campo de fracción a propósito: lo que se está
+                      declarando es que no se puede determinar. */}
+                  <label className="ancho">
+                    <span>Qué dato falta</span>
+                    <input
+                      value={nota}
+                      onChange={(e) => setNota(e.target.value)}
+                      placeholder="El diámetro exterior: sin él no se separan 730511 y 730519"
+                    />
+                  </label>
+                  <div className="revision-fila__acciones">
+                    <button
+                      className="boton"
+                      onClick={() => enviar(p.id, 'FALTA_INFORMACION')}
+                      disabled={!revisor || !nota.trim() || enCurso === p.id}
+                    >
+                      {enCurso === p.id ? 'Guardando…' : 'Guardar: hay que pedir el dato'}
+                    </button>
+                    <button className="boton boton--plano" onClick={() => setAbierta(null)}>
+                      Cancelar
+                    </button>
+                  </div>
+                  <p className="revision-fila__aviso">
+                    El caso sale de la bandeja y queda pidiendo este dato. No vuelve a
+                    aparecer para que nadie repita la misma conclusión.
+                  </p>
+                </div>
               ) : (
                 /* Confirmar y corregir cuestan lo mismo: un clic cada uno. Si
                    aceptar fuera más barato, la bandeja se vaciaría sin leer. */
@@ -252,10 +319,26 @@ export function HumanReview() {
                   </button>
                   <button
                     className="boton boton--plano"
-                    onClick={() => setAbierta(p.id)}
+                    onClick={() => {
+                      setModo('CORRIGE')
+                      setAbierta(p.id)
+                    }}
                     disabled={!revisor}
                   >
                     Corregir
+                  </button>
+                  {/* La tercera salida. Cuesta lo mismo que las otras dos: si
+                      fuera más barata se convertiría en la vía de escape de
+                      los casos difíciles. */}
+                  <button
+                    className="boton boton--plano"
+                    onClick={() => {
+                      setModo('FALTA_INFORMACION')
+                      setAbierta(p.id)
+                    }}
+                    disabled={!revisor}
+                  >
+                    Falta información
                   </button>
                 </div>
               )}
