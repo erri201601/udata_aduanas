@@ -18,7 +18,12 @@ import { SyntheticBanner } from '../components/DataOriginBadge'
 import { QUE_ES_EL_ESTADO, QUE_PREGUNTA, comoLeerLaConfianza } from '../components/glosas'
 import { EvidenceKindBadge } from '../components/EvidenceKindBadge'
 import { fundamenta } from '../components/evidenceKinds'
-import { useClassification, useClassifications } from '../hooks/useClassifications'
+import {
+  useClassification,
+  useClassifications,
+  usePrecisionClasificacion,
+} from '../hooks/useClassifications'
+import type { PrecisionClasificacion } from '../api/client'
 
 interface PreguntaRGI {
   atributo: string
@@ -51,8 +56,101 @@ interface Props {
   decisionInicial?: string | null
 }
 
+/** La precisión del §39, con las DOS cifras y por qué son dos.
+ *
+ * La métrica existía en `/metrics/classification` desde el §39 y ninguna
+ * pantalla la leía. Es la quinta vez en este proyecto que algo se calcula, se
+ * guarda y nadie lo lee de vuelta — y aquí lo que no se leía era la única
+ * verdad del sistema que no generamos nosotros.
+ *
+ * SON DOS NÚMEROS Y NO UNO POR UNA RAZÓN
+ *
+ * `fraction_accuracy` compara cada veredicto con la decisión que esa persona
+ * revisó. Es la traza de auditoría: qué dijo la máquina y qué dijo la persona,
+ * ese día. Hoy el único par comparable es la vajilla del 28 de septiembre, con
+ * un defecto que se arregló el mismo día — así que ese 0 % es exacto y
+ * engaña: mide al motor como era.
+ *
+ * El otro bloque mide al motor como está. Enseñar sólo el primero hunde una
+ * cifra que ya no describe el sistema; enseñar sólo el segundo borra que
+ * alguien encontró un fallo real. Van los dos, con su etiqueta.
+ */
+function Precision({ datos }: { datos: PrecisionClasificacion }) {
+  const hoy = datos.contra_el_motor_de_hoy
+  const historico = datos.fraction_accuracy
+  if (datos.revisadas === 0) return null
+
+  return (
+    <div className="precision">
+      <h3>Qué dice de sí mismo el motor, frente a una persona</h3>
+
+      <div className="precision__dos">
+        <div className="precision__bloque">
+          <h4>El motor de hoy</h4>
+          <dl>
+            <div>
+              <dt>coincide con la persona</dt>
+              <dd className="precision__bien">{hoy?.coinciden ?? 0}</dd>
+            </div>
+            <div>
+              <dt>discrepa</dt>
+              <dd className={(hoy?.discrepan ?? 0) > 0 ? 'precision__mal' : ''}>
+                {hoy?.discrepan ?? 0}
+              </dd>
+            </div>
+            <div>
+              <dt>se abstiene</dt>
+              <dd>{hoy?.se_abstiene ?? 0}</dd>
+            </div>
+          </dl>
+          <p className="precision__nota">
+            Abstenerse no es equivocarse: es el §8.2 funcionando. Una fracción
+            equivocada cambia el arancel que paga el importador, así que el motor
+            calla cuando no puede sostenerla. Lo que hay que vigilar es «discrepa»:
+            si sube, una mejora rompió algo que una persona ya había validado.
+          </p>
+        </div>
+
+        <div className="precision__bloque">
+          <h4>Cuando se revisó, aquel día</h4>
+          <dl>
+            <div>
+              <dt>comparados</dt>
+              <dd>{historico?.comparados ?? 0}</dd>
+            </div>
+            <div>
+              <dt>acertó</dt>
+              <dd>{historico?.aciertos ?? 0}</dd>
+            </div>
+            <div>
+              <dt>el motor no contestó</dt>
+              <dd>{historico?.abstenciones ?? 0}</dd>
+            </div>
+          </dl>
+          <p className="precision__nota">
+            Cada veredicto se compara con la decisión que esa persona revisó, no
+            con la de hoy. Es la traza de auditoría y por eso no se reasigna:
+            dice qué dijo cada uno, ese día. Con{' '}
+            {historico?.comparados ?? 0} comparación
+            {(historico?.comparados ?? 0) === 1 ? '' : 'es'} no hay porcentaje que
+            presentar — <strong>un caso no es una métrica</strong>.
+          </p>
+        </div>
+      </div>
+
+      <p className="precision__pie">
+        {datos.revisadas} decisiones revisadas por una persona ·{' '}
+        {datos.pendientes_de_revision} esperando. Las dos respuestas se conservan
+        siempre: la del motor no se sobrescribe, y es lo único que permite medir
+        esto.
+      </p>
+    </div>
+  )
+}
+
 export function Classification({ decisionInicial = null }: Props = {}) {
   const { decisiones, error: errorLista, cargando: cargandoLista } = useClassifications()
+  const { precision } = usePrecisionClasificacion()
   const [elegida, setElegida] = useState<string | null>(null)
   const activa = elegida ?? decisionInicial ?? decisiones[0]?.id ?? null
   const { detalle, error, cargando } = useClassification(activa)
@@ -82,6 +180,8 @@ export function Classification({ decisionInicial = null }: Props = {}) {
           <p>{errorLista ?? error}</p>
         </div>
       )}
+
+      {precision && <Precision datos={precision} />}
 
       {decisiones.length > 1 && (
         <label className="selector">

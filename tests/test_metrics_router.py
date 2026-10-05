@@ -273,3 +273,83 @@ def test_no_toca_ninguna_tabla() -> None:
     assert "GroundTruthRecord" not in fuente
     assert "session.add" not in fuente
     assert "commit" not in fuente
+
+
+# ── El motor de hoy, no el de aquel día (Persona 1, 5-oct) ─────────────────
+
+
+def test_la_precision_historica_no_es_la_del_motor_de_hoy() -> None:
+    """EL CASO REAL, Y ES EXACTO Y ENGAÑA A LA VEZ.
+
+    El único par comparable del corpus es la vajilla de cerámica del 28 de
+    septiembre: el motor dijo 69120003 («De Talavera») y la persona 69120099
+    («Los demás»). `fraction_accuracy` sale 0.00 % por eso.
+
+    Y ese defecto se arregló el 28 de septiembre, el mismo día: hoy el motor
+    contesta 69120099 en ese caso. El 0 % mide al motor **como era**, congelado
+    en el momento en que alguien lo revisó, y nada en pantalla lo decía.
+
+    Las dos cifras valen y dicen cosas distintas. Las dos se publican.
+    """
+    revisada = _decision(fraccion="69120003", minutos=0)
+    ahora = _decision(fraccion="69120099", minutos=60)
+    filas = [revisada, ahora, _veredicto("69120099", revisada)]
+
+    with _cliente(filas) as c:
+        m = c.get("/metrics/classification").json()
+
+    assert m["fraction_accuracy"]["porcentaje"] == "0.00", "la traza histórica no se toca"
+    assert m["contra_el_motor_de_hoy"]["coinciden"] == 1, "el motor de hoy sí coincide"
+    assert m["contra_el_motor_de_hoy"]["discrepan"] == 0
+
+
+def test_que_el_motor_de_hoy_se_abstenga_no_es_discrepar() -> None:
+    """§8.2: negarse no es equivocarse.
+
+    Es cobertura que falta, y por eso va en su propia casilla en vez de
+    sumarse a `coinciden` o a `discrepan`.
+    """
+    revisada = _decision(fraccion="84714902", minutos=0)
+    se_abstiene = _decision(fraccion=None, minutos=60)
+    filas = [revisada, se_abstiene, _veredicto("84713001", revisada)]
+
+    with _cliente(filas) as c:
+        h = c.get("/metrics/classification").json()["contra_el_motor_de_hoy"]
+
+    assert h["se_abstiene"] == 1
+    assert h["discrepan"] == 0
+    assert h["coinciden"] == 0
+
+
+def test_un_motor_que_hoy_discrepa_se_declara() -> None:
+    """Es el número que hay que vigilar: si sube, una mejora rompió algo que
+    una persona ya había validado."""
+    revisada = _decision(fraccion="84714902", minutos=0)
+    discrepa = _decision(fraccion="85176201", minutos=60)
+    filas = [revisada, discrepa, _veredicto("84713001", revisada)]
+
+    with _cliente(filas) as c:
+        h = c.get("/metrics/classification").json()["contra_el_motor_de_hoy"]
+
+    assert h["discrepan"] == 1
+    assert h["coinciden"] == 0
+
+
+def test_la_comparacion_de_hoy_va_por_ficha_no_por_la_decision_mas_reciente() -> None:
+    """Cada veredicto se compara con el estado vigente de SU ficha.
+
+    `ficha_nueva` es la decisión más reciente de toda la tabla, y es de otra
+    ficha. Tomar «la última» a secas compararía el veredicto contra una
+    respuesta a otra pregunta — el mismo error que la heurística de DNA+tiempo
+    ya costó una vez, y que `reviews_decision_id` vino a resolver.
+    """
+    otro_dna = uuid.uuid4()
+    la_suya = _decision(fraccion="84713001", minutos=0)
+    ficha_nueva = _decision(fraccion="85176201", dna=otro_dna, minutos=60)
+    filas = [la_suya, ficha_nueva, _veredicto("84713001", la_suya)]
+
+    with _cliente(filas) as c:
+        h = c.get("/metrics/classification").json()["contra_el_motor_de_hoy"]
+
+    assert h["coinciden"] == 1, "la vigente de su ficha dice lo mismo que la persona"
+    assert h["discrepan"] == 0, "la más reciente de OTRA ficha no entra en la comparación"

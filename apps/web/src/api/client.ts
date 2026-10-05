@@ -37,6 +37,7 @@ export type RespuestaCopilot = components['schemas']['Respuesta']
 export type Pasaje = components['schemas']['Pasaje']
 export type Consulta = components['schemas']['Consulta']
 export type LineaEspejo = components['schemas']['LineaEspejo']
+export type PrecisionClasificacion = components['schemas']['PrecisionClasificacion']
 export type DivergenciaRead = components['schemas']['DivergenciaRead']
 export type DocumentoVigilado = components['schemas']['DocumentoVigilado']
 export type OlaDeReforma = components['schemas']['OlaDeReforma']
@@ -162,6 +163,13 @@ export async function fetchClassifications(
   signal?: AbortSignal,
 ): Promise<ClassificationDecisionRead[]> {
   return pedir<ClassificationDecisionRead[]>('/classifications', signal)
+}
+
+/** La precisión del §39, medida contra los veredictos humanos. */
+export async function fetchPrecisionClasificacion(
+  signal?: AbortSignal,
+): Promise<PrecisionClasificacion> {
+  return pedir<PrecisionClasificacion>('/metrics/classification', signal)
 }
 
 /** Una decisión con sus candidatos y evidencias. */
