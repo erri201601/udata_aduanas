@@ -1037,3 +1037,65 @@ def test_el_plural_no_inventa_coincidencias() -> None:
 
     assert not (_palabras_con_singular("tornillos") & _palabras_con_singular("tuercas"))
     assert not (_palabras_con_singular("alambres") & _palabras_con_singular("alambique"))
+
+
+# ── Una exclusión ajena no descarta (Persona 1, 5-oct) ─────────────────────
+
+_TALAVERA_FR = TariffCandidate(
+    code="69120003", text="De Talavera.", level="FRACTION", specificity=2
+)
+_EXCLUSION_REAL = (("ceramica vidriada", "talavera"),)
+
+
+def _vajilla(descripcion: str, material: str) -> ClassificationContext:
+    return ClassificationContext(
+        description=descripcion,
+        operation_date=OPERACION,
+        facts=(ProductFact(name="material", value=material, status="OBSERVED"),),
+        search_terms=("vajilla",),
+        exclusiones=_EXCLUSION_REAL,
+    )
+
+
+def test_una_exclusion_de_otro_producto_no_descarta_esta_posicion() -> None:
+    """EL DEFECTO MÁS GRAVE QUE QUEDABA, Y ESTABA VIVO EN LA BASE.
+
+    Se comprobaba que el término de la TARIFA casara con la candidata y nunca
+    que el término de la FICHA estuviera en esta ficha. Con la exclusión real
+    que hay cargada —«cerámica vidriada» no es «talavera», firmada por un
+    clasificador— una vajilla que SÍ es de Talavera perdía su fracción.
+
+    Y la traza lo justificaba diciendo «la ficha dice "ceramica vidriada"»
+    sobre una ficha que no dice eso. Un descarte equivocado que se escuda en el
+    nombre de una persona es peor que no tener vocabulario.
+
+    No lo cazó ninguna medición porque ningún producto limpio del corpus es de
+    Talavera: la precisión se mantuvo en 100 % por cómo está compuesto el
+    corpus, no porque esto estuviera bien.
+    """
+    from core.rgi_engine.rules import _lo_aprendido_la_descarta
+
+    ficha = _vajilla("VAJILLA DE TALAVERA DE PUEBLA, PINTADA A MANO", "talavera")
+    assert _lo_aprendido_la_descarta(_TALAVERA_FR, ficha) is None
+
+
+def test_la_exclusion_sigue_valiendo_para_la_ficha_que_la_motivo() -> None:
+    """La cautela no puede comerse el caso para el que se firmó."""
+    from core.rgi_engine.rules import _lo_aprendido_la_descarta
+
+    ficha = _vajilla("VAJILLA DE CERAMICA VIDRIADA, NO PORCELANA", "ceramica vidriada")
+    motivo = _lo_aprendido_la_descarta(_TALAVERA_FR, ficha)
+    assert motivo is not None
+    assert "ceramica vidriada" in motivo
+
+
+def test_media_coincidencia_no_arrastra_un_veredicto() -> None:
+    """«Cerámica vidriada» es una respuesta sobre esas dos palabras JUNTAS.
+
+    Con que bastara una, una ficha que sólo dijera «cerámica» cargaría con un
+    veredicto que nadie dio sobre ella.
+    """
+    from core.rgi_engine.rules import _lo_aprendido_la_descarta
+
+    ficha = _vajilla("PIEZA DE CERAMICA PARA HORNO INDUSTRIAL", "ceramica")
+    assert _lo_aprendido_la_descarta(_TALAVERA_FR, ficha) is None
