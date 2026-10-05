@@ -616,22 +616,40 @@ class RGI6:
                 missing_information=(f"subpartidas de {partida.heading}",),
             )
 
-        elegida = _unica_o_mas_especifica(subs, mercancia=context.description, context=context)
+        # Antes de desempatar: quitar las que la MATERIA de la mercancía hace
+        # imposibles, cuando es la propia tarifa la que opone dos hermanas por
+        # materia. Descartar es mucho más barato de sostener que elegir, y aquí
+        # el fundamento no lo pone el motor: lo pone el texto legal de al lado.
+        posibles = _la_materia_de_una_hermana_descarta(subs, context)
+        descartadas_por_materia = [c for c in subs if c not in posibles]
+        por_materia = (
+            "  Descartadas por materia: "
+            + " · ".join(f"{c.code} («{c.text}»)" for c in descartadas_por_materia)
+            if descartadas_por_materia
+            else ""
+        )
+
+        elegida = _unica_o_mas_especifica(posibles, mercancia=context.description, context=context)
         if elegida is None:
             return RGIResult(
                 rule_id=self.rule_id,
                 status=RGIStatus.HUMAN_REVIEW_REQUIRED,
                 input_facts=hechos,
+                # La lista COMPLETA: quien revise tiene que ver también las que
+                # el motor quitó, y por qué. Un descarte que no se enseña es un
+                # candidato que desaparece.
                 candidate_codes=tuple(subs),
                 reasoning_summary=(
                     f"Varias subpartidas de {partida.heading} comprenden la mercancía "
                     f"({', '.join(s.code for s in subs)}) y ninguna es más específica. "
-                    f"El motor no elige entre ellas."
+                    f"El motor no elige entre ellas." + por_materia
                 ),
                 missing_information=("desempate de subpartida por un clasificador",),
                 # La pregunta concreta, si hay una corta que lo resuelva. No
-                # sustituye al aviso de arriba: lo acota.
-                preguntas=tuple(formular(context, subs)),
+                # sustituye al aviso de arriba: lo acota. Sobre las posibles, no
+                # sobre todas: preguntar por una posición que la tarifa ya
+                # descartó gasta el tiempo de quien contesta.
+                preguntas=tuple(formular(context, posibles)),
             )
 
         fracciones = list(
@@ -645,7 +663,7 @@ class RGI6:
                 candidate_codes=(elegida,),
                 reasoning_summary=(
                     f"Subpartida {elegida.code} («{elegida.text}»). No hay fracciones "
-                    f"cargadas por debajo."
+                    f"cargadas por debajo." + por_materia
                 ),
                 source_ids=tuple(c.source_id for c in (elegida,) if c.source_id is not None),
                 confidence=_confianza(context),
@@ -693,8 +711,18 @@ class RGI6:
                 candidate_codes=(unica,),
                 reasoning_summary=(
                     f"Partida {partida.heading} → subpartida {elegida.code} → "
-                    f"fracción {unica.code} («{unica.text}»). Es la única que la "
-                    f"mercancía no contradice; descartadas: {motivos}."
+                    f"fracción {unica.code} («{unica.text}»)."
+                    # «Es la única que la mercancía no contradice; descartadas:
+                    # .» salía también cuando la subpartida tenía UNA sola
+                    # fracción y no se descartó nada: afirmaba un descarte que
+                    # no hubo, con un punto suelto detrás. Sólo se dice cuando
+                    # se hizo.
+                    + (
+                        f" Es la única que la mercancía no contradice; descartadas: {motivos}."
+                        if descartes
+                        else ""
+                    )
+                    + por_materia
                 ),
                 source_ids=tuple(
                     c.source_id for c in (partida, elegida, unica) if c.source_id is not None
@@ -733,7 +761,7 @@ class RGI6:
             candidate_codes=(fraccion,),
             reasoning_summary=(
                 f"Partida {partida.heading} → subpartida {elegida.code} → "
-                f"fracción {fraccion.code} («{fraccion.text}»)."
+                f"fracción {fraccion.code} («{fraccion.text}»)." + por_materia
             ),
             source_ids=tuple(
                 c.source_id for c in (partida, elegida, fraccion) if c.source_id is not None
@@ -850,6 +878,122 @@ def _familia_de_la_mercancia(context: ClassificationContext) -> str | None:
             continue
         vistas |= _familias(hecho.value or "")
     return next(iter(vistas)) if len(vistas) == 1 else None
+
+
+#: Materias por su término LITERAL, y qué términos de la tarifa satisface cada
+#: una. Más fino que `_FAMILIAS` a propósito: ahí «acero», «hierro» y
+#: «fundicion» son una sola familia ferrosa, que es la granularidad correcta
+#: para un texto como «artículos de higiene de fundición, hierro o acero» y
+#: demasiado gruesa para distinguir dos hermanas suyas.
+#:
+#: Se lee en una dirección: si la ficha declara la clave, las posiciones que
+#: nombren cualquiera de sus valores son posibles. El acero inoxidable es
+#: acero, así que una posición que diga «de acero» le sirve; la fundición no
+#: es acero ni al revés, y la LIGIE las separa en el mismo nivel.
+_MATERIAS: dict[str, frozenset[str]] = {
+    "acero inoxidable": frozenset({"acero inoxidable", "acero"}),
+    "fundicion": frozenset({"fundicion"}),
+    "acero": frozenset({"acero"}),
+    "hierro": frozenset({"hierro"}),
+    "aluminio": frozenset({"aluminio"}),
+    "laton": frozenset({"laton", "cobre"}),
+    "bronce": frozenset({"bronce", "cobre"}),
+    "cobre": frozenset({"cobre"}),
+    "porcelana": frozenset({"porcelana", "ceramica"}),
+    "ceramica": frozenset({"ceramica"}),
+    "plastico": frozenset({"plastico"}),
+    "caucho": frozenset({"caucho"}),
+    "vidrio": frozenset({"vidrio"}),
+    "madera": frozenset({"madera"}),
+    "carton": frozenset({"carton"}),
+    "papel": frozenset({"papel"}),
+}
+
+#: De más largo a más corto: «acero inoxidable» tiene que reconocerse ANTES
+#: que «acero», o un fregadero inoxidable quedaría declarado sólo como acero y
+#: la distinción que hace la tarifa se perdería al leerla.
+_MATERIAS_POR_LARGO: tuple[str, ...] = tuple(sorted(_MATERIAS, key=lambda t: (-len(t), t)))
+
+
+def _materias_literales(texto: str) -> set[str]:
+    """Las materias que un texto nombra, por su término literal.
+
+    Se consume cada coincidencia para que la más larga gane: «de acero
+    inoxidable» da `{"acero inoxidable"}` y no también `{"acero"}`.
+    """
+    resto = _plano(texto)
+    encontradas: set[str] = set()
+    for termino in _MATERIAS_POR_LARGO:
+        if termino in resto:
+            encontradas.add(termino)
+            resto = resto.replace(termino, " ")
+    return encontradas
+
+
+def _materias_declaradas(context: ClassificationContext) -> set[str]:
+    """Las materias que DECLARA la ficha, de un hecho sólido de materia.
+
+    Mismo criterio que `_familia_de_la_mercancia` y por la misma razón: nunca
+    de la descripción comercial. Un cable de acero con alma de fibra nombra dos
+    materias ahí y adivinar cuál manda descartaría la posición correcta.
+    """
+    vistas: set[str] = set()
+    for hecho in context.facts:
+        if not hecho.is_solid or "material" not in hecho.name.casefold():
+            continue
+        vistas |= _materias_literales(hecho.value or "")
+    return vistas
+
+
+def _la_materia_de_una_hermana_descarta(
+    hermanas: Sequence[TariffCandidate], context: ClassificationContext
+) -> list[TariffCandidate]:
+    """Las hermanas que la materia de la mercancía no hace imposibles.
+
+    CUANDO LA TARIFA YA DECIDIÓ, NO HACE FALTA QUE DECIDA NADIE
+
+    La partida 7324 —artículos de higiene de fundición, hierro o acero— abre
+    cuatro subpartidas:
+
+        732410  «Fregaderos (piletas de lavar) y lavabos, de acero inoxidable.»
+        732421  «Bañeras. De fundición, incluso esmaltadas.»
+        732429  «Bañeras. Las demás.»
+        732490  «Los demás, incluidas las partes.»
+
+    Un fregadero de acero inoxidable AISI 304 empataba con 732421 en
+    especificidad —dos calificativos cada una— y el motor se negaba a elegir,
+    con razón: contar calificativos no es una razón que nadie firme.
+
+    Pero no hacía falta elegir, hacía falta descartar. La nomenclatura se tomó
+    la molestia de abrir DOS posiciones hermanas por materia, y al hacerlo dijo
+    que en este nivel la materia separa. Una pieza de acero inoxidable no puede
+    ser la de fundición: no por criterio de nadie, sino porque el texto legal de
+    al lado ya dice de qué es la otra.
+
+    LA PUERTA QUE HACE ESTO SEGURO
+
+    No se descarta nada si NINGUNA hermana nombra la materia de la ficha. Sin
+    eso, la regla afirmaría que la tarifa distingue por materia en niveles donde
+    no lo hace, y descartaría la posición correcta por no repetir una palabra —
+    el mismo error que clasificó un cable en «De acero sin recubrimiento» por
+    compartir «acero» (véase `_el_grupo_la_describe`).
+
+    Una hermana que no nombra materia —«Las demás»— nunca se descarta: no
+    afirma nada que contradecir, y es justo la que recoge lo que no encaja en
+    las otras.
+    """
+    ficha = _materias_declaradas(context)
+    if not ficha:
+        return list(hermanas)
+
+    acepta = frozenset().union(*(_MATERIAS[m] for m in ficha))
+    nombradas = {c.code: _materias_literales(c.text) for c in hermanas}
+
+    # LA PUERTA: alguna hermana tiene que reclamar la materia de la ficha.
+    if not any(ms & acepta for ms in nombradas.values()):
+        return list(hermanas)
+
+    return [c for c in hermanas if not nombradas[c.code] or (nombradas[c.code] & acepta)]
 
 
 def _material_contradice(candidata: TariffCandidate, familia: str | None) -> str | None:

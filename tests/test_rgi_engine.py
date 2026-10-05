@@ -821,3 +821,149 @@ def test_el_respaldo_ignora_acentos_y_mayusculas() -> None:
 
     assert elegida is not None
     assert elegida.code == "73239305"
+
+
+# ── La materia de una hermana descarta (Persona 1, 5-oct) ──────────────────
+#
+# Las cuatro subpartidas de 7324, con el guion ya puesto delante (ADR 0004).
+
+_FREGADERO_INOX = TariffCandidate(
+    code="732410",
+    text="Fregaderos (piletas de lavar) y lavabos, de acero inoxidable.",
+    level="SUBHEADING",
+    specificity=2,
+)
+_BANERA_FUNDICION = TariffCandidate(
+    code="732421",
+    text="Bañeras. De fundición, incluso esmaltadas.",
+    level="SUBHEADING",
+    specificity=2,
+    group_text="Bañeras:",
+)
+_BANERA_DEMAS = TariffCandidate(
+    code="732429", text="Bañeras. Las demás.", level="SUBHEADING", specificity=0,
+    group_text="Bañeras:",
+)
+_HIGIENE_DEMAS = TariffCandidate(
+    code="732490", text="Los demás, incluidas las partes.", level="SUBHEADING", specificity=0
+)
+
+_HERMANAS_7324 = [_FREGADERO_INOX, _BANERA_FUNDICION, _BANERA_DEMAS, _HIGIENE_DEMAS]
+
+
+def _contexto_fregadero(**cambios: object) -> ClassificationContext:
+    base: dict[str, object] = {
+        "description": (
+            "FREGADERO DE ACERO INOXIDABLE AISI 304, UNA TINA, 600 X 500 X 220 MM, "
+            "ESPESOR 0.8 MM, PARA INSTALACION EN COCINA"
+        ),
+        "operation_date": OPERACION,
+        "facts": (ProductFact(name="material", value="acero inoxidable AISI 304", status="OBSERVED"),),
+        "search_terms": ("fregaderos",),
+    }
+    base.update(cambios)
+    return ClassificationContext(**base)  # type: ignore[arg-type]
+
+
+def test_la_fundicion_se_descarta_porque_una_hermana_dice_inoxidable() -> None:
+    """EL CASO QUE DESATASCA 15 PARTIDAS DEL CORPUS.
+
+    732410 y 732421 empataban en especificidad —dos calificativos cada una— y
+    el motor se negaba a elegir, con razón: contar calificativos no es una
+    razón que nadie firme.
+
+    Pero no hacía falta elegir, hacía falta descartar. La LIGIE abrió DOS
+    hermanas por materia, y al hacerlo dijo que aquí la materia separa. Un
+    fregadero de acero inoxidable no puede ser el de fundición.
+    """
+    from core.rgi_engine.rules import _la_materia_de_una_hermana_descarta
+
+    posibles = _la_materia_de_una_hermana_descarta(_HERMANAS_7324, _contexto_fregadero())
+
+    assert [c.code for c in posibles] == ["732410", "732429", "732490"]
+    assert "732421" not in [c.code for c in posibles], "la de fundición es imposible"
+
+
+def test_las_demas_nunca_se_descarta_por_materia() -> None:
+    """No afirma ninguna materia, así que no hay nada que contradecir.
+
+    Y es justo la que recoge lo que no encaja en las otras: descartarla
+    dejaría al motor sin la posición residual que la tarifa puso para eso.
+    """
+    from core.rgi_engine.rules import _la_materia_de_una_hermana_descarta
+
+    posibles = _la_materia_de_una_hermana_descarta(_HERMANAS_7324, _contexto_fregadero())
+
+    assert "732429" in [c.code for c in posibles]
+    assert "732490" in [c.code for c in posibles]
+
+
+def test_sin_hermana_que_reclame_la_materia_no_se_descarta_nada() -> None:
+    """LA PUERTA QUE HACE SEGURA ESTA REGLA.
+
+    Si ninguna hermana nombra la materia de la ficha, la tarifa no está
+    distinguiendo por materia en este nivel. Descartar ahí sería quitar la
+    posición correcta por no repetir una palabra — el mismo error que clasificó
+    un cable en «De acero sin recubrimiento» por compartir «acero».
+    """
+    from core.rgi_engine.rules import _la_materia_de_una_hermana_descarta
+
+    ficha = _contexto_fregadero(
+        facts=(ProductFact(name="material", value="aluminio anodizado", status="OBSERVED"),)
+    )
+    posibles = _la_materia_de_una_hermana_descarta(_HERMANAS_7324, ficha)
+
+    assert len(posibles) == len(_HERMANAS_7324), "ninguna hermana habla de aluminio"
+
+
+def test_sin_materia_declarada_no_se_descarta_nada() -> None:
+    """Sin hecho sólido de materia no hay afirmación contra la que contradecir."""
+    from core.rgi_engine.rules import _la_materia_de_una_hermana_descarta
+
+    ficha = _contexto_fregadero(facts=())
+    assert len(_la_materia_de_una_hermana_descarta(_HERMANAS_7324, ficha)) == 4
+
+
+def test_la_materia_no_sale_de_la_descripcion_comercial() -> None:
+    """Un cable de acero con alma de fibra nombra dos materias en su
+    descripción, y adivinar cuál manda descartaría la posición correcta.
+
+    Mismo criterio que `_familia_de_la_mercancia`, y por la misma razón.
+    """
+    from core.rgi_engine.rules import _la_materia_de_una_hermana_descarta
+
+    ficha = _contexto_fregadero(
+        description="BAÑERA DE FUNDICION ESMALTADA",
+        facts=(),
+    )
+    assert len(_la_materia_de_una_hermana_descarta(_HERMANAS_7324, ficha)) == 4
+
+
+def test_el_acero_inoxidable_es_acero() -> None:
+    """Una posición que dice «de acero» le sirve a un inoxidable.
+
+    La fundición no: la LIGIE las separa, y el inoxidable no es fundición.
+    """
+    from core.rgi_engine.rules import _la_materia_de_una_hermana_descarta
+
+    de_acero = TariffCandidate(
+        code="732420", text="De acero, sin más precisión.", level="SUBHEADING", specificity=1
+    )
+    posibles = _la_materia_de_una_hermana_descarta(
+        [_FREGADERO_INOX, de_acero, _BANERA_FUNDICION], _contexto_fregadero()
+    )
+
+    assert [c.code for c in posibles] == ["732410", "732420"]
+
+
+def test_la_materia_mas_larga_gana_al_leerla() -> None:
+    """«acero inoxidable» tiene que reconocerse antes que «acero».
+
+    Si no, el inoxidable se leería como acero a secas y la distinción que hace
+    la tarifa se perdería justo al interpretarla.
+    """
+    from core.rgi_engine.rules import _materias_literales
+
+    assert _materias_literales("De acero inoxidable.") == {"acero inoxidable"}
+    assert _materias_literales("De fundición, incluso esmaltadas.") == {"fundicion"}
+    assert _materias_literales("Las demás.") == set()
