@@ -1152,7 +1152,33 @@ def _lo_aprendido_la_descarta(
     legal y ésta la sabe porque alguien la contestó. Por eso la traza las
     distingue — una se sostiene sola, la otra se sostiene en quien la firmó.
     """
+    # ANTES DE NADA: ¿ESTA ficha dice eso? (Persona 1, 5-oct)
+    #
+    # Faltaba, y el defecto era de los peores: se comprobaba que el término de
+    # la TARIFA casara con la candidata y nunca que el término de la FICHA
+    # estuviera en esta ficha. Una respuesta firmada sobre un producto
+    # descartaba la posición para TODOS.
+    #
+    # Con la exclusión real que hay cargada —«cerámica vidriada» no es
+    # «talavera», firmada por un clasificador— una vajilla que SÍ es de
+    # Talavera perdía su fracción, y la traza lo justificaba diciendo «la ficha
+    # dice "ceramica vidriada"» sobre una ficha que no dice eso. Un descarte
+    # equivocado que se escuda en el nombre de una persona es peor que no tener
+    # vocabulario.
+    #
+    # No lo cazó ninguna medición porque ningún producto limpio del corpus es
+    # de Talavera: la precisión se mantuvo en 100 % por cómo está compuesto el
+    # corpus, no porque esto estuviera bien.
+    consta = _palabras_con_singular(
+        " ".join([context.description, *(f.value or "" for f in context.known_facts())])
+    )
     for de_la_ficha, de_la_tarifa in context.exclusiones:
+        afirmadas = _palabras_con_singular(de_la_ficha)
+        # TODAS las palabras, no alguna: «cerámica vidriada» es una respuesta
+        # sobre esas dos juntas. Con una basta, una ficha que sólo dijera
+        # «cerámica» arrastraría un veredicto que nadie dio sobre ella.
+        if not afirmadas or not afirmadas <= consta:
+            continue
         if _palabras(de_la_tarifa) & _palabras(candidata.text):
             return f"la ficha dice «{de_la_ficha}», que no es «{de_la_tarifa}»"
     return None
