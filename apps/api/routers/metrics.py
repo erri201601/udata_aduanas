@@ -35,6 +35,7 @@ haya pares, y la respuesta dice cuántos hay.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from decimal import Decimal
 
 import sqlalchemy as sa
@@ -73,6 +74,33 @@ class Acierto(BaseModel):
     """`None` cuando no hay nada comparado. No es cero: es desconocido."""
 
 
+class ContraElMotorDeHoy(BaseModel):
+    """Los veredictos humanos frente a la decisión VIGENTE de cada caso.
+
+    No reasigna nada: `reviews_decision_id` sigue apuntando a la decisión que
+    se revisó. Esto se calcula aparte, por ficha, con la misma unidad de caso
+    que usa el tablero.
+    """
+
+    coinciden: int = 0
+    """El motor contesta hoy lo mismo que dijo la persona."""
+    discrepan: int = 0
+    """El motor contesta hoy algo distinto. Es el número que importa vigilar."""
+    se_abstiene: int = 0
+    """La persona declaró y el motor de hoy no se atreve.
+
+    No es un fallo: es §8.2. Pero sí es cobertura que falta, y por eso va
+    aparte y no dentro de `coinciden`.
+    """
+    sin_caso: int = 0
+    """El veredicto no cuelga de una ficha, así que no hay caso vigente que
+    mirar. Se declara en vez de descartarlo en silencio."""
+
+    @property
+    def comparados(self) -> int:
+        return self.coinciden + self.discrepan
+
+
 class PrecisionClasificacion(BaseModel):
     """Las cuatro métricas de clasificación del §39."""
 
@@ -99,6 +127,25 @@ class PrecisionClasificacion(BaseModel):
 
     confirmadas: int = 0
     corregidas: int = 0
+
+    contra_el_motor_de_hoy: ContraElMotorDeHoy = Field(default_factory=lambda: ContraElMotorDeHoy())
+    """Lo mismo, pero contra lo que el motor contesta AHORA.
+
+    Las cuatro métricas de arriba comparan cada veredicto con la decisión que
+    esa persona revisó, y hacen bien: es la traza de auditoría, dice qué dijo
+    la máquina y qué dijo la persona ESE DÍA.
+
+    El problema es presentarlas como la precisión del sistema. El único par
+    comparable que hay hoy es la vajilla de cerámica del 28 de septiembre: el
+    motor dijo 69120003 («De Talavera») y la persona 69120099 («Los demás»).
+    `fraction_accuracy` sale 0.00 % por eso — y ese defecto se arregló el 28 de
+    septiembre, el mismo día. El motor de hoy contesta 69120099 en ese caso.
+
+    Así que ese 0 % es exacto y engaña: mide al motor **como era**, congelado
+    en el momento en que alguien lo revisó, y nada en pantalla lo decía. Este
+    bloque mide al motor **como está**, y las dos cifras responden preguntas
+    distintas que las dos valen.
+    """
 
     @property
     def hay_con_que_medir(self) -> bool:
@@ -192,6 +239,8 @@ def precision(session: SessionDep) -> PrecisionClasificacion:
     for metrica in (hs, fraccion, nico):
         metrica.porcentaje = _porcentaje(metrica.aciertos, metrica.comparados)
 
+    hoy = _contra_el_motor_de_hoy(humanos, maquina)
+
     pendientes = sum(1 for d in maquina if d.requires_human_review)
     # Decisiones DISTINTAS que necesitaron a una persona: las que esperan y las
     # ya revisadas. Por decisión y no por fila de veredicto, para que la tasa
@@ -208,4 +257,51 @@ def precision(session: SessionDep) -> PrecisionClasificacion:
         pendientes_de_revision=pendientes,
         confirmadas=confirmadas,
         corregidas=corregidas,
+        contra_el_motor_de_hoy=hoy,
     )
+
+
+def _contra_el_motor_de_hoy(
+    humanos: Sequence[ClassificationDecision],
+    maquina: Sequence[ClassificationDecision],
+) -> ContraElMotorDeHoy:
+    """Los veredictos frente a la decisión VIGENTE de su caso.
+
+    POR QUÉ ESTE BLOQUE EXISTE
+
+    Las métricas de arriba comparan cada veredicto con la decisión que esa
+    persona revisó. Eso es la traza de auditoría y no se toca. Pero como
+    precisión del sistema engaña: el único par comparable hoy es la vajilla del
+    28 de septiembre, cuyo defecto se arregló ese mismo día. `fraction_accuracy
+    = 0.00 %` mide al motor como era, y nada lo decía.
+
+    Aquí la unidad es el caso —`product_dna_id`, igual que en el tablero—,
+    porque el veredicto es sobre la mercancía: mientras la ficha sea la misma,
+    lo que esa persona dijo sigue dicho.
+
+    No se reasigna nada. `reviews_decision_id` sigue apuntando donde apuntaba.
+    """
+    vigente: dict[object, ClassificationDecision] = {}
+    for d in maquina:
+        if d.product_dna_id is None:
+            continue
+        previa = vigente.get(d.product_dna_id)
+        if previa is None or d.created_at > previa.created_at:
+            vigente[d.product_dna_id] = d
+
+    salida = ContraElMotorDeHoy()
+    for veredicto in humanos:
+        if veredicto.fraction_code is None:
+            continue
+        actual = (
+            vigente.get(veredicto.product_dna_id) if veredicto.product_dna_id is not None else None
+        )
+        if actual is None:
+            salida.sin_caso += 1
+        elif actual.fraction_code is None:
+            salida.se_abstiene += 1
+        elif actual.fraction_code == veredicto.fraction_code:
+            salida.coinciden += 1
+        else:
+            salida.discrepan += 1
+    return salida

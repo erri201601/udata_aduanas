@@ -982,6 +982,36 @@ export interface components {
             limite: number;
         };
         /**
+         * ContraElMotorDeHoy
+         * @description Los veredictos humanos frente a la decisión VIGENTE de cada caso.
+         *
+         *     No reasigna nada: `reviews_decision_id` sigue apuntando a la decisión que
+         *     se revisó. Esto se calcula aparte, por ficha, con la misma unidad de caso
+         *     que usa el tablero.
+         */
+        ContraElMotorDeHoy: {
+            /**
+             * Coinciden
+             * @default 0
+             */
+            coinciden: number;
+            /**
+             * Discrepan
+             * @default 0
+             */
+            discrepan: number;
+            /**
+             * Se Abstiene
+             * @default 0
+             */
+            se_abstiene: number;
+            /**
+             * Sin Caso
+             * @default 0
+             */
+            sin_caso: number;
+        };
+        /**
          * Dashboard
          * @description El estado del sistema en cifras que se pueden defender.
          */
@@ -1886,6 +1916,7 @@ export interface components {
              * @default 0
              */
             corregidas: number;
+            contra_el_motor_de_hoy?: components["schemas"]["ContraElMotorDeHoy"];
         };
         /** ProductAttributeRead */
         ProductAttributeRead: {

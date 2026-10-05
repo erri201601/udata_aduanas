@@ -1223,6 +1223,74 @@ code {
   max-width: 78ch;
 }
 
+/* --- Precisión del §39 --------------------------------------------------
+   Dos bloques, nunca uno: el de hoy y el del día en que alguien revisó. Una
+   sola cifra mentiría en una dirección o en la otra. */
+
+.precision {
+  margin: 0 0 1.5rem;
+  padding: 1.1rem 1.25rem;
+  border: 1px solid var(--borde);
+  border-radius: 12px;
+  background: var(--realce, transparent);
+}
+
+.precision h3 {
+  margin: 0 0 0.9rem;
+  font-size: 0.95rem;
+}
+
+.precision__dos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1rem;
+}
+
+.precision__bloque h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--tenue);
+}
+
+.precision__bloque dl {
+  margin: 0 0 0.6rem;
+  display: flex;
+  gap: 1.2rem;
+  flex-wrap: wrap;
+}
+
+.precision__bloque dl > div { display: flex; flex-direction: column; gap: 0.1rem; }
+.precision__bloque dt { font-size: 0.72rem; color: var(--tenue); order: 2; }
+.precision__bloque dd {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  order: 1;
+}
+
+.precision__bien { color: var(--ok); }
+.precision__mal { color: var(--mal); }
+
+.precision__nota {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: var(--tenue);
+  max-width: 60ch;
+}
+
+.precision__pie {
+  margin: 0.9rem 0 0;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--borde);
+  font-size: 0.78rem;
+  color: var(--tenue);
+  line-height: 1.55;
+}
+
 /* --- Copilot -------------------------------------------------------------
    El aviso de «no es búsqueda semántica» va arriba y con peso: presentar una
    búsqueda por término como si entendiera la pregunta vendería una capacidad

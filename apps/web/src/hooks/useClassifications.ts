@@ -2,8 +2,16 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { fetchClassification, fetchClassifications } from '../api/client'
-import type { ClassificationDecisionRead, ClassificationDetail } from '../api/client'
+import {
+  fetchClassification,
+  fetchClassifications,
+  fetchPrecisionClasificacion,
+} from '../api/client'
+import type {
+  ClassificationDecisionRead,
+  ClassificationDetail,
+  PrecisionClasificacion,
+} from '../api/client'
 
 export interface EstadoDecisiones {
   decisiones: ClassificationDecisionRead[]
@@ -84,4 +92,32 @@ export function useClassification(decisionId: string | null): EstadoDetalle {
   // Se deriva en vez de asignarse dentro del efecto: sin decisión no hay
   // detalle que mostrar.
   return { detalle: decisionId ? detalle : null, error, cargando }
+}
+
+
+export interface EstadoPrecision {
+  precision: PrecisionClasificacion | null
+  error: string | null
+}
+
+/** La precisión del §39. Existía en la API y ninguna pantalla la leía. */
+export function usePrecisionClasificacion(): EstadoPrecision {
+  const [precision, setPrecision] = useState<PrecisionClasificacion | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const control = new AbortController()
+    fetchPrecisionClasificacion(control.signal)
+      .then((d) => {
+        setPrecision(d)
+        setError(null)
+      })
+      .catch((causa: unknown) => {
+        if (control.signal.aborted) return
+        setError(causa instanceof Error ? causa.message : 'No se pudo cargar la precisión')
+      })
+    return () => control.abort()
+  }, [])
+
+  return { precision, error }
 }
