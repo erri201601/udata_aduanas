@@ -116,6 +116,23 @@ def _busqueda(session: Session, borrador: ProductDnaDraft, on_date: date) -> lis
     return (palabras + nuevos)[:MAX_TERMINOS]
 
 
+def _vigentes_el(on_date: date) -> sa.ColumnElement[bool]:
+    """El filtro de vigencia de la mesa de vocabulario, en un solo sitio.
+
+    Estaba escrito tres veces idéntico. Una equivalencia que se cierra con
+    `valid_to` tiene que dejar de aplicarse en los tres usos a la vez, y con
+    tres copias basta olvidar una para que el motor siga apoyándose en una
+    respuesta caducada (regla 5).
+    """
+    return sa.and_(
+        NomenclatureSynonym.valid_from <= on_date,
+        sa.or_(
+            NomenclatureSynonym.valid_to.is_(None),
+            NomenclatureSynonym.valid_to >= on_date,
+        ),
+    )
+
+
 def _exclusiones(session: Session, *, on_date: date) -> list[tuple[str, str]]:
     """Las parejas que un clasificador declaró distintas, vigentes ese día.
 
@@ -124,16 +141,9 @@ def _exclusiones(session: Session, *, on_date: date) -> list[tuple[str, str]]:
     descartar fundamento sin fundamento. Las nuestras sirven para BUSCAR
     (`EQUIVALE`), nunca para descartar.
     """
-    vigentes = sa.and_(
-        NomenclatureSynonym.valid_from <= on_date,
-        sa.or_(
-            NomenclatureSynonym.valid_to.is_(None),
-            NomenclatureSynonym.valid_to >= on_date,
-        ),
-    )
     filas = session.execute(
         sa.select(NomenclatureSynonym.commercial_term, NomenclatureSynonym.nomenclature_term).where(
-            vigentes,
+            _vigentes_el(on_date),
             NomenclatureSynonym.kind == "EXCLUYE",
             NomenclatureSynonym.data_origin == "HUMAN_VALIDATED",
         )
@@ -173,6 +183,24 @@ def _lo_dice_la_ficha(termino_comercial: str, palabras_ficha: set[str]) -> bool:
     return bool(distintivas) and distintivas <= palabras_ficha
 
 
+def _equivalencias(session: Session, *, on_date: date) -> list[tuple[str, str]]:
+    """Las parejas que un clasificador declaró IGUALES, vigentes ese día.
+
+    Sólo `HUMAN_VALIDATED`, igual que las exclusiones: una conjetura nuestra no
+    puede dar por contestada la pregunta de nadie. Y sólo se usan para
+    callarse, nunca para elegir — ésa es la diferencia con el puente de
+    búsqueda, que sí admite las nuestras.
+    """
+    filas = session.execute(
+        sa.select(NomenclatureSynonym.commercial_term, NomenclatureSynonym.nomenclature_term).where(
+            _vigentes_el(on_date),
+            NomenclatureSynonym.kind == "EQUIVALE",
+            NomenclatureSynonym.data_origin == "HUMAN_VALIDATED",
+        )
+    ).all()
+    return [(f.commercial_term, f.nomenclature_term) for f in filas]
+
+
 def _con_sinonimos(session: Session, terminos_base: list[str], *, on_date: date) -> list[str]:
     """Añade los términos de nomenclatura equivalentes a los de la ficha.
 
@@ -193,16 +221,9 @@ def _con_sinonimos(session: Session, terminos_base: list[str], *, on_date: date)
     podía casar con la igualdad exacta de antes. Al arreglar el emparejamiento,
     sí habría pasado.
     """
-    vigentes = sa.and_(
-        NomenclatureSynonym.valid_from <= on_date,
-        sa.or_(
-            NomenclatureSynonym.valid_to.is_(None),
-            NomenclatureSynonym.valid_to >= on_date,
-        ),
-    )
     filas = session.execute(
         sa.select(NomenclatureSynonym.commercial_term, NomenclatureSynonym.nomenclature_term).where(
-            vigentes, NomenclatureSynonym.kind == "EQUIVALE"
+            _vigentes_el(on_date), NomenclatureSynonym.kind == "EQUIVALE"
         )
     ).all()
 
@@ -270,6 +291,9 @@ def clasificar_borrador(
         # Sólo las firmadas — una conjetura nuestra no puede descartar una
         # posición de la tarifa.
         exclusiones=_exclusiones(session, on_date=operation_date),
+        # Y las que SÍ son lo mismo. No eligen nada: evitan que el motor
+        # vuelva a preguntar lo que ya está contestado y firmado.
+        equivalencias=_equivalencias(session, on_date=operation_date),
         trade_flow=trade_flow,
     )
     return Clasificado(
