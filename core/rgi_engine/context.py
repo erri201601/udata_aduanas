@@ -129,6 +129,25 @@ class ClassificationContext(BaseModel):
     igual que antes.
     """
 
+    equivalencias: tuple[tuple[str, str], ...] = ()
+    """Parejas (lo que dice la ficha, lo que exige la tarifa) que SÍ son lo mismo.
+
+    EL «SÍ» NO SERVÍA PARA NADA Y SE SEGUÍA PREGUNTANDO
+
+    El «no» descarta (`exclusiones`) y por eso llegó primero. El «sí» no
+    descarta nada, así que no tenía dónde entrar — y el resultado es que el
+    motor volvía a preguntar lo mismo. Medido el 5-oct sobre la bandeja: de las
+    35 preguntas de la primera pantalla, 26 eran parejas que César ya había
+    contestado esa misma tarde.
+
+    No sirve para elegir, igual que las exclusiones. Sirve para CALLARSE: una
+    cláusula cuyo «sí» ya está firmado no se vuelve a preguntar.
+
+    El mensaje de conflicto del endpoint de vocabulario ya promete esto por
+    escrito —«el motor ya no debería preguntarla»— y hasta hoy la promesa no se
+    cumplía para los «sí».
+    """
+
     notes: dict[str, Any] = Field(default_factory=dict)
 
     def fact(self, name: str) -> ProductFact | None:

@@ -148,6 +148,51 @@ def _la_ficha_cubre(frase: str, consta: set[str]) -> bool:
     return all(_singulares_de(p) & consta for p in palabras)
 
 
+def _ya_esta_contestada(
+    frase: str, context: ClassificationContext, consta: set[str]
+) -> tuple[str, str] | None:
+    """La respuesta firmada que ya resuelve esta cláusula para ESTA ficha.
+
+    LAS MISMAS PREGUNTAS, UNA Y OTRA VEZ
+
+    Medido el 5-oct sobre la bandeja, al día siguiente de cargar las respuestas
+    de César: de las 35 preguntas de la primera pantalla, **26 eran parejas que
+    él ya había contestado esa misma tarde**. Veinte tuberías de acero al
+    carbono volvían a preguntar si cumplen «de hierro o acero», y él ya había
+    firmado que sí.
+
+    El mensaje de conflicto del endpoint de vocabulario promete exactamente
+    esto —«el motor ya no debería preguntarla»— y la promesa no se cumplía: el
+    generador de preguntas no consultaba la mesa, ni una vez.
+
+    SE MIRAN LOS DOS LADOS, Y ÉSA ES LA PARTE QUE SE OLVIDA
+
+    La cláusula de la tarifa Y que esta ficha diga el término comercial. Con
+    sólo el lado de la tarifa, la respuesta de un producto callaría la pregunta
+    de todos los demás — que es el mismo defecto que el #177 arregló en el
+    descarte, y que volví a cometer en el script con el que medí esto: contó
+    tres sartenes como «ya contestados» por una respuesta sobre tuberías de
+    acero al carbono.
+
+    CALLARSE NO ES RESOLVER, Y AQUÍ ESO BASTA
+
+    Esta función no elige ninguna fracción ni descarta ninguna: sólo evita la
+    pregunta. Así que no puede convertir una negativa honesta en una fracción
+    equivocada — el caso sigue en la bandeja, con sus tres botones, para que una
+    persona lo dictamine. Lo único que se deja de gastar es su tiempo.
+    """
+    clausula = _plano(frase)
+    for de_la_ficha, de_la_tarifa in (*context.equivalencias, *context.exclusiones):
+        de_la_tarifa_plano = _plano(de_la_tarifa)
+        if not de_la_tarifa_plano or de_la_tarifa_plano not in clausula:
+            continue
+        afirmadas = _palabras(de_la_ficha)
+        if not afirmadas or not all(_singulares_de(p) & consta for p in afirmadas):
+            continue
+        return de_la_ficha, de_la_tarifa
+    return None
+
+
 def _singulares_de(palabra: str) -> set[str]:
     """La palabra y su singular, para comparar una sola."""
     formas = {palabra}
@@ -194,6 +239,12 @@ def formular(context: ClassificationContext, candidatas: list[TariffCandidate]) 
     Con muchas candidatas no se pregunta nada: cuatro preguntas de sí o no no
     son una pregunta, son el trabajo entero. Ahí la respuesta honesta sigue
     siendo mandarlo a un clasificador.
+
+    Y NO SE PREGUNTA LO QUE YA ESTÁ CONTESTADO (5-oct)
+
+    `_ya_esta_contestada` consulta la mesa de vocabulario. Sin eso, el motor
+    repetía 26 de las 35 preguntas de la primera pantalla de la bandeja al día
+    siguiente de que un clasificador las contestara.
     """
     if not candidatas or len(candidatas) > MAX_CANDIDATAS_PREGUNTABLES:
         return []
@@ -224,7 +275,7 @@ def formular(context: ClassificationContext, candidatas: list[TariffCandidate]) 
         if _la_ficha_ya_cae_en_una_alternativa(candidata.text, consta):
             continue
         frase = _la_frase_que_la_distingue(
-            por_candidata[candidata.code], veces=veces, consta=consta
+            por_candidata[candidata.code], veces=veces, consta=consta, context=context
         )
         if frase is None:
             continue
@@ -274,7 +325,11 @@ def _la_ficha_ya_cae_en_una_alternativa(texto: str, consta: set[str]) -> bool:
 
 
 def _la_frase_que_la_distingue(
-    frases: list[str], *, veces: dict[str, int], consta: set[str]
+    frases: list[str],
+    *,
+    veces: dict[str, int],
+    consta: set[str],
+    context: ClassificationContext,
 ) -> str | None:
     """La primera frase que separa a esta candidata y la ficha no resuelve.
 
@@ -297,6 +352,9 @@ def _la_frase_que_la_distingue(
        habla de cómo es la mercancía: habla de dónde está clasificada otra. La
        respuesta está en la tarifa, no en la ficha, y quien contesta no la
        tiene.
+    6. **Que nadie la haya contestado ya.** Una pareja firmada para esta ficha
+       no se vuelve a preguntar. Es lo que el endpoint de vocabulario promete
+       por escrito al devolver un 409.
     """
     for frase in frases:
         if veces.get(_plano(frase), 0) > 1:
@@ -310,6 +368,8 @@ def _la_frase_que_la_distingue(
         if _es_referencia_cruzada(frase):
             continue
         if not _palabras(frase) or _la_ficha_cubre(frase, consta):
+            continue
+        if _ya_esta_contestada(frase, context, consta):
             continue
         return frase
     return None

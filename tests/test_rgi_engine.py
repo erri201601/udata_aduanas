@@ -2049,3 +2049,102 @@ def test_la_frase_que_si_distingue_se_sigue_preguntando() -> None:
 
     assert preguntas, "se calló del todo"
     assert all("fracción" not in p.exige for p in preguntas)
+
+
+# ── No se pregunta lo que ya está contestado (5-oct) ────────────────────────
+
+
+def _tuberia(**kw: object) -> ClassificationContext:
+    base: dict[str, object] = {
+        "description": "TUBERIA DE ACERO AL CARBONO CON COSTURA HELICOIDAL",
+        "operation_date": OPERACION,
+        "facts": (ProductFact(name="material", value="acero al carbono", status="OBSERVED"),),
+        "search_terms": ("tubos",),
+    }
+    base.update(kw)
+    return ClassificationContext(**base)
+
+
+#: El texto REAL de la partida en la TIGIE cargada. Con uno simplificado el
+#: troceado en frases no produce «de hierro o acero» como cláusula propia y el
+#: test pasaba sin probar nada.
+_P_7305 = TariffCandidate(
+    code="7305",
+    text=(
+        "Los demás tubos (por ejemplo: soldados o remachados) de sección circular "
+        "con diámetro exterior superior a 406.4 mm, de hierro o acero. Tubos de los "
+        "tipos utilizados en oleoductos o gasoductos:"
+    ),
+    level="HEADING",
+    specificity=4,
+)
+_P_7304 = TariffCandidate(
+    code="7304", text="Tubos y perfiles huecos, sin soldadura.", level="HEADING", specificity=4
+)
+
+
+def test_una_pareja_ya_contestada_no_se_vuelve_a_preguntar() -> None:
+    """LAS MISMAS PREGUNTAS, UNA Y OTRA VEZ.
+
+    Medido el 5-oct sobre la bandeja, el mismo día que se cargaron las
+    respuestas de César: de las 35 preguntas de la primera pantalla, 26 eran
+    parejas que él ya había contestado. Veinte tuberías de acero al carbono
+    volvían a preguntar si cumplen «de hierro o acero».
+
+    El 409 del endpoint de vocabulario promete por escrito que «el motor ya no
+    debería preguntarla». El generador no consultaba la mesa ni una vez.
+    """
+    from core.rgi_engine.pregunta import formular
+
+    sin_contestar = formular(_tuberia(), [_P_7305, _P_7304])
+    assert any("hierro o acero" in p.exige for p in sin_contestar), (
+        "el test no prueba nada si esa cláusula no se preguntaba antes"
+    )
+
+    contestada = formular(
+        _tuberia(equivalencias=(("acero al carbono", "de hierro o acero"),)),
+        [_P_7305, _P_7304],
+    )
+
+    assert all("hierro o acero" not in p.exige for p in contestada)
+
+
+def test_la_respuesta_de_una_ficha_no_calla_la_pregunta_de_otra() -> None:
+    """Los DOS lados, y ésta es la parte que se olvida.
+
+    Con sólo el lado de la tarifa, una respuesta sobre tuberías de acero al
+    carbono callaría la pregunta de un sartén de acero inoxidable. Es el mismo
+    defecto que el #177 arregló en el descarte — y que volví a cometer en el
+    script con el que medí esto.
+    """
+    from core.rgi_engine.pregunta import formular
+
+    sarten = ClassificationContext(
+        description="SARTEN DE ACERO INOXIDABLE PARA COCINA",
+        operation_date=OPERACION,
+        facts=(ProductFact(name="tipo", value="sarten", status="OBSERVED"),),
+        search_terms=("sartenes",),
+        equivalencias=(("acero al carbono", "de hierro o acero"),),
+    )
+
+    preguntas = formular(sarten, [_P_7305, _P_7304])
+
+    assert any("hierro o acero" in p.exige for p in preguntas), (
+        "el sartén no dice «acero al carbono»: esa respuesta no es suya"
+    )
+
+
+def test_un_no_firmado_tambien_deja_de_preguntarse() -> None:
+    """Contestar «no» cierra la pregunta igual que contestar «sí».
+
+    El motor ya descarta la posición con esa exclusión; volver a preguntarla
+    sería pedir dos veces el mismo minuto.
+    """
+    from core.rgi_engine.pregunta import formular
+
+    preguntas = formular(
+        _tuberia(exclusiones=(("acero al carbono", "de hierro o acero"),)),
+        [_P_7305, _P_7304],
+    )
+
+    assert all("hierro o acero" not in p.exige for p in preguntas)
