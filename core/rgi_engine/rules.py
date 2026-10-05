@@ -787,6 +787,56 @@ def _palabras(texto: str) -> set[str]:
     return {p for p in re.findall(r"[^\W\d_]+", _plano(texto)) if len(p) >= _MINIMO_DISTINTIVO}
 
 
+def _singulares(palabra: str) -> set[str]:
+    """La palabra y su singular, cuando el plural castellano es evidente.
+
+    EL FALLO QUE ESTO ARREGLA, Y SON 41 PRODUCTOS
+
+    La partida 7312 abre dos subpartidas: `731210` dice **«Cables.»** y
+    `731290` dice «Los demás.». Cuarenta y un cables de acero del corpus se
+    quedaban sin clasificar porque la ficha dice «CABLE» y la tarifa dice
+    «Cables», y la comparación era de conjuntos exactos:
+
+        {'cables'} & {'cable', 'acero', 'construccion', ...} = set()
+
+    El motor no podía ver que un CABLE es uno de los «Cables». Lo mismo con
+    «ESTROPAJO» contra «estropajos» en la 7323 y «OLEODUCTO» contra
+    «oleoductos» en la 7305.
+
+    POR QUÉ NO SE USA `_raices` PARA ESTO
+
+    Porque `_RAIZ = 6` está medido contra los pares que importan y una palabra
+    de cinco letras truncada a seis sigue siendo ella misma: `cable` no se
+    acerca a `cables` por ahí. Son dos problemas distintos y cada uno tiene su
+    herramienta.
+
+    POR QUÉ ES SEGURO
+
+    Se quita una `s` o `es` final sólo si lo que queda sigue siendo
+    distintivo —cinco letras—, y se devuelven las dos formas para que la
+    comparación case por cualquiera. El umbral hace el trabajo de evitar
+    destrozos: «gas» o «mes» nunca llegan aquí porque no son distintivos.
+
+    No convierte dos palabras distintas en la misma: en castellano, que una
+    palabra sea otra más `s` o `es` es el plural, no una coincidencia.
+    """
+    formas = {palabra}
+    if palabra.endswith("es") and len(palabra) - 2 >= _MINIMO_DISTINTIVO:
+        formas.add(palabra[:-2])
+    if palabra.endswith("s") and len(palabra) - 1 >= _MINIMO_DISTINTIVO:
+        formas.add(palabra[:-1])
+    return formas
+
+
+def _palabras_con_singular(texto: str) -> set[str]:
+    """Las palabras distintivas del texto, cada una con su singular.
+
+    Sólo para comparar un texto legal con la mercancía: ahí «Cables» y «CABLE»
+    hablan de lo mismo y el número gramatical no distingue nada.
+    """
+    return {forma for p in _palabras(texto) for forma in _singulares(p)}
+
+
 #: Prefijo con el que se comparan dos palabras para decidir que hablan de lo
 #: mismo. Seis, medido contra los pares que importan:
 #:
@@ -1126,7 +1176,7 @@ def _el_grupo_la_describe(candidata: TariffCandidate, mercancia: str) -> bool:
     """
     if not candidata.group_text:
         return False
-    return bool(_palabras(candidata.group_text) & _palabras(mercancia))
+    return bool(_palabras_con_singular(candidata.group_text) & _palabras_con_singular(mercancia))
 
 
 def _algo_la_sostiene(candidata: TariffCandidate, mercancia: str) -> bool:
@@ -1137,7 +1187,7 @@ def _algo_la_sostiene(candidata: TariffCandidate, mercancia: str) -> bool:
     consta del producto, elegirla es afirmar una característica que el
     documento no dice.
     """
-    return bool(_palabras(candidata.text) & _palabras(mercancia))
+    return bool(_palabras_con_singular(candidata.text) & _palabras_con_singular(mercancia))
 
 
 def _unica_o_mas_especifica(
