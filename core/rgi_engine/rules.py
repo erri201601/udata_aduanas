@@ -1285,19 +1285,52 @@ def _lo_aprendido_la_descarta(
     # No lo cazó ninguna medición porque ningún producto limpio del corpus es
     # de Talavera: la precisión se mantuvo en 100 % por cómo está compuesto el
     # corpus, no porque esto estuviera bien.
-    consta = _palabras_con_singular(
-        " ".join([context.description, *(f.value or "" for f in context.known_facts())])
-    )
+    #
+    # Y EL LADO DE LA TARIFA SE CASA COMO FRASE, NO COMO BOLSA DE PALABRAS
+    #
+    # Con una intersección de palabras, una respuesta sobre una cláusula se
+    # derramaba por cualquier posición que compartiera una palabra común.
+    # Medido: contestar «no» a «¿un estropajo de acero inoxidable cumple "Lana
+    # de hierro o acero"?» descartaba las TRES hermanas —732310, 732393 y
+    # 732394— porque «acero» está en las tres. Y 732393 es «De acero
+    # inoxidable», justo la correcta.
+    #
+    # Una respuesta es sobre UNA frase de UNA posición. Se exige que la frase
+    # aparezca en el texto, normalizada y con límite de palabra, para que
+    # «acero» no arrastre a «acero inoxidable» ni al revés.
+    texto_candidata = _plano(candidata.text)
+    ficha_entera = " ".join([context.description, *(f.value or "" for f in context.known_facts())])
+    consta = _palabras_con_singular(ficha_entera)
+    ficha_plana = _plano(ficha_entera)
     for de_la_ficha, de_la_tarifa in context.exclusiones:
         afirmadas = _palabras_con_singular(de_la_ficha)
-        # TODAS las palabras, no alguna: «cerámica vidriada» es una respuesta
-        # sobre esas dos juntas. Con una basta, una ficha que sólo dijera
-        # «cerámica» arrastraría un veredicto que nadie dio sobre ella.
-        if not afirmadas or not afirmadas <= consta:
+        if afirmadas:
+            # TODAS las palabras, no alguna: «cerámica vidriada» es una
+            # respuesta sobre esas dos juntas. Con una basta, una ficha que
+            # sólo dijera «cerámica» arrastraría un veredicto que nadie dio.
+            if not afirmadas <= consta:
+                continue
+        # Un término SIN palabras distintivas —«6x19», una notación— se busca
+        # literal. Antes se descartaba por no tener palabras, así que la
+        # respuesta se guardaba y no se aplicaba nunca: alguien contestaba y no
+        # pasaba nada.
+        elif _plano(de_la_ficha).strip() not in ficha_plana:
             continue
-        if _palabras(de_la_tarifa) & _palabras(candidata.text):
+        if _frase_en(de_la_tarifa, texto_candidata):
             return f"la ficha dice «{de_la_ficha}», que no es «{de_la_tarifa}»"
     return None
+
+
+def _frase_en(frase: str, texto_plano: str) -> bool:
+    """¿Aparece esa frase en el texto, como frase y no como palabras sueltas?
+
+    Con límite de palabra a los dos extremos para que «acero» no case dentro
+    de «acerado» ni «lana» dentro de «planas».
+    """
+    aguja = _plano(frase).strip(" .,;:")
+    if not aguja:
+        return False
+    return re.search(r"\b" + re.escape(aguja) + r"\b", texto_plano) is not None
 
 
 def _el_grupo_la_describe(candidata: TariffCandidate, mercancia: str) -> bool:

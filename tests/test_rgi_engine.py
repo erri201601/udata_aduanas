@@ -1267,3 +1267,272 @@ def test_lo_negado_por_la_ficha_sale_de_lo_afirmado() -> None:
     assert _raices("costura") <= _raices("TUBO DE ACERO SIN COSTURA, SIN ALEAR")
     assert not (_raices("costura") & afirma), "la ficha NIEGA la costura"
     assert _raices("acero") & afirma, "pero sí afirma el acero"
+
+
+# ── El bucle pregunta por lo que DIFIERE (Persona 1, 5-oct) ────────────────
+
+_FRACCIONES_731210 = [
+    TariffCandidate(
+        code="73121007",
+        text=(
+            "Galvanizados, con un diámetro mayor a 4 mm pero inferior a 19 mm, "
+            "constituidos por 7 alambres, lubricados."
+        ),
+        level="FRACTION",
+        specificity=3,
+    ),
+    TariffCandidate(
+        code="73121001",
+        text=(
+            "Galvanizados, con diámetro mayor de 4 mm, constituidos por más de 5 "
+            "alambres y con núcleos sin torcer de la misma materia."
+        ),
+        level="FRACTION",
+        specificity=1,
+    ),
+    TariffCandidate(
+        code="73121005",
+        text="De acero sin recubrimiento, con o sin lubricación.",
+        level="FRACTION",
+        specificity=1,
+    ),
+    TariffCandidate(code="73121099", text="Los demás.", level="FRACTION", specificity=0),
+]
+
+
+def _cable() -> ClassificationContext:
+    return ClassificationContext(
+        description="CABLE DE ACERO GALVANIZADO, CONSTRUCCION 6X19, DIAMETRO 10 MM, ALMA DE FIBRA",
+        operation_date=OPERACION,
+        facts=(
+            ProductFact(name="material", value="acero galvanizado", status="OBSERVED"),
+            ProductFact(name="construccion", value="6X19", status="OBSERVED"),
+            ProductFact(name="diametro_mm", value="10", status="OBSERVED"),
+        ),
+        search_terms=("cables",),
+    )
+
+
+def test_el_bucle_pregunta_por_el_numero_de_alambres() -> None:
+    """EL CASO QUE ATASCA 41 PRODUCTOS Y NO GENERABA NINGUNA PREGUNTA.
+
+    El filtro anterior descartaba una candidata si CUALQUIER palabra suya
+    aparecía en la ficha. La ficha dice «GALVANIZADO» y tres de las cuatro
+    fracciones dicen «Galvanizados», así que todas parecían ya tocadas — y lo
+    que no estaba resuelto era el número de alambres, que no se preguntaba
+    nunca.
+
+    «Galvanizados» la comparten tres: no distingue y no se pregunta por ella.
+    «constituidos por 7 alambres» es de una sola, y es la duda.
+    """
+    from core.rgi_engine.pregunta import formular
+
+    preguntas = formular(_cable(), _FRACCIONES_731210)
+    exigencias = {p.codigo: p.exige for p in preguntas}
+
+    assert "alambres" in exigencias.get("73121007", ""), "la duda es el número de alambres"
+    assert "galvanizados" not in exigencias.get("73121007", "").casefold(), (
+        "«Galvanizados» la comparten tres hermanas: no distingue nada"
+    )
+
+
+def test_no_se_pregunta_por_lo_que_el_motor_puede_medir() -> None:
+    """«con un diámetro mayor a 4 mm pero inferior a 19 mm» lo evalúa
+    `_condiciones` contra la ficha sin molestar a nadie.
+
+    Preguntarlo es pedirle a una persona que haga una comparación numérica que
+    la máquina hace sola.
+    """
+    from core.rgi_engine.pregunta import formular
+
+    for p in formular(_cable(), _FRACCIONES_731210):
+        assert "mayor a 4 mm" not in p.exige
+        assert "inferior a 19" not in p.exige
+
+
+def test_la_pregunta_no_empareja_un_atributo_a_dedo() -> None:
+    """DOS HEURÍSTICAS DE EMPAREJADO, LAS DOS FALLARON.
+
+    La pregunta elegía un atributo de la ficha para comparar con la cláusula
+    legal. Medido sobre el corpus, producía basura:
+
+        «¿es "caja 12 unidades" lo mismo que "Lana de hierro o acero"?»
+        «¿es "10" lo mismo que "constituidos por 7 alambres"?»
+
+    —embalaje contra materia, y el diámetro donde iba la construcción—. Se
+    probaron dos criterios: «el atributo que el texto no menciona» y «el que
+    aporta más palabras nuevas». Ninguno mide relevancia; miden lo contrario.
+
+    Así que no se empareja: se pone delante la ficha entera y quien contesta
+    hace el emparejado, que lo hace bien y en un segundo. Cuesta una línea más
+    de lectura y no produce ninguna pregunta sin sentido, que es el único error
+    que esto no puede permitirse.
+    """
+    from core.rgi_engine.pregunta import formular
+
+    preguntas = formular(_cable(), _FRACCIONES_731210)
+    assert preguntas, "el cable tiene que generar preguntas"
+    for p in preguntas:
+        # La ficha va completa, con sus tres hechos.
+        assert "material" in p.mercancia
+        assert "construccion" in p.mercancia
+        assert "diametro_mm" in p.mercancia
+        # Y la pregunta es sobre la cláusula, no sobre una pareja inventada.
+        assert p.exige in p.texto
+        assert "¿La cumple?" in p.texto
+
+
+def test_no_se_pregunta_por_un_residual() -> None:
+    """«Los demás» no exige nada: recoge lo que no cayó en sus hermanas, y no
+    hay respuesta posible a «¿es tu mercancía "los demás"?»."""
+    from core.rgi_engine.pregunta import formular
+
+    assert "73121099" not in {p.codigo for p in formular(_cable(), _FRACCIONES_731210)}
+
+
+def test_sin_candidatas_de_sobra_no_se_pregunta_nada() -> None:
+    """Cuatro preguntas de sí o no no son una pregunta: son el trabajo entero.
+
+    Ahí la respuesta honesta sigue siendo mandarlo a un clasificador.
+    """
+    from core.rgi_engine.pregunta import MAX_CANDIDATAS_PREGUNTABLES, formular
+
+    demasiadas = _FRACCIONES_731210 * 2
+    assert len(demasiadas) > MAX_CANDIDATAS_PREGUNTABLES
+    assert formular(_cable(), demasiadas) == []
+
+
+# ── Una respuesta no se derrama (Persona 1, 5-oct) ─────────────────────────
+
+
+def test_una_respuesta_sobre_una_frase_no_descarta_a_las_hermanas() -> None:
+    """LA TRAMPA QUE EL BUCLE DE PREGUNTAS HABRÍA TENDIDO A CÉSAR.
+
+    Contestar «no» a «¿un estropajo de acero inoxidable cumple "Lana de hierro
+    o acero"?» descartaba las TRES hermanas —732310, 732393 y 732394— porque
+    la exclusión casaba por intersección de palabras y «acero» está en las
+    tres. Y 732393 es «De acero inoxidable», justo la correcta.
+
+    Es el mismo defecto que el #177 arregló entrando por otra puerta: una
+    respuesta firmada descartando lo que nadie dijo, con el nombre de una
+    persona en la traza.
+
+    Una respuesta es sobre UNA frase de UNA posición.
+    """
+    from core.rgi_engine.rules import _lo_aprendido_la_descarta
+
+    ficha = ClassificationContext(
+        description="ESTROPAJO DE ACERO INOXIDABLE PARA LIMPIEZA DOMESTICA",
+        operation_date=OPERACION,
+        facts=(ProductFact(name="material", value="acero inoxidable", status="OBSERVED"),),
+        search_terms=("estropajo",),
+        exclusiones=(("acero inoxidable", "Lana de hierro o acero"),),
+    )
+    lana = TariffCandidate(
+        code="732310",
+        text="Lana de hierro o acero; esponjas, estropajos, guantes y artículos similares.",
+        level="SUBHEADING",
+        specificity=2,
+    )
+    inoxidable = TariffCandidate(
+        code="732393", text="Los demás. De acero inoxidable.", level="SUBHEADING", specificity=2
+    )
+
+    assert _lo_aprendido_la_descarta(lana, ficha) is not None, "la preguntada sí"
+    assert _lo_aprendido_la_descarta(inoxidable, ficha) is None, (
+        "la correcta NO: comparten «acero» y eso no es una respuesta sobre ella"
+    )
+
+
+def test_un_termino_numerico_de_la_ficha_si_se_aplica() -> None:
+    """«6x19» no tiene palabras distintivas y la exclusión era inerte.
+
+    Se guardaba firmada y no se aplicaba nunca: alguien contestaba y no pasaba
+    nada. Peor que no preguntar, porque gasta su tiempo y no se nota.
+    """
+    from core.rgi_engine.rules import _lo_aprendido_la_descarta
+
+    ficha = ClassificationContext(
+        description="CABLE DE ACERO GALVANIZADO, CONSTRUCCION 6x19, DIAMETRO 10 MM",
+        operation_date=OPERACION,
+        facts=(ProductFact(name="construccion", value="6x19", status="OBSERVED"),),
+        search_terms=("cables",),
+        exclusiones=(("6x19", "constituidos por 7 alambres"),),
+    )
+    siete = TariffCandidate(
+        code="73121007",
+        text="Galvanizados, constituidos por 7 alambres, lubricados.",
+        level="FRACTION",
+        specificity=3,
+    )
+    mas_de_cinco = TariffCandidate(
+        code="73121001",
+        text="Galvanizados, constituidos por más de 5 alambres y con núcleos sin torcer.",
+        level="FRACTION",
+        specificity=1,
+    )
+
+    assert _lo_aprendido_la_descarta(siete, ficha) is not None
+    assert _lo_aprendido_la_descarta(mas_de_cinco, ficha) is None, (
+        "«más de 5 alambres» es otra frase: 114 alambres la cumplen"
+    )
+
+
+def test_no_se_pregunta_cuando_la_ficha_cae_en_una_alternativa() -> None:
+    """El punto y coma separa alternativas; la coma acumula condiciones.
+
+    Un estropajo cae en la 732310 por «estropajos», pero la frase que la
+    distingue es «Lana de hierro o acero» — y preguntar por ella tiene una
+    respuesta natural que es «no». Contestado así se descarta la posición
+    correcta: cierto sobre la frase, falso sobre la posición.
+    """
+    from core.rgi_engine.pregunta import formular
+
+    ficha = ClassificationContext(
+        description="ESTROPAJO DE ACERO INOXIDABLE PARA LIMPIEZA DOMESTICA",
+        operation_date=OPERACION,
+        facts=(
+            ProductFact(name="material", value="acero inoxidable", status="OBSERVED"),
+            ProductFact(name="tipo", value="estropajo", status="OBSERVED"),
+        ),
+        search_terms=("estropajo",),
+    )
+    lana = TariffCandidate(
+        code="732310",
+        text="Lana de hierro o acero; esponjas, estropajos, guantes y artículos similares.",
+        level="SUBHEADING",
+        specificity=2,
+    )
+
+    assert "732310" not in {p.codigo for p in formular(ficha, [lana])}
+
+
+def test_las_condiciones_acumulativas_si_se_preguntan() -> None:
+    """Sin punto y coma son condiciones que se exigen todas a la vez.
+
+    Que la ficha cumpla «Galvanizados» no resuelve «constituidos por 7
+    alambres», y callarse ahí deja 41 productos atascados para siempre.
+    """
+    from core.rgi_engine.pregunta import formular
+
+    preguntas = formular(_cable(), _FRACCIONES_731210)
+    assert "73121007" in {p.codigo for p in preguntas}
+
+
+def test_no_se_pregunta_por_una_frase_que_permite_las_dos() -> None:
+    """«con o sin lubricación» lo cumple un cable lubricado y uno seco.
+
+    Preguntar «¿la cumple?» tiene una sola respuesta posible y no desatasca
+    nada. El descarte por contradicción ya tenía esta guarda —`_NIEGA` lleva un
+    `(?<!con o )`— y al generador le faltaba.
+    """
+    from core.rgi_engine.pregunta import formular
+
+    lubricacion = TariffCandidate(
+        code="73121005",
+        text="De acero sin recubrimiento, con o sin lubricación.",
+        level="FRACTION",
+        specificity=1,
+    )
+    exigencias = {p.codigo: p.exige for p in formular(_cable(), [lubricacion])}
+    assert "con o sin" not in exigencias.get("73121005", "")
