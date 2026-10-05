@@ -30,7 +30,7 @@
  * dígitos y el NICO son niveles distintos; no deben mezclarse» (César, 5-oct).
  */
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { fetchPendientes, revisarDecision } from '../api/client'
 import type { PendienteRead } from '../api/client'
@@ -85,24 +85,37 @@ export function HumanReview() {
   const [nico, setNico] = useState('')
   const [nota, setNota] = useState('')
 
+  /* LA BANDEJA TENÍA QUE VOLVER A PEDIRSE Y NO SE PEDÍA NUNCA
+   *
+   * El `useEffect` con dependencias vacías la cargaba UNA vez, al montar. Ni
+   * tras un veredicto ni tras contestar una pregunta se volvía a pedir, así
+   * que la pantalla enseñaba la misma lista indefinidamente — y quien acababa
+   * de contestar concluía, con razón, que no había servido de nada. Persona 1
+   * lo dijo tal cual: «sigo viendo lo mismo en la ventana de revisión».
+   */
+  const cargar = useCallback(async (signal?: AbortSignal) => {
+    setCargando(true)
+    try {
+      const filas = await fetchPendientes(signal)
+      setPendientes(filas)
+      setError(null)
+      // Lo que ya se despachó en esta sesión deja de estar pendiente en la
+      // lista nueva, así que la marca local sobra. Conservarla escondería
+      // casos que hayan vuelto a la bandeja.
+      setHechas({})
+    } catch (causa: unknown) {
+      if (signal?.aborted) return
+      setError(causa instanceof Error ? causa.message : 'No se pudo contactar la API')
+    } finally {
+      if (!signal?.aborted) setCargando(false)
+    }
+  }, [])
+
   useEffect(() => {
     const control = new AbortController()
-
-    fetchPendientes(control.signal)
-      .then((filas) => {
-        setPendientes(filas)
-        setError(null)
-      })
-      .catch((causa: unknown) => {
-        if (control.signal.aborted) return
-        setError(causa instanceof Error ? causa.message : 'No se pudo contactar la API')
-      })
-      .finally(() => {
-        if (!control.signal.aborted) setCargando(false)
-      })
-
+    void cargar(control.signal)
     return () => control.abort()
-  }, [])
+  }, [cargar])
 
   async function enviar(
     id: string,
@@ -127,12 +140,31 @@ export function HumanReview() {
       setFraccion('')
       setNico('')
       setNota('')
+      // La fila desaparece sola por `hechas`, pero la lista puede haber
+      // cambiado por debajo —otro veredicto, un recálculo— y pedirla nueva
+      // cuesta una petición.
+      void cargar()
     } catch (causa: unknown) {
       setError(causa instanceof Error ? causa.message : 'No se pudo registrar')
     } finally {
       setEnCurso(null)
     }
   }
+
+  /* El recálculo corre en el servidor DESPUÉS de responder, y clasificar
+   * cuesta ~1.5 s por caso medido sobre el corpus. Se espera esa cuenta antes
+   * de volver a pedir la bandeja, con un suelo de dos segundos.
+   *
+   * Es una estimación, no una certeza, y por eso existe además el botón de
+   * «Actualizar»: si el servidor tarda más, nadie se queda mirando una lista
+   * vieja sin forma de refrescarla. */
+  const recargarTrasRecalcular = useCallback(
+    (recalculando: number) => {
+      const espera = Math.max(2000, Math.ceil(recalculando * 1600))
+      window.setTimeout(() => void cargar(), espera)
+    },
+    [cargar],
+  )
 
   const restantes = pendientes.filter((p) => !hechas[p.id])
 
@@ -145,6 +177,13 @@ export function HumanReview() {
             Decisiones que el motor no pudo sostener solo
           </p>
         </div>
+        <button
+          className="boton boton--plano"
+          onClick={() => void cargar()}
+          disabled={cargando}
+        >
+          {cargando ? 'Actualizando…' : 'Actualizar'}
+        </button>
       </header>
 
       <SyntheticBanner />
@@ -216,6 +255,7 @@ export function HumanReview() {
                     exige={q.exige}
                     codigo={q.codigo}
                     mercancia={q.mercancia}
+                    onGuardada={recargarTrasRecalcular}
                   />
                 </div>
               ))}

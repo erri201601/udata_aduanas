@@ -2526,6 +2526,16 @@ export interface components {
             kind: string;
             /** Data Origin */
             data_origin: string;
+            /**
+             * Recalculando
+             * @default 0
+             */
+            recalculando: number;
+            /**
+             * De Un Total
+             * @default 0
+             */
+            de_un_total: number;
         };
     };
     responses: never;

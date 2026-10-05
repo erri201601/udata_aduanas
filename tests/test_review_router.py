@@ -875,3 +875,212 @@ def test_el_razonamiento_dice_que_el_dato_hay_que_pedirlo() -> None:
     assert "84714902" in razon
     assert "pedirlo" in razon
     assert "Falta el proceso de soldadura." in razon
+
+
+# ── Contestar recalcula los casos que preguntaban eso (5-oct) ──────────────
+
+
+def _pendiente_con_pregunta(exige: str, product_id: uuid.UUID) -> ClassificationDecision:
+    d = _decision()
+    d.id = uuid.uuid4()
+    d.product_id = product_id
+    d.rgi_trace = [
+        {"rule_id": "RGI-1", "status": "CONTINUE"},
+        {
+            "rule_id": "RGI-6",
+            "status": "HUMAN_REVIEW_REQUIRED",
+            "preguntas": [{"codigo": "73121008", "exige": exige, "mercancia": "x"}],
+        },
+    ]
+    return _aud(d)
+
+
+class SesionDePendientes:
+    """Sólo lo que `_casos_que_preguntaban` necesita: la lista de pendientes."""
+
+    def __init__(self, filas: list[ClassificationDecision]) -> None:
+        self._filas = filas
+
+    def scalars(self, _sentencia: Any) -> Any:
+        r = type("R", (), {})()
+        r.all = lambda: list(self._filas)
+        return r
+
+
+def test_se_recalculan_los_casos_que_preguntaban_esa_clausula() -> None:
+    """CONTESTAR TENÍA QUE MOVER ALGO, Y NO MOVÍA NADA.
+
+    La respuesta quedaba firmada y las decisiones guardadas seguían siendo las
+    de antes, porque nadie volvía a correr el motor. La pantalla lo decía —«para
+    que surta efecto hay que reclasificar»— y reclasificar lo hacía una persona
+    a mano desde una terminal: en la práctica no se reclasificaba nunca.
+
+    El conjunto sale de la TRAZA y no de buscar qué fichas dicen el término:
+    repetir aquí la regla de emparejamiento del motor es justo lo que ya se
+    desvió una vez.
+    """
+    from apps.api.routers.review import _casos_que_preguntaban
+
+    mio, ajeno = uuid.uuid4(), uuid.uuid4()
+    sesion = SesionDePendientes(
+        [
+            _pendiente_con_pregunta("constituidos por 7 alambres", mio),
+            _pendiente_con_pregunta("Monitores y proyectores", ajeno),
+        ]
+    )
+
+    assert _casos_que_preguntaban(sesion, "constituidos por 7 alambres") == [mio]  # type: ignore[arg-type]
+
+
+def test_un_producto_no_se_recalcula_dos_veces() -> None:
+    """La misma ficha puede estar en varias partidas de varios pedimentos.
+
+    Clasificar cuesta ~1.5 s: recalcular ocho veces el mismo producto son doce
+    segundos de tarea de fondo para el mismo resultado.
+    """
+    from apps.api.routers.review import _casos_que_preguntaban
+
+    uno = uuid.uuid4()
+    sesion = SesionDePendientes(
+        [_pendiente_con_pregunta("constituidos por 7 alambres", uno) for _ in range(8)]
+    )
+
+    assert _casos_que_preguntaban(sesion, "constituidos por 7 alambres") == [uno]  # type: ignore[arg-type]
+
+
+def test_una_clausula_que_nadie_preguntaba_no_recalcula_nada() -> None:
+    from apps.api.routers.review import _casos_que_preguntaban
+
+    sesion = SesionDePendientes([_pendiente_con_pregunta("Galvanizados", uuid.uuid4())])
+
+    assert _casos_que_preguntaban(sesion, "constituidos por 7 alambres") == []  # type: ignore[arg-type]
+
+
+def test_sin_nada_que_recalcular_no_se_abre_conexion() -> None:
+    """Abrir una sesión para no usarla gasta una del pool por cada respuesta.
+
+    Y hace que este fichero, que corre sin base, intente conectarse.
+    """
+    from apps.api.routers import review
+
+    def no_deberia_llamarse() -> Any:  # pragma: no cover - es el punto del test
+        raise AssertionError("abrió una sesión sin nada que hacer")
+
+    original = review.get_sessionmaker
+    review.get_sessionmaker = no_deberia_llamarse  # type: ignore[assignment]
+    try:
+        review._recalcular([])
+    finally:
+        review.get_sessionmaker = original  # type: ignore[assignment]
+
+
+def test_el_recalculo_usa_la_fecha_de_la_operacion_no_la_de_hoy() -> None:
+    """Regla 5: volver a clasificar con la fecha de hoy evaluaría una operación
+    histórica con la tarifa posterior."""
+    from apps.api.routers.review import _fecha_de_la_decision
+
+    class SesionConFecha:
+        def scalar(self, _s: Any) -> Any:
+            return date(2026, 3, 15)
+
+    assert _fecha_de_la_decision(SesionConFecha(), uuid.uuid4()) == date(2026, 3, 15)  # type: ignore[arg-type]
+
+
+def test_el_endpoint_lanza_el_recalculo_y_dice_cuantos() -> None:
+    """La respuesta tiene que decir cuántos casos se recalculan.
+
+    Es la única forma de que quien contesta sepa que su minuto sirvió. Sin esto
+    la pantalla decía «guardado» y no había manera de distinguir una respuesta
+    que desatasca veinte casos de una que no toca ninguno.
+    """
+    from apps.api.routers import review
+
+    productos = [uuid.uuid4() for _ in range(3)]
+    lanzados: list[list[uuid.UUID]] = []
+
+    class SesionDeVocabulario:
+        def scalar(self, _s: Any) -> Any:
+            return date(2026, 1, 1)
+
+        def scalars(self, _s: Any) -> Any:
+            r = type("R", (), {})()
+            r.all = lambda: [_pendiente_con_pregunta("Galvanizados", p) for p in productos]
+            return r
+
+        def add(self, fila: Any) -> None:
+            _aud(fila)
+
+        def commit(self) -> None:
+            pass
+
+    app = create_app()
+    app.dependency_overrides[get_session] = SesionDeVocabulario
+    original = review._recalcular
+    review._recalcular = lambda ps: lanzados.append(list(ps))  # type: ignore[assignment]
+    try:
+        with TestClient(app) as c:
+            r = c.post(
+                "/review/vocabulario",
+                json={
+                    "termino_ficha": "acero galvanizado",
+                    "termino_tarifa": "Galvanizados",
+                    "son_lo_mismo": False,
+                    "reviewer": "cesar",
+                },
+            )
+    finally:
+        review._recalcular = original  # type: ignore[assignment]
+
+    assert r.status_code == 201
+    assert r.json()["recalculando"] == 3
+    assert r.json()["de_un_total"] == 3
+    # Y la tarea se lanzó de verdad, con esos productos.
+    assert lanzados == [productos]
+
+
+def test_con_demasiados_casos_se_recalculan_los_primeros_y_se_dice() -> None:
+    """Quedarse corto en silencio haría creer que el resto está al día.
+
+    Clasificar cuesta ~1.5 s, así que el tope existe para que la tarea de fondo
+    no se eternice. Lo que no puede es disimularlo.
+    """
+    from apps.api.routers import review
+
+    productos = [uuid.uuid4() for _ in range(review.MAX_RECALCULAR + 7)]
+
+    class SesionDeVocabulario:
+        def scalar(self, _s: Any) -> Any:
+            return date(2026, 1, 1)
+
+        def scalars(self, _s: Any) -> Any:
+            r = type("R", (), {})()
+            r.all = lambda: [_pendiente_con_pregunta("Galvanizados", p) for p in productos]
+            return r
+
+        def add(self, fila: Any) -> None:
+            _aud(fila)
+
+        def commit(self) -> None:
+            pass
+
+    app = create_app()
+    app.dependency_overrides[get_session] = SesionDeVocabulario
+    original = review._recalcular
+    review._recalcular = lambda _ps: None  # type: ignore[assignment]
+    try:
+        with TestClient(app) as c:
+            r = c.post(
+                "/review/vocabulario",
+                json={
+                    "termino_ficha": "acero galvanizado",
+                    "termino_tarifa": "Galvanizados",
+                    "son_lo_mismo": False,
+                    "reviewer": "cesar",
+                },
+            )
+    finally:
+        review._recalcular = original  # type: ignore[assignment]
+
+    cuerpo = r.json()
+    assert cuerpo["recalculando"] == review.MAX_RECALCULAR
+    assert cuerpo["de_un_total"] == review.MAX_RECALCULAR + 7

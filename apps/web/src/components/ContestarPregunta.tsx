@@ -49,6 +49,14 @@ interface Props {
   codigo: string
   /** La ficha compacta, de donde salen los valores elegibles. */
   mercancia: string
+  /** Se llama al guardar, con cuántos casos quedaron recalculándose.
+   *
+   * La bandeja de arriba tiene que volver a pedirse: los casos que esta
+   * respuesta desatasque dejan de estar pendientes, y si la lista no se
+   * refresca quien contesta ve exactamente lo mismo que antes y concluye —con
+   * razón— que no ha servido de nada.
+   */
+  onGuardada?: (recalculando: number) => void
 }
 
 /** Los VALORES de la ficha, sin las etiquetas con las que se muestran.
@@ -69,9 +77,13 @@ function valoresDe(mercancia: string): string[] {
     .filter((v) => v.length >= 2)
 }
 
-type Estado = { fase: 'pregunta' } | { fase: 'guardando' } | { fase: 'guardado' } | { fase: 'error'; mensaje: string }
+type Estado =
+  | { fase: 'pregunta' }
+  | { fase: 'guardando' }
+  | { fase: 'guardado'; recalculando: number; total: number }
+  | { fase: 'error'; mensaje: string }
 
-export function ContestarPregunta({ exige, codigo, mercancia }: Props) {
+export function ContestarPregunta({ exige, codigo, mercancia, onGuardada }: Props) {
   const [terminoFicha, setTerminoFicha] = useState('')
   const [quien, setQuien] = useState('')
   const [nota, setNota] = useState('')
@@ -82,14 +94,19 @@ export function ContestarPregunta({ exige, codigo, mercancia }: Props) {
   async function contestar(sonLoMismo: boolean) {
     setEstado({ fase: 'guardando' })
     try {
-      await responderVocabulario({
+      const guardada = await responderVocabulario({
         termino_ficha: terminoFicha.trim(),
         termino_tarifa: exige,
         son_lo_mismo: sonLoMismo,
         reviewer: quien.trim(),
         nota: nota.trim() || null,
       })
-      setEstado({ fase: 'guardado' })
+      setEstado({
+        fase: 'guardado',
+        recalculando: guardada.recalculando,
+        total: guardada.de_un_total,
+      })
+      onGuardada?.(guardada.recalculando)
     } catch (causa) {
       setEstado({
         fase: 'error',
@@ -99,10 +116,28 @@ export function ContestarPregunta({ exige, codigo, mercancia }: Props) {
   }
 
   if (estado.fase === 'guardado') {
+    /* Antes decía «para que surta efecto hay que reclasificar», y
+       reclasificar lo hacía una persona a mano desde una terminal: en la
+       práctica no se reclasificaba nunca y la respuesta no movía nada. Ahora
+       el recálculo lo lanza el propio endpoint y aquí se dice cuántos casos
+       son, porque es la única forma de que quien contesta sepa que su minuto
+       sirvió para algo. */
     return (
       <p className="contestar__guardado" role="status">
         Guardado y firmado. El motor no vuelve a preguntar esto — ni en este
-        caso ni en los iguales. Para que surta efecto hay que reclasificar.
+        caso ni en los iguales.{' '}
+        {estado.recalculando > 0 ? (
+          <>
+            Recalculando {estado.recalculando} caso
+            {estado.recalculando === 1 ? '' : 's'}
+            {estado.total > estado.recalculando
+              ? ` de ${estado.total}; el resto en la siguiente pasada`
+              : ''}
+            . La bandeja se actualiza al terminar.
+          </>
+        ) : (
+          'Ningún caso pendiente dependía de esta pregunta.'
+        )}
       </p>
     )
   }

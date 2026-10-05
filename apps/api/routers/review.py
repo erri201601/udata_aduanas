@@ -63,6 +63,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, date, datetime
 from typing import Annotated, Final, Literal
 
@@ -73,14 +74,20 @@ from database.models import (
     Product,
     TariffHeading,
 )
+from database.repositories import save_classification
 from database.repositories.tariff import TariffCatalogRepository
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from schemas.intelligence import ClassificationDecisionRead
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from apps.api.db import SessionDep
+from apps.api.clasificacion import clasificar_borrador
+from apps.api.db import SessionDep, get_sessionmaker
+from apps.api.dna import cargar_borrador, version_vigente
+from apps.api.logging import get_logger
+
+log = get_logger("apps.api.review")
 
 router = APIRouter(prefix="/review", tags=["review"])
 
@@ -395,10 +402,132 @@ def _solo_el_valor(termino: str) -> str:
     return limpio.casefold()
 
 
+#: Cuántos casos se recalculan como máximo al contestar. Clasificar cuesta
+#: ~1.5 s medido sobre el corpus, así que 40 son ~60 s de tarea de fondo. Con
+#: más, se recalculan los 40 primeros y la respuesta lo dice: quedarse corto en
+#: silencio haría creer que el resto ya está al día.
+MAX_RECALCULAR: Final = 40
+
+
+def _casos_que_preguntaban(session: Session, clausula: str) -> list[uuid.UUID]:
+    """Los productos cuya última decisión preguntaba exactamente esa cláusula.
+
+    POR QUÉ ESTE CONJUNTO Y NO «TODO LO QUE DIGA EL TÉRMINO»
+
+    Se podría buscar qué fichas mencionan el término comercial, pero eso exige
+    repetir aquí la regla de emparejamiento del motor —palabras distintivas,
+    singulares, frase con límite de palabra— y una copia de esa regla se
+    desvía. Ya se desvió una vez: comprobar sólo el lado de la tarifa hizo que
+    la respuesta de un producto se aplicara a todos.
+
+    La traza del motor ya dice a qué casos pertenece cada pregunta, y es el
+    dato exacto: son los que tenían esa pregunta delante. Recalcular alguno de
+    más sería inofensivo —saldría la misma decisión— pero no hace falta.
+    """
+    pendientes = session.scalars(
+        sa.select(ClassificationDecision).where(
+            ClassificationDecision.requires_human_review.is_(True),
+            ClassificationDecision.data_origin != "HUMAN_VALIDATED",
+            ClassificationDecision.product_id.is_not(None),
+        )
+    ).all()
+
+    afectados: list[uuid.UUID] = []
+    vistos: set[uuid.UUID] = set()
+    for fila in pendientes:
+        traza = fila.rgi_trace or []
+        if not traza:
+            continue
+        ultimo = traza[-1] if isinstance(traza[-1], dict) else {}
+        for pregunta in ultimo.get("preguntas") or []:
+            if pregunta.get("exige") != clausula:
+                continue
+            if fila.product_id is not None and fila.product_id not in vistos:
+                vistos.add(fila.product_id)
+                afectados.append(fila.product_id)
+            break
+    return afectados
+
+
+def _recalcular(productos: Sequence[uuid.UUID]) -> None:
+    """Vuelve a clasificar esos productos, en una sesión propia.
+
+    LA SESIÓN DE LA PETICIÓN YA ESTÁ CERRADA
+
+    Esto corre DESPUÉS de que la respuesta salga, así que `get_session` ya hizo
+    su `rollback()` y devolvió la conexión al pool. Usarla aquí escribiría
+    sobre una sesión ajena. Se abre una nueva y se cierra al terminar.
+
+    Un fallo en un producto no detiene los demás: la respuesta ya está firmada
+    y guardada, y lo que queda es trabajo derivado. Se registra y se sigue.
+    """
+    if not productos:
+        # Sin nada que hacer no se abre conexión. Abrirla para no usarla gasta
+        # una del pool por cada respuesta que no afecta a ningún pendiente.
+        return
+
+    sesion = get_sessionmaker()()
+    try:
+        for product_id in productos:
+            try:
+                dna_fila = version_vigente(sesion, product_id)
+                borrador = cargar_borrador(sesion, product_id)
+                if dna_fila is None or borrador is None:
+                    continue
+                clasificado = clasificar_borrador(
+                    sesion,
+                    borrador,
+                    operation_date=_fecha_de_la_decision(sesion, product_id),
+                    trade_flow="IMPORT",
+                )
+                save_classification(
+                    sesion,
+                    clasificado.outcome,
+                    product_id=product_id,
+                    product_dna_id=dna_fila.id,
+                    trade_flow="IMPORT",
+                )
+                sesion.commit()
+            except Exception:
+                sesion.rollback()
+                log.exception("review.recalcular.falla", product_id=str(product_id))
+    finally:
+        sesion.close()
+
+
+def _fecha_de_la_decision(session: Session, product_id: uuid.UUID) -> date:
+    """La fecha de operación con la que se clasificó antes.
+
+    No `today()`: volver a clasificar con la fecha de hoy evaluaría una
+    operación histórica con la tarifa posterior, que es lo que prohíbe la
+    regla 5. Se reutiliza la de la última decisión del producto.
+    """
+    fecha = session.scalar(
+        sa.select(ClassificationDecision.operation_date)
+        .where(ClassificationDecision.product_id == product_id)
+        .order_by(ClassificationDecision.created_at.desc())
+        .limit(1)
+    )
+    return fecha or date.today()
+
+
 class VocabularioGuardado(BaseModel):
     id: uuid.UUID
     kind: str
     data_origin: str
+    recalculando: int = 0
+    """Cuántos casos se están volviendo a clasificar con esta respuesta.
+
+    Se devuelve porque es la única forma de que quien contesta sepa que su
+    minuto sirvió para algo. Hasta ahora la pantalla decía «guardado» y «para
+    que surta efecto hay que reclasificar» — y reclasificar lo hacía una
+    persona a mano desde una terminal, así que en la práctica no se
+    reclasificaba nunca.
+    """
+    de_un_total: int = 0
+    """Cuántos casos tenían esa pregunta. Mayor que `recalculando` cuando pasan
+    de `MAX_RECALCULAR`: el resto se queda para la siguiente pasada, y decirlo
+    es mejor que dar por hecho que está al día."""
 
 
 @router.post(
@@ -407,7 +536,7 @@ class VocabularioGuardado(BaseModel):
     summary="Responde una pregunta de desempate y la guarda para siempre",
 )
 def responder_vocabulario(
-    peticion: RespuestaVocabulario, session: SessionDep
+    peticion: RespuestaVocabulario, session: SessionDep, tareas: BackgroundTasks
 ) -> VocabularioGuardado:
     """Convierte un minuto de un clasificador en conocimiento reutilizable.
 
@@ -460,7 +589,27 @@ def responder_vocabulario(
             "esa pareja ya está contestada; el motor ya no debería preguntarla",
         ) from None
 
-    return VocabularioGuardado(id=fila.id, kind=fila.kind, data_origin=fila.data_origin)
+    # CONTESTAR TIENE QUE MOVER ALGO, Y HASTA AHORA NO MOVÍA NADA
+    #
+    # La respuesta quedaba firmada en la base y las decisiones guardadas
+    # seguían siendo las de antes, porque nadie volvía a correr el motor. La
+    # pantalla lo decía —«para que surta efecto hay que reclasificar»— y
+    # reclasificar lo hacía una persona a mano desde una terminal: en la
+    # práctica, no se reclasificaba.
+    #
+    # Se recalcula DESPUÉS de responder, no durante. Clasificar cuesta ~1.5 s y
+    # una familia son veinte casos: hacerlo síncrono dejaría el formulario
+    # treinta segundos colgado y quien contesta no sabría si se guardó.
+    afectados = _casos_que_preguntaban(session, peticion.termino_tarifa)
+    tareas.add_task(_recalcular, afectados[:MAX_RECALCULAR])
+
+    return VocabularioGuardado(
+        id=fila.id,
+        kind=fila.kind,
+        data_origin=fila.data_origin,
+        recalculando=len(afectados[:MAX_RECALCULAR]),
+        de_un_total=len(afectados),
+    )
 
 
 @router.post(
