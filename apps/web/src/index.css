@@ -1693,3 +1693,71 @@ code {
   font-style: italic;
   color: var(--tenue);
 }
+
+/* --- Contestar la pregunta --------------------------------------------
+   El «no» es un botón igual de grande que el «sí», y no es estética: el «no»
+   es lo que DESCARTA una posición y deja al motor con dos candidatas en vez
+   de nueve. Hacerlo secundario empujaría a contestar sí, que es la respuesta
+   que menos informa. */
+
+.contestar {
+  margin-top: 0.8rem;
+  padding-top: 0.8rem;
+  border-top: 1px dashed var(--borde);
+  display: grid;
+  gap: 0.6rem;
+}
+
+.contestar__campo { display: grid; gap: 0.2rem; }
+.contestar__campo > span { font-size: 0.76rem; font-weight: 600; }
+
+.contestar__campo input {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  background: var(--fondo);
+  color: inherit;
+  font: inherit;
+  font-size: 0.84rem;
+}
+
+.contestar__campo small { font-size: 0.7rem; color: var(--tenue); line-height: 1.45; }
+
+.contestar__botones { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.2rem; }
+
+.boton--si,
+.boton--no {
+  flex: 1 1 10rem;
+  font-weight: 600;
+}
+
+.boton--si { border-color: var(--ok); color: var(--ok); }
+.boton--no { border-color: var(--mal); color: var(--mal); }
+.boton--si:disabled,
+.boton--no:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.contestar__pista,
+.contestar__alcance {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--tenue);
+  line-height: 1.5;
+}
+
+.contestar__error {
+  margin: 0;
+  font-size: 0.76rem;
+  color: var(--mal);
+  line-height: 1.5;
+}
+
+.contestar__guardado {
+  margin: 0.8rem 0 0;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid rgba(48, 164, 108, 0.45);
+  background: rgba(48, 164, 108, 0.08);
+  border-radius: 8px;
+  font-size: 0.8rem;
+  color: var(--ok);
+  line-height: 1.5;
+}

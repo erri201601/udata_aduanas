@@ -37,6 +37,8 @@ export type RespuestaCopilot = components['schemas']['Respuesta']
 export type Pasaje = components['schemas']['Pasaje']
 export type Consulta = components['schemas']['Consulta']
 export type LineaEspejo = components['schemas']['LineaEspejo']
+export type RespuestaVocabulario = components['schemas']['RespuestaVocabulario']
+export type VocabularioGuardado = components['schemas']['VocabularioGuardado']
 export type PrecisionClasificacion = components['schemas']['PrecisionClasificacion']
 export type DivergenciaRead = components['schemas']['DivergenciaRead']
 export type DocumentoVigilado = components['schemas']['DocumentoVigilado']
@@ -273,6 +275,36 @@ export async function revisarDecision(
   }
 
   return (await respuesta.json()) as RevisionResponse
+}
+
+/**
+ * Contesta una pregunta de desempate y la guarda firmada.
+ *
+ * Sin esto la cadena no servía para nada: el motor generaba la pregunta, la
+ * consola la mostraba, la base sabía guardarla — y no había dónde contestarla.
+ * Un clasificador tenía que mandar la respuesta por un chat y que alguien la
+ * metiera a mano con `curl`.
+ */
+export async function responderVocabulario(
+  peticion: RespuestaVocabulario,
+  signal?: AbortSignal,
+): Promise<VocabularioGuardado> {
+  const respuesta = await fetch(`${API_BASE_URL}/review/vocabulario`, {
+    method: 'POST',
+    signal,
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(peticion),
+  })
+
+  if (!respuesta.ok) {
+    const detalle = await respuesta.json().catch(() => null)
+    throw new ApiError(
+      detalle?.detail ?? `La API respondió ${respuesta.status}`,
+      respuesta.status,
+    )
+  }
+
+  return (await respuesta.json()) as VocabularioGuardado
 }
 
 /**
