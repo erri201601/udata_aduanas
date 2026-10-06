@@ -1,124 +1,129 @@
-# Para César — cómo contestar en la consola
+# Para César — qué hacer en la consola, y qué por escrito
 
-**Actualizado:** 2026-10-06
+**Actualizado:** 2026-10-06, tarde · Sustituye la versión de la mañana.
 
-No hace falta saber nada del sistema para esto. Son dos preguntas y unos
-tres minutos.
+Gracias por la respuesta de esta mañana sobre el cable 6x36. **Funcionó:** con esa
+sola respuesta el sistema clasificó catorce partidas en `73121005`, la
+fracción de tu dictamen. Es la primera vez que una respuesta tuya cambia el
+sistema sin que nadie la teclee por ti.
 
-## Dónde
+Hoy son unos veinte minutos, en dos sitios.
+
+---
+
+## 1 · En la consola — unos quince minutos
 
 En la computadora de Erick, en el navegador:
 
 ```
-http://127.0.0.1:5173
+http://127.0.0.1:5173   →   pestaña «Revisión»
 ```
 
-Arriba hay una barra de pestañas. La que te toca es **«Revisión»**.
+**Recarga la página antes de empezar** (F5). Arriba verás cuántos casos hay
+pendientes; deberían ser 91. Si dice 50, la página es vieja: recárgala.
 
-Si ya la tenías abierta de antes, **recárgala** (F5). La lista se carga al
-abrir la pantalla y hoy el servidor se reinició varias veces.
+No tienes que contestar los 91. La mayoría están esperando trabajo del
+sistema, no tuyo. Esto es lo que sí te toca:
 
-## Qué estás haciendo, y por qué importa tanto
+### a) Dos preguntas
 
-El motor clasifica solo cuando puede defender la respuesta. Cuando dos
-posiciones de la tarifa le parecen igual de aplicables, se niega a elegir —
-eso es a propósito: una fracción equivocada cambia el arancel que paga el
-importador.
+Busca estas dos tarjetas. Las reconoces porque llevan una pregunta de sí o
+no dentro:
 
-Lo que no puede hacer solo es saber que dos frases distintas hablan de lo
-mismo. «6x36» y «constituidos por 7 alambres» no comparten ni una letra, y
-no hay documento que las una: eso sólo está en tu cabeza.
+| Tarjeta | La pregunta |
+|---|---|
+| **CABLE DE ACERO 12.7-25.4 MM** | La posición `73121001` exige «**Galvanizados**». ¿La cumple? |
+| **Laptop Demo 14" 8GB** | La posición `8528` exige «**Monitores y proyectores**». ¿La cumple? |
 
-**Y tu respuesta no resuelve un caso, resuelve la familia.** Si contestas
-una de las catorce tarjetas del cable, se resuelven las catorce. La próxima
-vez que entre un cable igual, el motor ya no pregunta.
+Las dos están hechas para que **una respuesta resuelva el caso**. La respuesta
+es tuya: nosotros sólo comprobamos que, contestes lo que contestes, el sistema
+la va a usar.
 
-Tu criterio es, literalmente, el único dato del sistema que no generamos
+### b) Quince fregaderos
+
+Tarjetas que dicen **FREGADERO DE ACERO INOXIDABLE AISI 304**. El sistema
+propone `73241001` en los quince. Están en la bandeja no porque dude de la
+fracción, sino porque eligió la partida por la regla 3 c) —la última por
+orden de numeración—, y eso pide que una persona lo confirme.
+
+Si estás de acuerdo con la fracción: **«Es correcta»**. Un clic cada uno.
+
+Es la tarea más valiosa de las tres aunque parezca la más simple: cada
+confirmación tuya convierte una cifra que hoy se mide contra un dato
+inventado por nosotros en una que se mide contra tu criterio.
+
+### c) Catorce cables 8x36 — si coincides
+
+Tarjetas que dicen **CABLE DE ACERO, CONSTRUCCION 8X36**. El sistema duda
+entre cinco fracciones y ninguna pregunta de sí o no lo resuelve: a la ficha
+le falta un dato, si el cable es **galvanizado o sin recubrimiento**.
+
+Si coincides en que falta ese dato: **«Falta información»** y escribe qué
+dato hay que pedir. Es tu regla 4 —pedir el dato, no inventarlo— y es
+exactamente para lo que existe ese botón.
+
+Si crees que con la ficha sí se puede, «Corregir» con la fracción y el NICO.
+
+---
+
+## Cómo se rellena una pregunta
+
+1. **«¿Qué parte de la ficha estás mirando?»** — son botones. Pulsa el valor,
+   no lo escribas a mano. La vez que alguien lo tecleó con la etiqueta
+   delante, la respuesta quedó guardada, firmada y sin ningún efecto.
+2. **«Tu nombre»** → `César`.
+3. **«Por qué, en una línea»** → lo que un auditor necesitaría leer.
+4. **El botón**: «Sí, es lo mismo» o «No, no lo es».
+
+Al guardar te dirá cuántos casos se están recalculando, y la lista se
+refresca sola.
+
+## Cómo se rellena un veredicto
+
+| Botón | Cuándo |
+|---|---|
+| **Es correcta** | la fracción que propone el sistema es la que tú pondrías |
+| **Corregir** | pones la fracción correcta, y el NICO **en su propio campo** |
+| **Falta información** | la ficha no alcanza; escribe **qué dato** falta |
+
+**Ojo con «Corregir»:** en la casilla de fracción va **la que tú pondrías**,
+no la que el sistema tenía mal. Esta mañana, en `PED_SIM_004-011`, la casilla quedó
+con `73121008` mientras tu nota explicaba que esa era la incompatible. Ya está
+arreglado —nos pasaste la buena—, pero es fácil que vuelva a pasar.
+
+---
+
+## 2 · Por escrito, a Erick — cinco minutos
+
+Estas dos no tienen pantalla. Escríbelas y Erick nos las pasa; quedan
+registradas con tu nombre y con una nota que dice que las transcribimos
 nosotros.
 
-## Las dos tarjetas que hay que contestar
+### a) El cable 6x36: una frase para toda la familia
 
-Baja por la lista hasta encontrarlas. Están cerca del principio.
+Dictaminaste `73121005` NICO `02` para cinco partidas de cable de acero sin
+recubrimiento 6x36. Hay **ocho partidas más** de la misma mercancía que no
+revisaste una a una, y el sistema no puede dar por hecho que vale lo mismo.
 
-### 1 · El cable — es la que vale catorce casos
+Si es así, basta con una frase:
 
-Va como la **séptima** tarjeta. Dice *CABLE DE ACERO SIN RECUBRIMIENTO,
-CONSTRUCCION 6X36*, y la pregunta es:
+> «Todos los cables de acero sin recubrimiento, construcción 6x36, Ø18 mm,
+> alma de acero, son `73121005` NICO `02`.»
 
-> La ficha dice: material = «acero» · diametro_mm = «18» ·
-> **construccion = «6x36»** · alma = «acero» · lubricado = «True» ·
-> uso = «grua».
-> La posición **73121008** exige «**constituidos por 7 alambres**».
-> ¿La cumple?
+### b) Cinco fracciones de tu dictamen que no encontramos
 
-### 2 · La laptop
+En tu dictamen de 49 casos hay cinco fracciones que **no existen** en la
+tarifa que tenemos cargada:
 
-Va por la **vigésimo cuarta**. Dice *Laptop Demo 14" 8GB*, y pregunta si
-cumple `8528` «**Monitores y proyectores**».
+| Pusiste | Casos | En esa subpartida sólo existe |
+|---|---|---|
+| `73051901` | 3 | `73051999` |
+| `73051201` | 2 | `73051291` |
 
-## Cómo se rellena
+Puede que la tarifa que tenemos esté incompleta, o puede que sean otras.
+¿Cuáles son las correctas?
 
-Cuatro cosas, en este orden:
+---
 
-1. **«¿Qué parte de la ficha estás mirando?»** — son **botones**, no un
-   campo de texto. Para el cable, pulsa el que dice `6x36`.
-
-   Esto es lo más importante de toda la pantalla. La primera vez que alguien
-   lo usó escribió a mano `material = "acero al carbono"` —copiando el
-   formato que la propia pantalla le enseñaba— y su respuesta quedó
-   **guardada, firmada y sin ningún efecto**. La pantalla decía «guardado» y
-   no pasaba nada. Por eso ahora se elige de una lista.
-
-2. **«Tu nombre»** → `César`. Sin nombre no es criterio profesional, es una
-   opinión anónima, y el sistema no puede apoyarse en ella.
-
-3. **«Por qué, en una línea»** → lo que un auditor necesitaría leer. Para el
-   cable, algo como: *«6x36 son seis torones de 36 alambres, no siete
-   alambres»*.
-
-4. **Y el botón.** En las dos tarjetas la respuesta correcta es
-   **«No, no lo es»** — que es además la que descarta y la que desatasca.
-
-Al guardar te dirá **«Recalculando N casos»** y la lista se refrescará sola
-cuando termine. Si tarda, hay un botón **«Actualizar»** arriba a la derecha.
-
-## Lo que NO conviene que contestes
-
-Hay otras dos preguntas en la lista y **no sirven todavía**: la de `7304`
-«Tubos y perfiles huecos» (tarjeta 14, sobre un sartén) y la de `8481`
-«Artículos de grifería» (tarjeta 34). Lo comprobamos simulando las dos
-respuestas posibles: ni el sí ni el no cambian nada.
-
-Eso es un defecto nuestro, no tuyo. Erick las está silenciando. Si las ves,
-sáltalas.
-
-## Los tres botones de abajo, que son otra cosa
-
-En cada tarjeta, debajo, hay tres botones. No son la pregunta: son tu
-veredicto sobre **ese** caso.
-
-| | Cuándo |
-|---|---|
-| **Es correcta** | la fracción que propone el motor es la que tú pondrías |
-| **Corregir** | pones la fracción correcta, y el NICO si lo determinas |
-| **Falta información** | la ficha no alcanza, y dices **qué dato** falta |
-
-Dos cosas sobre esto:
-
-- **La fracción y el NICO son campos separados**, porque son niveles
-  distintos y no deben mezclarse. Tú lo advertiste y así está hecho.
-- **«Falta información» exige decir qué dato falta.** Es la diferencia entre
-  «pidan el diámetro exterior», que se convierte en un correo al importador,
-  y «no sé», que deja el caso igual de parado.
-
-Un veredicto registra tu criterio para un caso. Una respuesta a la pregunta
-desatasca una familia. **Si tienes poco tiempo, la pregunta rinde mucho más.**
-
-## Lo que viene
-
-Hay 43 casos de tubería de acero —la partida 7305— que están esperando una
-sola pregunta tuya: **si «SAW» es lo mismo que «arco sumergido»**. El motor
-todavía no sabe preguntarla porque esa partida abre siete subpartidas y hoy
-se calla cuando hay más de cuatro. Erick lo está arreglando.
-
-Cuando esté, es una respuesta y caen cuarenta y tres casos. Avisará.
+Eso es todo. Lo demás de la bandeja —tuberías, ollas, sartenes— está
+esperando trabajo nuestro, no tuyo.
