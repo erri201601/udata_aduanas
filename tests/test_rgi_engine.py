@@ -2395,3 +2395,127 @@ def test_acotar_no_puede_inventar_una_candidata() -> None:
 
     assert {c.code for c in describen} == {"730511", "730512", "730519"}
     assert len(describen) < len(subs), "si describiera a todas, no habría nada que acotar"
+
+
+# ── Una pregunta que no mueve nada no se hace (6-oct) ───────────────────────
+
+
+def _sarten() -> ClassificationContext:
+    return ClassificationContext(
+        description="SARTEN DE ACERO INOXIDABLE PARA COCINA, DIAMETRO 28 CM",
+        operation_date=OPERACION,
+        facts=(ProductFact(name="tipo", value="sarten", status="OBSERVED"),),
+        search_terms=("acero",),
+    )
+
+
+def _cuatro_partidas_de_acero() -> CatalogoFalso:
+    """Cuatro partidas empatadas, como las del sartén del corpus.
+
+    Contestar «no» a una deja tres, y tres siguen empatadas: ninguna respuesta
+    resuelve. Es el caso de 7304, 7305, 7306 y 7318.
+    """
+    return CatalogoFalso(
+        headings=[
+            TariffCandidate(code=c, text=t, level="HEADING", specificity=3)
+            for c, t in (
+                ("7304", "Tubos y perfiles huecos, sin soldadura, de hierro o acero."),
+                ("7305", "Los demás tubos de sección circular, de hierro o acero."),
+                ("7306", "Los demás tubos y perfiles huecos, de hierro o acero."),
+                ("7318", "Tornillos, pernos y tuercas, de hierro o acero."),
+            )
+        ]
+    )
+
+
+def test_no_se_pregunta_lo_que_ninguna_respuesta_resuelve() -> None:
+    """QUINCE TARJETAS PIDIENDO UN MINUTO A CAMBIO DE CERO.
+
+    Simulado el 5-oct sobre la bandeja: las preguntas de 7304 «Tubos y
+    perfiles huecos» (12 sartenes) y 8481 «Artículos de grifería» (3
+    utensilios) no cambiaban nada ni con el «sí» ni con el «no». Contestar que
+    un sartén no es un tubo descartaba la 7304 y dejaba tres partidas
+    empatadas.
+
+    Una pregunta cuya respuesta no se usa es peor que no preguntar: gasta el
+    tiempo del clasificador y encima parece trabajo hecho.
+    """
+    traza = classify(_sarten(), catalog=_cuatro_partidas_de_acero(), notes=NotasFalsas())
+
+    assert traza.final_status is not RGIStatus.RESOLVED
+    assert all(not paso.preguntas for paso in traza.steps)
+
+
+def test_la_pregunta_que_si_resuelve_se_conserva() -> None:
+    """El contraste, y el que importa: no se calla de más.
+
+    Con dos fracciones hermanas, un «no» a una deja la otra sola y el caso se
+    resuelve. Esa pregunta vale el minuto y tiene que seguir saliendo: si la
+    guarda callara también las buenas, la bandeja se quedaría sin salida, que
+    es peor que una pregunta mala.
+    """
+    from core.rgi_engine.engine import _clasificar
+
+    dos_fracciones = CatalogoFalso(
+        headings=[
+            TariffCandidate(
+                code="7323",
+                text="Artículos de uso doméstico, de hierro o acero.",
+                level="HEADING",
+                specificity=3,
+            )
+        ],
+        subheadings=[
+            TariffCandidate(
+                code="732393", text="De acero inoxidable.", level="SUBHEADING", specificity=2
+            )
+        ],
+        fractions=[
+            TariffCandidate(
+                code="73239305",
+                text="De acero inoxidable, para cocina.",
+                level="FRACTION",
+                specificity=2,
+            ),
+            TariffCandidate(
+                code="73239399",
+                text="Los demás, esmaltados.",
+                level="FRACTION",
+                specificity=2,
+            ),
+        ],
+    )
+
+    sin_filtrar = _clasificar(_sarten(), catalog=dos_fracciones, notes=NotasFalsas())
+    filtrada = classify(_sarten(), catalog=dos_fracciones, notes=NotasFalsas())
+
+    antes = {(q.codigo, q.exige) for p in sin_filtrar.steps for q in p.preguntas}
+    despues = {(q.codigo, q.exige) for p in filtrada.steps for q in p.preguntas}
+    assert antes, "el caso tiene que generar una pregunta, o no prueba nada"
+    assert despues == antes, "la pregunta que resuelve se calló"
+
+    # Y lo que la mantiene viva es cierto: contestar «no» resuelve el caso.
+    codigo, clausula = next(iter(despues))
+    contestada = _clasificar(
+        _sarten().model_copy(update={"exclusiones": (("sarten", clausula),)}),
+        catalog=dos_fracciones,
+        notes=NotasFalsas(),
+    )
+    assert codigo == "73239399"
+    assert contestada.final_status is RGIStatus.RESOLVED
+    assert contestada.resolved_code == "73239305"
+
+
+def test_filtrar_preguntas_no_cambia_ninguna_decision() -> None:
+    """Las preguntas no deciden nada: quitarlas no puede mover una fracción.
+
+    Medido sobre el corpus: 98 contestadas, 90 aciertos, 8 fallos —idéntico
+    antes y después—. Este test lo fija sin base.
+    """
+    from core.rgi_engine.engine import _clasificar
+
+    con = classify(_sarten(), catalog=_cuatro_partidas_de_acero(), notes=NotasFalsas())
+    sin = _clasificar(_sarten(), catalog=_cuatro_partidas_de_acero(), notes=NotasFalsas())
+
+    assert con.final_status == sin.final_status
+    assert con.resolved_code == sin.resolved_code

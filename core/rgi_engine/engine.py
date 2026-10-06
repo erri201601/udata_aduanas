@@ -56,6 +56,100 @@ def classify(
     resultado legítimo, no un error. Los errores se reservan para lo que sí es
     un fallo — un catálogo caído, por ejemplo.
     """
+    traza = _clasificar(context, catalog=catalog, notes=notes, interpreter=interpreter)
+    return _solo_las_preguntas_que_mueven_algo(
+        traza, context, catalog=catalog, notes=notes, interpreter=interpreter
+    )
+
+
+def _solo_las_preguntas_que_mueven_algo(
+    traza: ClassificationTrace,
+    context: ClassificationContext,
+    *,
+    catalog: TariffCatalog,
+    notes: LegalNotes,
+    interpreter: Interpreter | None,
+) -> ClassificationTrace:
+    """Quita las preguntas cuya respuesta no puede cambiar nada.
+
+    UNA PREGUNTA QUE NO MUEVE NADA ES PEOR QUE NO PREGUNTAR
+
+    Gasta el minuto de la única persona cuyo tiempo no se puede gastar, y
+    encima parece trabajo hecho. Simulado el 5-oct sobre la bandeja, de las
+    cuatro preguntas vivas dos no cambiaban nada con ninguna respuesta:
+
+        7304  «Tubos y perfiles huecos»                  12 casos (sartén)
+        8481  «Artículos de grifería…»                     3 casos (utensilio)
+
+    Contestar «no» descartaba esa partida y quedaban otras tres empatadas. Ni
+    el «sí» ni el «no» resolvían. Quince tarjetas pidiendo un minuto a cambio
+    de cero.
+
+    SE SIMULA, NO SE ADIVINA
+
+    La forma de saber si una pregunta sirve es la que se usó para encontrar
+    las inútiles: hacer la clasificación otra vez como si la persona hubiera
+    contestado que no, y mirar si resuelve. Contar candidatas no basta — la
+    pregunta de la olla sobre 8481 tenía varias partidas detrás y SÍ servía,
+    porque al caer la grifería las demás se resolvían por materia.
+
+    Sólo se simula el «no». El «sí» guarda una equivalencia, que sirve para no
+    volver a preguntar pero no hace ganar a ninguna candidata: no tiene camino
+    por el que resolver, así que simularlo no diría nada.
+
+    El «no» se simula como la exclusión que guardaría la consola: la ficha no
+    es esa cláusula. El término de la ficha que elegiría la persona no se
+    conoce de antemano, así que se usa la descripción entera —que la ficha
+    dice por definición— y la exclusión se aplica igual que se aplicaría la
+    real: a toda posición cuyo texto diga esa frase.
+
+    COSTE
+
+    Una clasificación más por pregunta, y sólo en los casos que se abstienen y
+    preguntan. Si algún día se pasa un `interpreter`, cada simulación lo vuelve
+    a llamar: hoy ningún camino de producción lo pasa.
+    """
+    if traza.final_status is RGIStatus.RESOLVED or not traza.steps:
+        return traza
+    ultimo = traza.steps[-1]
+    if not ultimo.preguntas:
+        return traza
+
+    sirven = tuple(
+        pregunta
+        for pregunta in ultimo.preguntas
+        if _clasificar(
+            context.model_copy(
+                update={
+                    "exclusiones": (*context.exclusiones, (context.description, pregunta.exige))
+                }
+            ),
+            catalog=catalog,
+            notes=notes,
+            interpreter=interpreter,
+        ).final_status
+        is RGIStatus.RESOLVED
+    )
+    if len(sirven) == len(ultimo.preguntas):
+        return traza
+    return traza.model_copy(
+        update={"steps": (*traza.steps[:-1], ultimo.model_copy(update={"preguntas": sirven}))}
+    )
+
+
+def _clasificar(
+    context: ClassificationContext,
+    *,
+    catalog: TariffCatalog,
+    notes: LegalNotes,
+    interpreter: Interpreter | None = None,
+) -> ClassificationTrace:
+    """La secuencia de las RGI, sin filtrar las preguntas.
+
+    Separada de `classify` para que la simulación de una respuesta no vuelva a
+    simular sus propias preguntas: sin esto, cada simulación abriría otras
+    tantas, en cadena.
+    """
     pasos: list[RGIResult] = []
     candidatos: Sequence[TariffCandidate] = ()
 
