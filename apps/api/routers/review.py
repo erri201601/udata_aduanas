@@ -64,7 +64,7 @@ from __future__ import annotations
 import re
 import uuid
 from collections.abc import Sequence
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, Final, Literal
 
 import sqlalchemy as sa
@@ -609,6 +609,101 @@ def responder_vocabulario(
         data_origin=fila.data_origin,
         recalculando=len(afectados[:MAX_RECALCULAR]),
         de_un_total=len(afectados),
+    )
+
+
+class RetiroVocabulario(BaseModel):
+    """Quién retira una respuesta y por qué. Las dos cosas son obligatorias."""
+
+    reviewer: str = Field(min_length=1, max_length=64)
+    """Quién la retira. Normalmente quien la firmó."""
+    motivo: str = Field(min_length=5)
+    """Por qué estaba mal. Es lo que leerá quien encuentre la fila."""
+
+
+class VocabularioRetirado(BaseModel):
+    id: uuid.UUID
+    commercial_term: str
+    nomenclature_term: str
+    kind: str
+    valid_from: date
+    valid_to: date
+    """Anterior a `valid_from`: la respuesta no rige para ninguna fecha."""
+
+
+def _esta_retirada(fila: NomenclatureSynonym) -> bool:
+    """¿Se retiró? Una vigencia que acaba antes de empezar no rige nunca."""
+    return fila.valid_to is not None and fila.valid_to < fila.valid_from
+
+
+@router.post(
+    "/vocabulario/{respuesta_id}/retirar",
+    summary="Retira una respuesta de vocabulario que resultó equivocada, sin borrarla",
+)
+def retirar_vocabulario(
+    respuesta_id: uuid.UUID, peticion: RetiroVocabulario, session: SessionDep
+) -> VocabularioRetirado:
+    """Una respuesta firmada que resultó equivocada deja de aplicarse y se queda.
+
+    EL CASO (César, 6-oct)
+
+    Contestó a «¿el cable cumple "Galvanizados"?» eligiendo el valor «acero»
+    de la ficha. El sistema guardó «nada de acero es galvanizado», que él
+    mismo llamó una generalización falsa: un cable puede ser de acero
+    galvanizado, sin recubrimiento o con otro tratamiento. Pidió cerrarla
+    como «respuesta incorrecta de alcance», no borrarla.
+
+    NO SE CIERRA CON FECHA DE HOY, Y ESO ES LO QUE IMPORTA AQUÍ
+
+    La vigencia de una respuesta de vocabulario sigue a la del texto de la
+    tarifa que describe, no al día en que se contestó (ver
+    `_desde_cuando_rige_la_tarifa`): ésta rige desde 2022. Cerrarla con
+    `valid_to = hoy` la dejaría aplicándose a toda operación anterior a hoy
+    —el corpus entero va de marzo a agosto de 2026—. Parecería cerrada y
+    seguiría actuando.
+
+    Una respuesta equivocada no caducó: nunca fue cierta. Así que `valid_to`
+    se pone el día ANTERIOR a `valid_from`, y el filtro de vigencia
+    —`valid_from <= fecha <= valid_to`— no la deja pasar para ninguna fecha.
+    La fila se conserva entera, con el motivo añadido a su nota.
+
+    LO QUE NO HACE
+
+    No vuelve a clasificar: lo que cambia se ve en la siguiente
+    reclasificación. Y como la pareja sigue en la tabla, el UNIQUE impide
+    volver a contestar exactamente la misma con la misma fecha de inicio; si
+    algún día hace falta, se discute antes de relajarlo.
+    """
+    fila = session.get(NomenclatureSynonym, respuesta_id, with_for_update=True)
+    if fila is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "respuesta de vocabulario no encontrada")
+    if _esta_retirada(fila):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"esa respuesta ya está retirada (vigencia {fila.valid_from} → {fila.valid_to})",
+        )
+
+    hoy = datetime.now(UTC).date().isoformat()
+    fila.valid_to = fila.valid_from - timedelta(days=1)
+    fila.note = (
+        f"{fila.note or ''} [RETIRADA el {hoy} por {peticion.reviewer}: {peticion.motivo}]"
+    ).strip()
+    session.commit()
+
+    log.info(
+        "review.vocabulario.retirada",
+        respuesta_id=str(fila.id),
+        reviewer=peticion.reviewer,
+        commercial_term=fila.commercial_term,
+        nomenclature_term=fila.nomenclature_term,
+    )
+    return VocabularioRetirado(
+        id=fila.id,
+        commercial_term=fila.commercial_term,
+        nomenclature_term=fila.nomenclature_term,
+        kind=fila.kind,
+        valid_from=fila.valid_from,
+        valid_to=fila.valid_to,
     )
 
 
