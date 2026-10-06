@@ -170,6 +170,12 @@ def _traza(outcome: ClassificationOutcome) -> list[dict[str, Any]]:
             # resto: si alguien la contesta dentro de un mes, tiene que poder
             # ver sobre qué textos se formuló, no sobre los de entonces.
             "preguntas": [q.model_dump(mode="json") for q in p.preguntas],
+            # Lo que el motor tiene por IMPOSIBLE, con el motivo y de dónde
+            # sale: `[{code, motivo, por}]`. Es lo que lee el aviso de la
+            # pantalla de veredicto cuando alguien teclea una fracción que el
+            # motor ya descartó. Las trazas anteriores no traen la clave: quien
+            # la lea tiene que tratarla como lista vacía.
+            "descartadas": [d.model_dump(mode="json") for d in p.descartadas],
         }
         for p in outcome.trace.steps
     ]
