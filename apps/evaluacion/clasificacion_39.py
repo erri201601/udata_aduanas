@@ -87,9 +87,14 @@ class Resultado:
     """Partidas cuyo producto nunca se clasificó. No es una abstención del
     motor: es que nadie se lo pidió."""
 
-    errores: list[tuple[str, str, str]] = field(default_factory=list)
-    """(sku, declarada, propuesta) de cada fallo. Sin esto no se puede
-    aprender nada del número."""
+    contra_dictamen: int = 0
+    """Cuántas se midieron contra el dictamen de un clasificador."""
+    contra_declaracion: int = 0
+    """Cuántas se midieron contra la fracción declarada en el pedimento."""
+
+    errores: list[tuple[str, str, str, str]] = field(default_factory=list)
+    """(sku, verdad, propuesta, de dónde sale la verdad) de cada fallo. Sin
+    esto no se puede aprender nada del número."""
 
     @property
     def contestadas(self) -> int:
@@ -126,6 +131,30 @@ _CON_FRACCION_FIABLE = sa.text(
              ORDER BY d.created_at DESC
              LIMIT 1
            ) AS propuesta,
+           -- EL DICTAMEN HUMANO DE LA MISMA FICHA, SI LO HAY
+           --
+           -- Se empareja por `product_dna_id` y no por partida: el criterio de
+           -- un clasificador es sobre la MERCANCÍA, y la misma ficha declarada
+           -- en otro pedimento tiene la misma fracción correcta. Él mismo lo
+           -- escribe así —una respuesta, varios SKU debajo— y es como ya
+           -- empareja el resto del sistema.
+           --
+           -- Sólo veredictos con fracción: un `FALTA_INFORMACION` dice que no
+           -- se puede determinar, y eso no es una verdad contra la que medir.
+           (
+             SELECT h.fraction_code
+             FROM intelligence.classification_decisions h
+             WHERE h.product_dna_id = (
+                     SELECT d2.product_dna_id
+                     FROM intelligence.classification_decisions d2
+                     WHERE d2.product_id = i.product_id
+                     ORDER BY d2.created_at DESC LIMIT 1
+                   )
+               AND h.data_origin = 'HUMAN_VALIDATED'
+               AND h.fraction_code IS NOT NULL
+             ORDER BY h.created_at DESC
+             LIMIT 1
+           ) AS dictamen,
            EXISTS (
              SELECT 1 FROM intelligence.classification_decisions d
              WHERE d.product_id = i.product_id AND d.data_origin <> 'HUMAN_VALIDATED'
@@ -157,18 +186,58 @@ _CON_FRACCION_FIABLE = sa.text(
 
 
 def medir(sesion: sa.orm.Session) -> Resultado:
-    """Compara lo propuesto con lo declarado, en las partidas limpias."""
+    """Compara lo propuesto con la verdad, y la verdad no siempre es la declarada.
+
+    EL DICTAMEN DE UN CLASIFICADOR MANDA SOBRE LA DECLARACIÓN
+
+    Hasta hoy la verdad era siempre `declared_fraction_code`, y eso daba por
+    bueno algo que el corpus no garantiza: la declaración de una partida
+    «limpia» es la que el generador sintético escribió, no una fracción
+    verificada por nadie.
+
+    El 6 de octubre se vio en catorce partidas de golpe. Un clasificador
+    contestó en la consola que un cable de construcción 6x36 no cumple
+    «constituidos por 7 alambres», el motor pasó a resolver `73121005` —y la
+    medición lo contó como CATORCE FALLOS, porque las catorce declaran
+    `73121099`.
+
+    Las cinco que están en su dictamen escrito dicen `73121005`, la misma que
+    el motor. Las otras nueve son la misma mercancía. Es decir: el motor
+    acertó, el corpus declaraba mal, y la métrica llamó error al acierto.
+
+    Una métrica que contradice al único experto del sistema no mide la calidad
+    del motor: mide el parecido con un dato sintético.
+
+    Orden de precedencia, y es el del §39:
+
+        1. el dictamen humano de esa ficha, si existe
+        2. la fracción declarada, cuando es fiable
+
+    El informe dice cuántas se midieron contra cada cosa. Sin eso, el
+    porcentaje no se puede interpretar: 100 % contra declaración sintética y
+    100 % contra dictamen humano son dos afirmaciones muy distintas.
+    """
     salida = Resultado()
     for fila in sesion.execute(_CON_FRACCION_FIABLE).all():
         if not fila.hubo_decision:
             salida.sin_decision += 1
-        elif fila.propuesta is None:
+            continue
+        if fila.propuesta is None:
             salida.se_abstuvo += 1
-        elif fila.propuesta == fila.declarada:
+            continue
+
+        if fila.dictamen is not None:
+            verdad, de_donde = fila.dictamen, "dictamen"
+            salida.contra_dictamen += 1
+        else:
+            verdad, de_donde = fila.declarada, "declaración"
+            salida.contra_declaracion += 1
+
+        if fila.propuesta == verdad:
             salida.acerto += 1
         else:
             salida.fallo += 1
-            salida.errores.append((fila.sku, fila.declarada, fila.propuesta))
+            salida.errores.append((fila.sku, verdad, fila.propuesta, de_donde))
     return salida
 
 
@@ -179,6 +248,11 @@ def informe(r: Resultado) -> str:
         "ÁMBITO  las partidas cuya fracción declarada es FIABLE: las limpias y",
         "        las sucias cuya anomalía sembrada NO toca la fracción. Sólo se",
         "        excluyen las de WRONG_FRACTION y WRONG_NICO, que son 13.",
+        "",
+        "VERDAD  manda el dictamen de un clasificador sobre la declaración. Una",
+        "        declaración «limpia» la escribió el generador sintético; un",
+        f"        dictamen lo firmó una persona.  contra dictamen: {r.contra_dictamen}"
+        f" · contra declaración: {r.contra_declaracion}",
         "",
         f"MEDIBLES  {r.medibles} partidas con decisión del motor",
         f"  sin clasificar nunca: {r.sin_decision} (no cuentan: nadie se lo pidió)",
@@ -202,8 +276,8 @@ def informe(r: Resultado) -> str:
     if r.errores:
         lineas.append("")
         lineas.append("DÓNDE FALLÓ  (sin esto el porcentaje no enseña nada)")
-        for sku, declarada, propuesta in r.errores[:10]:
-            lineas.append(f"  {sku:<18} declarada {declarada}  propuso {propuesta}")
+        for sku, verdad, propuesta, de_donde in r.errores[:10]:
+            lineas.append(f"  {sku:<18} {de_donde} dice {verdad}  propuso {propuesta}")
     return "\n".join(lineas)
 
 
