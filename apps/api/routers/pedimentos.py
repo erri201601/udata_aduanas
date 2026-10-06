@@ -95,7 +95,12 @@ _CENTAVOS: Final = Decimal("0.01")
 
 #: Lo que se puede comprobar sin haber clasificado. Si nada de esto consta, la
 #: partida no tiene espejo y se reporta como no verificable.
-_COMPROBABLE_SIN_CLASIFICAR: Final = ("country_of_origin", "valid_nico_codes", "customs_value")
+_COMPROBABLE_SIN_CLASIFICAR: Final = (
+    "country_of_origin",
+    "valid_nico_codes",
+    "customs_value",
+    "exchange_rate",
+)
 
 
 class ReviewRequest(BaseModel):
@@ -195,7 +200,7 @@ def revisar(
 
         lineas.append(
             LineInput(
-                declared=_declarada(partida),
+                declared=_declarada(partida, exchange_rate=pedimento.exchange_rate),
                 expected=esperada,
                 transaction_value=valor,
                 declared_rates=declaradas,
@@ -222,8 +227,13 @@ def revisar(
 # ── Armado de cada partida ───────────────────────────────────────────────────
 
 
-def _declarada(partida: PedimentoItem) -> DeclaredItem:
-    """La partida tal como viene en el pedimento, sin interpretarla."""
+def _declarada(partida: PedimentoItem, *, exchange_rate: Decimal | None) -> DeclaredItem:
+    """La partida tal como viene en el pedimento, sin interpretarla.
+
+    `exchange_rate` es del PEDIMENTO (`Pedimento.exchange_rate`), no de la
+    partida — se repite igual en cada línea, mismo patrón que las tasas de
+    DTA/IVA que llegan por `ReviewRequest`.
+    """
     return DeclaredItem(
         line_number=partida.line_number,
         description=partida.description,
@@ -237,6 +247,7 @@ def _declarada(partida: PedimentoItem) -> DeclaredItem:
         unit=partida.commercial_unit,
         igi_amount=partida.igi_amount,
         vat_amount=partida.vat_amount,
+        exchange_rate=exchange_rate,
     )
 
 
@@ -293,6 +304,27 @@ def _valor_esperado(
     return convertido.amount, convertido.currency
 
 
+def _tipo_de_cambio_esperado(
+    session: SessionDep, partida: PedimentoItem, fecha: date
+) -> Decimal | None:
+    """El FIX que debería haberse usado para convertir esta partida.
+
+    Misma divisa que resuelve `_valor_esperado` (factura, no la del
+    pedimento): si la partida no trae una divisa distinta de MXN no hay
+    tipo de cambio que comparar, y se devuelve `None` — no "coincide".
+
+    `fecha` es `pedimento.operation_date`, igual que `_valor_esperado`: NO
+    está verificado contra una fuente almacenada que diga si la fecha
+    correcta es ésa, la del día de pago, o alguna otra regla de la Ley
+    Aduanera/CFF (ver `DivergenceType.EXCHANGE_RATE_MISMATCH`). Se usa la
+    misma por continuidad, no porque esté confirmada.
+    """
+    moneda = partida.price_paid_currency or partida.customs_value_currency
+    if moneda is None or moneda == "MXN":
+        return None
+    return tasa_vigente(session, on_date=fecha, currency=moneda)
+
+
 def _dta(valor: Decimal, peticion: ReviewRequest) -> Decimal | None:
     """El DTA de la partida con las tasas de la operación. `None` si no se pasaron.
 
@@ -340,6 +372,7 @@ def _espejo_documental(
     """Lo que se puede esperar SIN clasificar. Sale del documento, no del motor."""
     pais = _pais_del_proveedor(session, partida)
     valor, moneda = _valor_esperado(session, partida, fecha)
+    tipo_de_cambio = _tipo_de_cambio_esperado(session, partida, fecha)
     igi, iva = _fiscal_esperado(partida, fecha, catalogo, peticion)
     # `None` y `False` dicen cosas distintas: sin catálogo cargado no se puede
     # afirmar que una unidad no exista, y acusar ahí sería culpar al pedimento
@@ -362,6 +395,7 @@ def _espejo_documental(
         ),
         "customs_value": valor,
         "customs_value_currency": moneda,
+        "exchange_rate": tipo_de_cambio,
     }
 
 

@@ -43,6 +43,11 @@ class DeclaredItem(BaseModel):
     """Unidad de medida comercial declarada (clave del Apéndice 7, Anexo 22)."""
     igi_amount: Decimal | None = None
     vat_amount: Decimal | None = None
+    exchange_rate: Decimal | None = None
+    """Tipo de cambio declarado en el PEDIMENTO (no en la partida) — se
+    repite igual en cada línea, mismo patrón que las tasas de DTA/IVA que
+    llegan por `ReviewRequest`: es un dato del documento completo, no de
+    esta partida en particular."""
 
 
 #: `ExpectedItem.origin_source` cuando el país esperado se dedujo del proveedor
@@ -84,6 +89,18 @@ class ExpectedItem(BaseModel):
     """IVA que sale de su base: valor en aduana + IGI + DTA.
 
     Las tasas las pasa quien llama; el motor no las inventa (§8.1).
+    """
+
+    exchange_rate: Decimal | None = None
+    """El FIX vigente para la fecha de operación y la divisa de la factura.
+
+    `None` cuando el pedimento no tiene divisa distinta de MXN que convertir
+    (nada que comparar), o cuando no hay tasa FIX cargada para esa fecha —
+    las dos son «no se pudo comprobar», nunca «coincide».
+
+    La fecha exacta que debería aplicar (operación, pago, u otra) no está
+    verificada contra una fuente almacenada — ver el docstring de
+    `DivergenceType.EXCHANGE_RATE_MISMATCH`.
     """
 
     declared_unit_is_known: bool | None = None
