@@ -167,6 +167,8 @@ def to_pedimento_identifier_row(
     return PedimentoIdentifier(
         code=parsed.code,
         level=parsed.level,
+        label=parsed.label,
+        supuestos_de_aplicacion=parsed.supuestos_de_aplicacion,
         **_row_kwargs(source, content_hash=content_hash, retrieved_at=retrieved_at),
     )
 
@@ -451,6 +453,116 @@ def add_fraccion_chunks_for_long_rules(
                     url=RGCE_SOURCE_URL,
                 )
             )
+
+    if not chunks:
+        return 0
+    return PostgresChunkStore(session).add(chunks)
+
+
+def add_missing_identifier_text(
+    session: Session,
+    *,
+    identifiers: list[ParsedIdentifier],
+    content_hash: str,
+    retrieved_at: datetime | None = None,
+) -> tuple[int, int]:
+    """Backfill DIRIGIDO del Apéndice 8 (decisión de Persona 1, 6-oct): enriquece
+    con `label`/`supuestos_de_aplicacion` las 174 filas ya cargadas (PR #158,
+    sólo `code`+`level`) y agrega las que falten -- CR, EO, PB y PO, perdidas
+    en la carga original por un regex que sólo aceptaba guión normal ("-") y
+    no guión largo ("–"), encontrado al extraer este mismo texto (ver
+    `ingestion.dof.anexo22._IDENTIFICADOR_APENDICE_RE`).
+
+    Identidad por `(code, level)`, igual que la `UniqueConstraint` de la
+    tabla. Idempotente: una fila que ya tiene `label` no se vuelve a tocar
+    (no hay vigencia de la que cerrar una versión anterior -- es el mismo
+    documento, sólo se le agrega lo que antes no se cargó). Devuelve
+    (filas nuevas, filas enriquecidas).
+    """
+    retrieved_at = retrieved_at or datetime.now(UTC)
+    source = get_or_create_dof_source(session)
+
+    existentes = {(f.code, f.level): f for f in session.query(PedimentoIdentifier).all()}
+
+    creadas = 0
+    enriquecidas = 0
+    for parsed in identifiers:
+        clave = (parsed.code, parsed.level)
+        fila = existentes.get(clave)
+        if fila is None:
+            session.add(
+                to_pedimento_identifier_row(
+                    parsed, source=source, content_hash=content_hash, retrieved_at=retrieved_at
+                )
+            )
+            creadas += 1
+            continue
+        if fila.label is None and parsed.label is not None:
+            fila.label = parsed.label
+            fila.supuestos_de_aplicacion = parsed.supuestos_de_aplicacion
+            enriquecidas += 1
+
+    session.flush()
+    return creadas, enriquecidas
+
+
+def load_identifier_chunks(
+    session: Session,
+    *,
+    identifiers: list[ParsedIdentifier],
+    content_hash: str,
+    retrieved_at: datetime | None = None,
+) -> int:
+    """Un chunk de RAG por identificador del Apéndice 8 que ya tenga
+    `label`+`supuestos_de_aplicacion` -- lector real: el RAG/AduLex
+    (decisión de Persona 1, 6-oct), NO `required_identifiers` todavía (ver
+    `docs/RECONOCIMIENTO_APENDICE_8.md`). Idempotente, mismo patrón que
+    `add_fraccion_chunks_for_long_rules`.
+    """
+    retrieved_at = retrieved_at or datetime.now(UTC)
+    source = get_or_create_dof_source(session)
+    document = get_or_create_anexo22_document(
+        session, source, content_hash=content_hash, retrieved_at=retrieved_at
+    )
+
+    ya_existen = {
+        (article, valid_from)
+        for article, valid_from in session.query(
+            LegalChunkRecord.article, LegalChunkRecord.valid_from
+        ).filter(LegalChunkRecord.legal_document_id == document.id)
+    }
+
+    chunks: list[LegalChunk] = []
+    for parsed in identifiers:
+        if not parsed.label or not parsed.supuestos_de_aplicacion:
+            continue
+        nivel = f" (nivel {parsed.level})" if parsed.level else ""
+        # El nivel va en el article, no sólo en el texto: 6 claves reales
+        # repiten código con G Y P, cada una con su propio supuesto (p. ej.
+        # "CF" -- ver `_identificadores_de_pagina`) -- sin el nivel aquí,
+        # la segunda chocaba contra `ya_existen` de la primera y su propio
+        # supuesto nunca entraba al RAG, aunque la fila sí quedara completa
+        # en `pedimento_identifiers`.
+        article = f"Apéndice 8, clave {parsed.code}{nivel}"
+        if (article, ANEXO22_VALID_FROM) in ya_existen:
+            continue
+        texto = (
+            f"Identificador de pedimento {parsed.code}{nivel}: {parsed.label} "
+            f"Supuestos de aplicación: {parsed.supuestos_de_aplicacion}"
+        )
+        chunks.append(
+            LegalChunk(
+                source_id=source.id,
+                document_id=document.id,
+                document=document.title,
+                article=article,
+                text=texto,
+                content_hash=hash_contenido(texto),
+                data_origin="OFFICIAL",
+                valid_from=ANEXO22_VALID_FROM,
+                url=ANEXO22_SOURCE_URL,
+            )
+        )
 
     if not chunks:
         return 0

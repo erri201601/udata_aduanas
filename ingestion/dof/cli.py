@@ -11,6 +11,7 @@ Uso:
     python -m ingestion.dof.cli --target local  --rgce
     python -m ingestion.dof.cli --target shared --rgce --chunks
     python -m ingestion.dof.cli --target shared --split-long-rules
+    python -m ingestion.dof.cli --target shared --apendice8-texto
 """
 
 from __future__ import annotations
@@ -97,6 +98,17 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--apendice8-texto",
+        action="store_true",
+        help=(
+            "Backfill del Apéndice 8 ya cargado (PR #158): agrega "
+            "label/supuestos_de_aplicacion por coordenadas (`-bbox-layout`) a "
+            "regulatory.pedimento_identifiers y un chunk de RAG por clave con "
+            "ambos campos -- decisión de Persona 1, 6-oct. Idempotente, no "
+            "toca code/level."
+        ),
+    )
+    parser.add_argument(
         "--raw-only",
         action="store_true",
         help="Solo sube y verifica el RAW en --target; no toca la base.",
@@ -106,9 +118,16 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    if not args.raw_only and not args.anexo22 and not args.rgce and not args.split_long_rules:
+    if (
+        not args.raw_only
+        and not args.anexo22
+        and not args.rgce
+        and not args.split_long_rules
+        and not args.apendice8_texto
+    ):
         raise SystemExit(
-            "--anexo22, --rgce o --split-long-rules es obligatorio salvo con --raw-only"
+            "--anexo22, --rgce, --split-long-rules o --apendice8-texto es "
+            "obligatorio salvo con --raw-only"
         )
     if args.chunks and not args.rgce:
         raise SystemExit("--chunks sólo tiene efecto junto con --rgce")
@@ -159,6 +178,13 @@ def main(argv: list[str] | None = None) -> int:
             )
             identifiers = anexo22.parse_identifiers(anexo22.appendix_block(lines, headings, 8))
 
+        identificadores_texto = None
+        if args.apendice8_texto:
+            primera_pagina, ultima_pagina = anexo22.paginas_de_apendice(str(anexo22_path), 8)
+            identificadores_texto = anexo22.parse_identifiers_con_texto(
+                str(anexo22_path), first_page=primera_pagina, last_page=ultima_pagina
+            )
+
         reglas = None
         if args.rgce or args.split_long_rules:
             # El meta del HTML dice iso-8859-1, pero los bytes son UTF-8 estricto
@@ -181,6 +207,12 @@ def main(argv: list[str] | None = None) -> int:
         )
     if reglas is not None:
         print(f"Parseado: {len(reglas)} reglas de las RGCE 2026.")
+    if identificadores_texto is not None:
+        con_texto = sum(1 for i in identificadores_texto if i.label and i.supuestos_de_aplicacion)
+        print(
+            f"Parseado (--apendice8-texto): {len(identificadores_texto)} filas "
+            f"code+level con label+supuestos ({con_texto} completas)."
+        )
 
     assert database_url is not None  # solo llegamos aquí sin --raw-only
     engine = create_engine(database_url)
@@ -260,6 +292,32 @@ def main(argv: list[str] | None = None) -> int:
                 reglas=n_reglas,
                 excluidas=[r.rule_number for r in excluidas],
                 chunks=n_chunks,
+            )
+
+        if identificadores_texto is not None:
+            creadas, enriquecidas = load.add_missing_identifier_text(
+                session,
+                identifiers=identificadores_texto,
+                content_hash=anexo22_capture.content_hash,
+                retrieved_at=anexo22_capture.retrieved_at,
+            )
+            n_id_chunks = load.load_identifier_chunks(
+                session,
+                identifiers=identificadores_texto,
+                content_hash=anexo22_capture.content_hash,
+                retrieved_at=anexo22_capture.retrieved_at,
+            )
+            print(
+                f"OK ({args.target}): --apendice8-texto: {creadas} filas nuevas, "
+                f"{enriquecidas} enriquecidas con label/supuestos, "
+                f"{n_id_chunks} chunks de RAG insertados."
+            )
+            log.info(
+                "dof.apendice8_texto.cli.done",
+                target=args.target,
+                creadas=creadas,
+                enriquecidas=enriquecidas,
+                chunks=n_id_chunks,
             )
         session.commit()
 

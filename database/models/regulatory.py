@@ -406,14 +406,24 @@ class PedimentoIdentifier(
     pasar por una columna de nivel). NULL ahí es lo que el documento trae,
     no un hueco de parseo.
 
-    `description`/`supuestos_de_aplicacion`/`complemento_1..3` NO se cargan:
-    mismo motivo que dejó a `PedimentoClave.label` sin cargar (ver su
-    docstring) -- el layout de columnas múltiples se intercala en el mismo
-    renglón de texto sin separador confiable, y aquí es peor: la descripción
-    corta de cada clave también se envuelve a la línea siguiente, mezclada
-    con fragmentos de "Supuestos de Aplicación" de esa misma fila. `code` y
-    `level` sí se extraen con garantía, porque los dos viven siempre en la
-    PRIMERA línea de la entrada, antes de que empiece esa mezcla.
+    `label` y `supuestos_de_aplicacion` SÍ se cargan (a diferencia de
+    `PedimentoClave`, que los deja NULL por la misma ambigüedad de columnas):
+    se extraen con `pdftotext -bbox-layout` y reparto por intervalo de Y
+    (`ingestion.dof.anexo22._texto_por_ancla`, ancla por código: cada línea
+    de una columna de texto se asigna al ancla más reciente cuya Y la
+    precede), NO con la programación dinámica de
+    `ingestion.snice.tariff_headings` -- ese motor asume anclas centradas
+    contra la primera oración (modelo de Anexo 22 propiamente dicho); el
+    Apéndice 8 alinea el código al TOPE de su fila, un modelo distinto que
+    la DP corrompía (texto truncado y donado a la entrada siguiente).
+    `complemento_1..3` quedan fuera de este alcance —
+    dicen qué VALOR declarar una vez que el identificador aplica, no de qué
+    depende que aplique, que es la pregunta que
+    `docs/RECONOCIMIENTO_APENDICE_8.md` contestó. Consumidor: el RAG
+    (`regulatory.legal_chunks`), igual que las reglas RGCE — no
+    `required_identifiers` todavía (decisión de Persona 1, 6-oct: ninguna
+    de las claves con condición estructurable tiene lector en el corpus
+    real, que es 100% clave de documento A1).
     """
 
     __tablename__ = "pedimento_identifiers"
@@ -427,6 +437,8 @@ class PedimentoIdentifier(
 
     code: Mapped[str] = mapped_column(sa.String(2), nullable=False)
     level: Mapped[str | None] = mapped_column(sa.String(1), nullable=True)
+    label: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    supuestos_de_aplicacion: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
 
 
 class NomenclatureSynonym(
