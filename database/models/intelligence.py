@@ -184,6 +184,21 @@ class ClassificationDecision(
     __tablename__ = "classification_decisions"
     __table_args__ = (
         sa.Index("ix_classification_decisions_product", "product_id", "operation_date"),
+        # LA DECISIÓN VIGENTE DE CADA FICHA, SIN RECORRER LA TABLA ENTERA
+        #
+        # El tablero, la bandeja y la métrica preguntan lo mismo por cada fila:
+        # «¿es ésta la última decisión de su ficha?», con un `max(created_at)
+        # WHERE product_dna_id = …` correlacionado. Sin índice por
+        # `product_dna_id`, cada una de esas preguntas recorría la tabla entera.
+        #
+        # Medido el 6-oct con 5 902 decisiones: un solo predicado tardaba 13.8 s
+        # —5 902 recorridos completos— y el tablero, que lo usa varias veces,
+        # 54 s en cargar. Era la primera pantalla de la demo.
+        #
+        # Crece con el uso, no con el corpus: cada reclasificación conserva la
+        # decisión anterior —una decisión es un evento, no un atributo— y añade
+        # 181 filas. Con datos reales y meses de operación habría sido peor.
+        sa.Index("ix_classification_decisions_ficha_reciente", "product_dna_id", "created_at"),
         ai_call_completeness_check(),
         # Un solo veredicto por decisión, garantizado por la base. Es la segunda
         # capa detrás del 409 y del FOR UPDATE de `review.py`: si alguien se salta
