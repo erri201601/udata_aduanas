@@ -872,7 +872,11 @@ class RGI6:
         # al empate como siempre.
         if descartes and len(vivas) > 1:
             califican = [c for c in vivas if not _es_residual_puro(c)]
-            if len(califican) == 1 and _algo_la_sostiene(califican[0], context.description):
+            if (
+                len(califican) == 1
+                and _algo_la_sostiene(califican[0], context.description)
+                and _sus_ausencias_constan(califican[0], context)
+            ):
                 vivas = califican
 
         # El motivo viene ya escrito de donde salga —negación del texto o
@@ -1107,6 +1111,44 @@ def _lo_que_el_texto_afirma(candidata: TariffCandidate) -> set[str]:
     if (excluida := _lo_que_excepciona(candidata.text)) is not None:
         negadas |= _raices(excluida)
     return _raices(candidata.text) - negadas
+
+
+def _sus_ausencias_constan(candidata: TariffCandidate, context: ClassificationContext) -> bool:
+    """¿La ficha dice todo lo que esta posición afirma que NO tiene la mercancía?
+
+    EL SILENCIO NO ES UNA AUSENCIA, Y ESTA REGLA LO TRATABA COMO SI LO FUERA
+
+    El #191 quita un «Los demás.» cuando queda frente a una sola hermana que
+    describe la mercancía, y exige `_algo_la_sostiene`: que alguna palabra de
+    esa hermana conste en la ficha. Era poco. El 6-oct:
+
+        ficha      «CABLE DE ACERO 12.7-25.4 MM»         ← nada del recubrimiento
+        quedaban   73121005  «De acero sin recubrimiento…»
+                   73121099  «Los demás.»
+        dictamen   73121099 NICO 06  (César, 5-oct)
+
+    «acero» está en las dos, así que `_algo_la_sostiene` pasó, el residual
+    cayó y el motor afirmó «sin recubrimiento» de un cable cuya ficha no dice
+    nada de su recubrimiento. Contra el dictamen escrito de quien lo revisó.
+
+    Lo que una posición así añade sobre su residual es justamente su negación:
+    «sin recubrimiento». Si la ficha no la dice, no se puede elegir — que no
+    conste un recubrimiento no significa que no lo tenga. Es el mismo
+    principio que `_contradice` ya tiene escrito al revés: tratar el silencio
+    como negación descarta la correcta; tratarlo como ausencia elige la que no
+    se puede sostener.
+
+    Con la ficha diciendo «SIN RECUBRIMIENTO» —los catorce cables 6x36— sigue
+    resolviendo igual: la ausencia consta.
+    """
+    plano = _plano(candidata.text)
+    afirma_que_no = {r for palabra in _NIEGA.findall(plano) for r in _raices(str(palabra))}
+    if (excluida := _lo_que_excepciona(candidata.text)) is not None:
+        afirma_que_no |= _raices(excluida)
+    if not afirma_que_no:
+        return True
+    la_ficha_niega = {r for raices in _lo_que_la_ficha_niega(context).values() for r in raices}
+    return afirma_que_no <= la_ficha_niega
 
 
 def _la_ficha_la_niega(candidata: TariffCandidate, negado: dict[str, set[str]]) -> str | None:

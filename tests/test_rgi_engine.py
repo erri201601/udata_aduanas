@@ -2519,3 +2519,50 @@ def test_filtrar_preguntas_no_cambia_ninguna_decision() -> None:
 
     assert con.final_status == sin.final_status
     assert con.resolved_code == sin.resolved_code
+
+
+# ── El silencio no es una ausencia (6-oct) ──────────────────────────────────
+
+
+def test_no_se_elige_una_posicion_que_afirma_una_ausencia_que_la_ficha_no_dice() -> None:
+    """EL MOTOR AFIRMÓ «SIN RECUBRIMIENTO» DE UN CABLE QUE NO LO DICE.
+
+    El 6-oct, con la galvanizada y las de 7 alambres descartadas, quedaban
+    `73121005` «De acero sin recubrimiento» y `73121099` «Los demás.». El
+    #191 quitó el residual porque `_algo_la_sostiene` encontró «acero» en las
+    dos, y resolvió 73121005 para un cable cuya ficha —«CABLE DE ACERO
+    12.7-25.4 MM»— no dice nada de su recubrimiento. César había dictaminado
+    73121099.
+
+    Que no conste un recubrimiento no significa que no lo tenga.
+    """
+    sin_decir_el_recubrimiento = ClassificationContext(
+        description="CABLE DE ACERO 12.7-25.4 MM, CONSTRUCCION 6X36",
+        operation_date=OPERACION,
+        facts=(
+            ProductFact(name="material", value="acero", status="OBSERVED"),
+            ProductFact(name="construccion", value="6x36", status="OBSERVED"),
+        ),
+        search_terms=("cables",),
+        exclusiones=(("6x36", "constituidos por 7 alambres"),),
+    )
+
+    traza = classify(sin_decir_el_recubrimiento, catalog=_catalogo_731210(), notes=NotasFalsas())
+
+    assert traza.final_status is not RGIStatus.RESOLVED
+    assert traza.resolved_code != "73121005"
+
+
+def test_si_la_ficha_dice_la_ausencia_se_sigue_eligiendo() -> None:
+    """El contraste: con «SIN RECUBRIMIENTO» en la ficha, la ausencia consta.
+
+    Es el caso de los catorce cables 6x36 del corpus, y tiene que seguir
+    resolviendo a 73121005 — la fracción que dictaminó César.
+    """
+    traza = classify(
+        _cable_6x36((("6x36", "constituidos por 7 alambres"),)),
+        catalog=_catalogo_731210(),
+        notes=NotasFalsas(),
+    )
+
+    assert traza.resolved_code == "73121005"
