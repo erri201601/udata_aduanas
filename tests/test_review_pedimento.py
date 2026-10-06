@@ -326,12 +326,14 @@ def test_el_valor_esperado_es_precio_pagado_mas_incrementables() -> None:
     from apps.api.routers.pedimentos import _valor_esperado
 
     valor, moneda = _valor_esperado(
+        None,  # type: ignore[arg-type]  # MXN no toca la sesión -- retorna antes
         _partida(
             price_paid=Decimal("170000.00"),
             incrementables=Decimal("11511.88"),
             price_paid_currency="MXN",
             incrementables_currency="MXN",
-        )  # type: ignore[arg-type]
+        ),  # type: ignore[arg-type]
+        date(2026, 1, 1),
     )
 
     assert valor == Decimal("181511.88")
@@ -343,7 +345,9 @@ def test_sin_incrementables_no_se_supone_cero() -> None:
     from apps.api.routers.pedimentos import _valor_esperado
 
     valor, _ = _valor_esperado(
-        _partida(price_paid=Decimal("170000.00"), incrementables=None)  # type: ignore[arg-type]
+        None,  # type: ignore[arg-type]
+        _partida(price_paid=Decimal("170000.00"), incrementables=None),  # type: ignore[arg-type]
+        date(2026, 1, 1),
     )
 
     assert valor is None
@@ -353,12 +357,14 @@ def test_no_se_suman_divisas_distintas() -> None:
     from apps.api.routers.pedimentos import _valor_esperado
 
     valor, _ = _valor_esperado(
+        None,  # type: ignore[arg-type]  # las divisas no coinciden -- retorna antes
         _partida(
             price_paid=Decimal("10000.00"),
             incrementables=Decimal("500.00"),
             price_paid_currency="USD",
             incrementables_currency="MXN",
-        )  # type: ignore[arg-type]
+        ),  # type: ignore[arg-type]
+        date(2026, 1, 1),
     )
 
     assert valor is None

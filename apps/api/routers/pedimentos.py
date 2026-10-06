@@ -79,6 +79,7 @@ from database.models import (
     Supplier,
 )
 from database.repositories import save_review
+from database.repositories.exchange import tasa_vigente
 from database.repositories.tariff import TariffCatalogRepository
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
@@ -257,12 +258,24 @@ def _pais_del_proveedor(session: SessionDep, partida: PedimentoItem) -> str | No
     )
 
 
-def _valor_esperado(partida: PedimentoItem) -> tuple[Decimal | None, str | None]:
-    """Valor en aduana según la propia partida: precio pagado + incrementables.
+def _valor_esperado(
+    session: SessionDep, partida: PedimentoItem, fecha: date
+) -> tuple[Decimal | None, str | None]:
+    """Valor en aduana según la propia partida: precio pagado + incrementables,
+    convertido a MXN con el FIX vigente en `fecha` si la factura viene en
+    otra divisa.
 
-    `None` si falta cualquiera de los dos, o si vienen en divisas distintas:
-    sumar importes de monedas distintas daría una cifra falsa. Un faltante NO
-    se sustituye por cero — cero es una afirmación, y aquí no consta.
+    `None` si falta cualquiera de los dos, si vienen en divisas distintas
+    (sumar importes de monedas distintas daría una cifra falsa), o si la
+    divisa no es MXN y no hay tipo de cambio cargado para `fecha` — un
+    faltante NO se sustituye por cero ni por un valor sin convertir: las
+    dos son una afirmación, y aquí no consta.
+
+    Antes de `ingestion.banxico` (2026-10-06) esto SIEMPRE devolvía la
+    divisa de la factura tal cual, y `core/shadow/compare.py` comparaba
+    USD contra MXN y reportaba "divisa distinta" en cada partida real del
+    corpus (invoices 100% USD, pedimentos 100% MXN, verificado contra la
+    base compartida) — nunca llegaba a comparar el monto.
     """
     if partida.price_paid is None or partida.incrementables is None:
         return None, None
@@ -270,7 +283,14 @@ def _valor_esperado(partida: PedimentoItem) -> tuple[Decimal | None, str | None]
     if len(monedas) > 1:
         return None, None
     moneda = partida.price_paid_currency or partida.customs_value_currency
-    return partida.price_paid + partida.incrementables, moneda
+    valor = partida.price_paid + partida.incrementables
+    if moneda is None or moneda == "MXN":
+        return valor, moneda
+    tasa = tasa_vigente(session, on_date=fecha, currency=moneda)
+    if tasa is None:
+        return None, None
+    convertido = Money(amount=valor, currency=moneda).convert(to="MXN", rate=tasa)
+    return convertido.amount, convertido.currency
 
 
 def _dta(valor: Decimal, peticion: ReviewRequest) -> Decimal | None:
@@ -319,7 +339,7 @@ def _espejo_documental(
 ) -> dict[str, Any]:
     """Lo que se puede esperar SIN clasificar. Sale del documento, no del motor."""
     pais = _pais_del_proveedor(session, partida)
-    valor, moneda = _valor_esperado(partida)
+    valor, moneda = _valor_esperado(session, partida, fecha)
     igi, iva = _fiscal_esperado(partida, fecha, catalogo, peticion)
     # `None` y `False` dicen cosas distintas: sin catálogo cargado no se puede
     # afirmar que una unidad no exista, y acusar ahí sería culpar al pedimento
