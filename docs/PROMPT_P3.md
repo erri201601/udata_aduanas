@@ -101,11 +101,29 @@ LAS DOS COSAS QUE ESTA PANTALLA TIENE QUE HACER BIEN, Y LAS DOS YA FALLARON
 
       «El motor tuvo 73121008 como candidata y no la eligió. ¿Seguro?»
 
-    Sácalo de datos estructurados: `candidate_codes` del último paso de la
-    traza y `resolved_code`. NO PARSEES reasoning_summary: es texto para
-    personas y cambia de redacción. Si para dar el MOTIVO del descarte
-    necesitas un campo estructurado en la traza, pídemelo: es un cambio del
-    contrato del motor y lo hago yo.
+    Sácalo de `descartadas`, que cada paso de `rgi_trace` trae desde el
+    6-oct-2026 (las trazas anteriores no lo traen: trátalo como lista vacía):
+
+      "descartadas": [{"code": "73121008",
+                       "motivo": "la ficha dice «6x36», que no es «constituidos por 7 alambres»",
+                       "por": "RESPUESTA_FIRMADA"}]
+
+    · `code` va al nivel en que se descartó —partida, subpartida o fracción—:
+      compara por PREFIJO. Una fracción tecleada que empieza por una partida
+      descartada también está descartada.
+    · `por` es uno de NOTA_LEGAL, MATERIA, CONTRADICCION, RESPUESTA_FIRMADA.
+      Con RESPUESTA_FIRMADA dilo: «una respuesta firmada dice que…».
+    · Junta los `descartadas` de TODOS los pasos de la decisión vigente.
+    · NO uses `candidate_codes` ni `classification_candidates.rejected_reason`:
+      en una abstención todas las viables cuentan como «no elegidas» y el
+      aviso saltaría en cada veredicto; y `rejected_reason` es el resumen del
+      paso copiado, que en una abstención marca todo como rechazado.
+    · Si el motor resolvió X y teclean otra que no está descartada, es un
+      CORRIGE legítimo: basta con «el motor resolvió X».
+
+    Medido en el corpus (181 productos): 298 descartes en 150 productos, y en
+    ninguno la fracción elegida figura como descartada. En 004-011 el aviso
+    habría saltado con el motivo de arriba.
 
     Es un aviso, no un bloqueo. La persona manda en el criterio.
 

@@ -9,13 +9,62 @@ cuánta confianza — sin volver a ejecutar nada.
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from core.rgi_engine.context import TariffCandidate
 from core.rgi_engine.pregunta import Pregunta
 from core.rgi_engine.states import TERMINAL, RGIStatus
+
+#: De dónde sale un descarte. Cuatro valores y no texto libre: quien lea la
+#: traza —una persona o una pantalla— tiene que poder distinguir un descarte
+#: que se sostiene en el texto legal de uno que se sostiene en la firma de un
+#: clasificador, sin parsear la frase.
+PorQueSeDescarto = Literal["NOTA_LEGAL", "MATERIA", "CONTRADICCION", "RESPUESTA_FIRMADA"]
+
+
+class Descarte(BaseModel):
+    """Una posición que el motor tiene por IMPOSIBLE para esta mercancía, y por qué.
+
+    POR QUÉ ES UN CAMPO Y NO UNA FRASE
+
+    El motor ya decía «descartadas: 73121008: la ficha dice «6x36», que no es
+    «constituidos por 7 alambres»», pero sólo dentro de `reasoning_summary`,
+    que es texto para personas y cambia de redacción. Ninguna máquina podía
+    leerlo sin parsear prosa, así que nadie lo leía.
+
+    Y hacía falta. El 6-oct un clasificador dio un veredicto con 73121008 en
+    «fracción correcta» mientras su propia nota explicaba que esa posición era
+    incompatible: estaba describiendo el error del motor y pegó el código de
+    ahí. La decisión vigente en ese momento ya la había descartado con ese
+    mismo motivo. Un aviso lo habría parado, y el aviso necesita esto.
+
+    LO QUE NO ES UN DESCARTE
+
+    Que una regla PREFIERA otra posición —la RGI 3 a) por especificidad, un
+    desempate— no hace imposible a la perdedora: un clasificador puede elegirla
+    con razón. Aquí sólo entra lo que el motor afirma que la mercancía NO
+    puede ser: una nota legal que la excluye, una materia que la tarifa opone,
+    un texto que la ficha contradice o una respuesta firmada.
+
+    Tampoco las candidatas de una abstención: si el motor no eligió entre tres
+    fracciones viables, ninguna está descartada, y un aviso sobre ellas
+    saltaría en cada veredicto hasta que nadie lo leyera.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    code: str
+    """Al nivel en que se descartó: partida (4), subpartida (6) o fracción (8).
+    Una fracción tecleada que EMPIEZA por el código de una partida descartada
+    también está descartada."""
+
+    motivo: str
+    """Por qué, citable tal cual: «la ficha dice «6x36», que no es
+    «constituidos por 7 alambres»»."""
+
+    por: PorQueSeDescarto
 
 
 class RGIResult(BaseModel):
@@ -33,6 +82,9 @@ class RGIResult(BaseModel):
     source_ids: tuple[Any, ...] = ()
     confidence: Decimal | None = None
     missing_information: tuple[str, ...] = ()
+
+    descartadas: tuple[Descarte, ...] = ()
+    """Lo que esta regla tiene por imposible, con el motivo. Ver `Descarte`."""
 
     preguntas: tuple[Pregunta, ...] = ()
     """Lo que haría falta saber para desatascar, en forma de sí o no.
