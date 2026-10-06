@@ -22,7 +22,7 @@ from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Any, Protocol
 
 from core.rgi_engine.pregunta import formular
-from core.rgi_engine.results import RGIResult
+from core.rgi_engine.results import Descarte, PorQueSeDescarto, RGIResult
 from core.rgi_engine.states import RGIStatus
 
 if TYPE_CHECKING:
@@ -99,6 +99,9 @@ class RGI1:
         # partida aunque el texto encaje.
         sobreviven: list[TariffCandidate] = []
         excluidas: list[str] = []
+        # Lo mismo que `excluidas`, estructurado. El texto de arriba es para
+        # personas; esto es lo que una pantalla puede leer sin parsearlo.
+        descartes: list[Descarte] = []
         # La materia de la ficha descarta igual que una nota: una mercancía que
         # consta de acero no puede clasificarse en «las demás manufacturas de
         # plástico». Sin esto, la tubería de acero del corpus llegaba a la RGI
@@ -110,12 +113,13 @@ class RGI1:
             nota = notes.excludes(on_date=context.operation_date, heading=c.heading, terms=terminos)
             if nota:
                 excluidas.append(f"{c.code} excluida por nota: {nota}")
+                descartes.append(Descarte(code=c.code, motivo=nota, por="NOTA_LEGAL"))
                 continue
             materia = _material_contradice(c, familia)
             if materia:
-                excluidas.append(
-                    f"{c.code} descartada: su texto es de {materia} y la ficha declara {familia}"
-                )
+                motivo = f"su texto es de {materia} y la ficha declara {familia}"
+                excluidas.append(f"{c.code} descartada: {motivo}")
+                descartes.append(Descarte(code=c.code, motivo=motivo, por="MATERIA"))
                 continue
 
             # LA NEGACIÓN DEL TEXTO TAMBIÉN DESCARTA AQUÍ, NO SÓLO EN LA RGI 6
@@ -131,6 +135,7 @@ class RGI1:
             negacion = _contradice(c, afirmado) or _la_ficha_la_niega(c, negado)
             if negacion:
                 excluidas.append(f"{c.code} descartada: {negacion}")
+                descartes.append(Descarte(code=c.code, motivo=negacion, por="CONTRADICCION"))
                 continue
 
             # Y EL VOCABULARIO FIRMADO TAMBIÉN DESCARTA AQUÍ (Persona 1, 5-oct)
@@ -151,6 +156,7 @@ class RGI1:
             aprendido = _lo_aprendido_la_descarta(c, context)
             if aprendido:
                 excluidas.append(f"{c.code} descartada: {aprendido}")
+                descartes.append(Descarte(code=c.code, motivo=aprendido, por="RESPUESTA_FIRMADA"))
                 continue
             sobreviven.append(c)
 
@@ -166,6 +172,7 @@ class RGI1:
                     f"Ninguna partida vigente al {context.operation_date.isoformat()} "
                     f"comprende la mercancía con los términos {terminos}." + razon_exclusiones
                 ),
+                descartadas=tuple(descartes),
                 missing_information=context.missing_facts() or ("descripción más precisa",),
             )
 
@@ -181,6 +188,7 @@ class RGI1:
                     f"«{c.text}». Ninguna nota de sección o capítulo la excluye."
                     + razon_exclusiones
                 ),
+                descartadas=tuple(descartes),
                 source_ids=fuentes,
                 confidence=_confianza(context),
             )
@@ -195,6 +203,7 @@ class RGI1:
                 f"({', '.join(c.code for c in sobreviven)}). "
                 f"La RGI 1 no la resuelve; se continúa." + razon_exclusiones
             ),
+            descartadas=tuple(descartes),
             source_ids=fuentes,
         )
 
@@ -701,6 +710,18 @@ class RGI6:
         # el fundamento no lo pone el motor: lo pone el texto legal de al lado.
         posibles = _la_materia_de_una_hermana_descarta(subs, context)
         descartadas_por_materia = [c for c in subs if c not in posibles]
+        declarada = ", ".join(sorted(_materias_declaradas(context)))
+        de_subpartida: list[Descarte] = [
+            Descarte(
+                code=c.code,
+                motivo=(
+                    f"su texto es de {', '.join(sorted(_materias_literales(c.text)))} "
+                    f"y la ficha declara {declarada}"
+                ),
+                por="MATERIA",
+            )
+            for c in descartadas_por_materia
+        ]
         por_materia = (
             "  Descartadas por materia: "
             + " · ".join(f"{c.code} («{c.text}»)" for c in descartadas_por_materia)
@@ -730,6 +751,12 @@ class RGI6:
         # supervivientes es lo que convertiría una negativa honesta en una
         # fracción equivocada.
         aprendidos = {c.code: m for c in posibles if (m := _lo_aprendido_la_descarta(c, context))}
+        # Se registran aunque no resuelvan (más abajo, sólo resuelven si queda
+        # una): que el motor no se apoye en ellas para ELEGIR no las hace
+        # posibles. Una respuesta firmada dice que la mercancía no es eso.
+        de_subpartida += [
+            Descarte(code=c, motivo=m, por="RESPUESTA_FIRMADA") for c, m in aprendidos.items()
+        ]
         por_respuesta = (
             "  Descartadas por respuesta firmada: "
             + " · ".join(f"{c} ({m})" for c, m in aprendidos.items())
@@ -755,6 +782,7 @@ class RGI6:
                     f"({', '.join(s.code for s in subs)}) y ninguna es más específica. "
                     f"El motor no elige entre ellas." + por_materia + por_respuesta
                 ),
+                descartadas=tuple(de_subpartida),
                 missing_information=("desempate de subpartida por un clasificador",),
                 # La pregunta concreta, si hay una corta que lo resuelva. No
                 # sustituye al aviso de arriba: lo acota. Sobre las posibles, no
@@ -791,6 +819,7 @@ class RGI6:
                     f"Subpartida {elegida.code} («{elegida.text}»). No hay fracciones "
                     f"cargadas por debajo." + por_materia + por_respuesta
                 ),
+                descartadas=tuple(de_subpartida),
                 source_ids=tuple(c.source_id for c in (elegida,) if c.source_id is not None),
                 confidence=_confianza(context),
             )
@@ -815,15 +844,13 @@ class RGI6:
         # negativa honesta en una fracción equivocada no es una mejora.
         afirmado = _lo_que_la_ficha_afirma(context)
         negado = _lo_que_la_ficha_niega(context)
-        descartes = {
-            c.code: m
-            for c in fracciones
-            if (
-                m := _contradice(c, afirmado)
-                or _la_ficha_la_niega(c, negado)
-                or _lo_aprendido_la_descarta(c, context)
-            )
-        }
+        de_fraccion: list[Descarte] = []
+        for c in fracciones:
+            if (imposible := _por_que_es_imposible(c, afirmado, negado, context)) is not None:
+                motivo, por = imposible
+                de_fraccion.append(Descarte(code=c.code, motivo=motivo, por=por))
+        descartes = {d.code: d.motivo for d in de_fraccion}
+        descartadas = (*de_subpartida, *de_fraccion)
         vivas = [c for c in fracciones if c.code not in descartes]
 
         # UN RESIDUAL PURO NO SOBREVIVE A COSTA DE LA ESPECÍFICA (5-oct)
@@ -908,6 +935,7 @@ class RGI6:
                     + por_materia
                     + por_respuesta
                 ),
+                descartadas=descartadas,
                 source_ids=tuple(
                     c.source_id for c in (partida, elegida, unica) if c.source_id is not None
                 ),
@@ -934,6 +962,7 @@ class RGI6:
                         else ""
                     )
                 ),
+                descartadas=descartadas,
                 missing_information=("desempate de fracción por un clasificador",),
                 preguntas=tuple(formular(context, list(vivas or fracciones))),
             )
@@ -947,6 +976,7 @@ class RGI6:
                 f"Partida {partida.heading} → subpartida {elegida.code} → "
                 f"fracción {fraccion.code} («{fraccion.text}»)." + por_materia + por_respuesta
             ),
+            descartadas=descartadas,
             source_ids=tuple(
                 c.source_id for c in (partida, elegida, fraccion) if c.source_id is not None
             ),
@@ -955,6 +985,26 @@ class RGI6:
 
 
 # ── Auxiliares ───────────────────────────────────────────────────────────────
+
+
+def _por_que_es_imposible(
+    candidata: TariffCandidate,
+    afirmado: set[str],
+    negado: dict[str, set[str]],
+    context: ClassificationContext,
+) -> tuple[str, PorQueSeDescarto] | None:
+    """El motivo por el que esta fracción no puede ser, y de dónde sale.
+
+    Las mismas tres comprobaciones, en el mismo orden, que antes iban
+    encadenadas con `or` dentro del descarte de la RGI 6. Se separan sólo para
+    poder decir cuál de las tres lo descartó: las dos primeras se sostienen en
+    el texto legal, la tercera en la firma de un clasificador.
+    """
+    if motivo := _contradice(candidata, afirmado) or _la_ficha_la_niega(candidata, negado):
+        return motivo, "CONTRADICCION"
+    if motivo := _lo_aprendido_la_descarta(candidata, context):
+        return motivo, "RESPUESTA_FIRMADA"
+    return None
 
 
 #: Por debajo de esto una palabra no distingue nada: «de», «los», «para».
