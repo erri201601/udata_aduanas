@@ -29,6 +29,7 @@ def _fila(**kw: Any) -> Any:
         "declarada": "73121099",
         "propuesta": "73121005",
         "dictamen": None,
+        "sin_fundamento": False,
         "hubo_decision": True,
     }
     base.update(kw)

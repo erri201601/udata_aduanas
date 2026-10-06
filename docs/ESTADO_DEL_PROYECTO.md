@@ -520,15 +520,27 @@ Cerrado de punta a punta y **medido contra el corpus** (6-oct):
 
 ```
 clasificación   168 partidas con fracción fiable
-                contestó 70 · acertó 70 · falló 0
-                precisión 100.00 % · margen al 95 % ±2.60
-                cobertura 41.67 % — cuántas veces se atrevió a contestar
-                se abstuvo 98 — el §8.2 funcionando, no un error
+                  4 sin fundamento — un clasificador dijo que con esa ficha
+                    no se puede determinar; no se miden (#213)
+                164 medibles · contestó 98 · acertó 98 · falló 0
+                precisión 100.00 % · margen al 95 % ±1.89
+                cobertura 59.76 % — cuántas veces se atrevió a contestar
+                se abstuvo 66 — el §8.2 funcionando, no un error
+                verdad: dictamen 34 · declaración 64
 
 detección       TP 50 · FP 0 · FN 5 · TN 126
                 precisión 100.00 % · recall 90.91 % (±7.82) · F1 95.24
                 cobertura 49 de 55 partidas sucias señaladas por algo
 ```
+
+**La cobertura subió de 58.33 a 59.76 % sin que el motor contestara una más.**
+Lo que cambió es el denominador. Un `FALTA_INFORMACION` posterior no retiraba el
+dictamen anterior de la misma ficha: las mediciones lo saltaban y volvían a la
+fracción vieja. Con el cable PED_SIM_010-005 se veía claro: el clasificador
+escribió «no tengo fundamento suficiente para elegir 73121005 ni 73121099» y la
+medición seguía usando `73121099` como verdad. Ahora manda el último veredicto
+y, si no llega a una fracción, la partida no se mide. Salen cuatro, y en las
+cuatro el motor también se abstiene.
 
 **La precisión se mide sobre un ámbito que antes tenía un punto ciego** (#185).
 Se medía sólo sobre las 126 partidas limpias, bajo una premisa falsa: que toda
@@ -537,7 +549,7 @@ que 42 partidas quedaban fuera — y entre ellas estaba la peor respuesta del
 motor. El titular decía «100 %» y ese caso no contaba. Lo encontró un
 clasificador revisando a mano, no la medición.
 
-1 161 tests en verde prueban el motor contra los casos que escribimos nosotros.
+1 221 tests en verde prueban el motor contra los casos que escribimos nosotros.
 Van **cinco** fallos graves que pasaban todos sus tests y sólo aparecieron
 ejecutando contra datos reales o contra el criterio de una persona: la RGI 3 c)
 que resolvía sin pedir revisión, el reordenamiento que destruía el orden
@@ -725,7 +737,7 @@ rama suelta de `legal-chunks-legal-rule-id`.
 **Decidir cómo se elige la partida cuando la tarifa no nombra la mercancía.**
 
 Todo lo demás del camino crítico está cerrado y medido: el corpus cargado, el
-motor con precisión del 100 % sobre 168 partidas, el bucle de captura
+motor con precisión del 100 % sobre 98 contestadas de 164 medibles, el bucle de captura
 funcionando de punta a punta y 59 veredictos de un clasificador real dentro del
 sistema. Lo que queda es el techo de la cobertura, y es un techo de
 arquitectura, no de ajuste: está medido en el

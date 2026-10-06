@@ -224,21 +224,21 @@ def _fracciones_que_un_dictamen_contradice(
     if not con_producto:
         return set()
 
-    # La ficha vigente de cada producto, y el último veredicto humano de esa
-    # ficha que llegó a una fracción.
+    # La ficha vigente de cada producto, y el ÚLTIMO veredicto humano de esa
+    # ficha, llegue o no a una fracción.
+    #
+    # Antes se filtraba `fraction_code IS NOT NULL` aquí, y un
+    # `FALTA_INFORMACION` posterior no retiraba el dictamen anterior: la
+    # consulta lo saltaba. Si el último veredicto no tiene fracción, nadie
+    # respalda ya que la declaración esté mal, y el hallazgo vuelve a contar.
     dictamen = sa.select(
         ClassificationDecision.product_dna_id,
         ClassificationDecision.fraction_code,
         ClassificationDecision.created_at,
-    ).where(
-        ClassificationDecision.data_origin == "HUMAN_VALIDATED",
-        ClassificationDecision.fraction_code.isnot(None),
-    )
-    por_ficha: dict[uuid.UUID, tuple[Any, str]] = {}
+    ).where(ClassificationDecision.data_origin == "HUMAN_VALIDATED")
+    por_ficha: dict[uuid.UUID, tuple[Any, str | None]] = {}
     for dna_id, fraccion, cuando in session.execute(dictamen).all():
-        # `fraccion` ya viene filtrada a no nula en el SQL, pero la columna es
-        # `str | None` en el modelo y el tipo tiene que decirlo aquí también.
-        if dna_id is None or fraccion is None:
+        if dna_id is None:
             continue
         previo = por_ficha.get(dna_id)
         if previo is None or cuando > previo[0]:
@@ -261,7 +261,7 @@ def _fracciones_que_un_dictamen_contradice(
             continue
         dna_id = ficha_de.get(product_id)
         firmado = por_ficha.get(dna_id) if dna_id is not None else None
-        if firmado is None:
+        if firmado is None or firmado[1] is None:
             continue
         if firmado[1] != partidas[pid].declared_fraction_code:
             contradichas.add((str(pid), DETECTOR_DE_FRACCION))
