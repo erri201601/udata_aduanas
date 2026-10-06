@@ -568,6 +568,47 @@ class FractionNomRequirement(
     """El «Únicamente: …» íntegro. `None` = la NOM aplica a toda la fracción."""
 
 
+class ExchangeRate(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base):
+    """Tipo de cambio FIX publicado en el DOF (serie Banxico `SF43718`,
+    "Pesos por Dólar. FIX.") — el que exige el artículo 20 de la Ley del
+    Banco de México para solventar obligaciones en moneda extranjera
+    pagaderas en México, y el que usa un pedimento para convertir el valor
+    de una factura en dólares a pesos.
+
+    Sin esta tabla, `core/taxation/money.Money.convert()` nunca tenía de
+    dónde sacar la tasa, y `apps/api/routers/pedimentos.py::_valor_esperado`
+    comparaba el valor esperado (de la factura, en USD) contra el
+    declarado (en MXN) y SIEMPRE reportaba "divisa distinta" — nunca
+    comparaba el monto, para ninguna operación real del corpus (invoices
+    100% USD, pedimentos 100% MXN, verificado contra la base compartida).
+
+    VIGENCIA, IGUAL QUE CUALQUIER OTRA TABLA DE `regulatory` — y no una
+    fila por día suelta: el FIX publicado un viernes sigue vigente el
+    sábado, el domingo y cualquier día inhábil hasta que el DOF publique
+    el siguiente (la Ley no publica un valor para los días que la Bolsa no
+    opera). `valid_to = NULL` mientras sea el más reciente; se cierra a
+    `nueva_fecha - 1 día` al cargar el siguiente — mismo patrón exacto que
+    `_close_previous_fraction_versions`/`_close_previous_heading_versions`
+    (`ingestion.snice.load`), no una invención nueva.
+    """
+
+    __tablename__ = "exchange_rates"
+    __table_args__ = (
+        sa.UniqueConstraint("currency", "valid_from", name="uq_exchange_rates_currency_valid_from"),
+        sa.Index("ix_exchange_rates_vigencia", "currency", "valid_from", "valid_to"),
+        {"schema": _SCHEMA},
+    )
+
+    currency: Mapped[str] = mapped_column(sa.String(3), nullable=False)
+    """La divisa EXTRANJERA, p. ej. `"USD"` — nunca `"MXN"`. El tipo de
+    cambio siempre se expresa como pesos por 1 unidad de ésta (convención
+    de la propia serie de Banxico, "Pesos por Dólar")."""
+
+    rate: Mapped[Decimal] = mapped_column(sa.Numeric(18, 6), nullable=False)
+    """Pesos mexicanos por 1 unidad de `currency`. NUMERIC(18,6) — misma
+    precisión que `operational.pedimentos.exchange_rate` (§22 maestro)."""
+
+
 class RegulatoryEvent(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base):
     """Salida del DOF Regulatory Watcher: una publicación relevante y su alcance."""
 
