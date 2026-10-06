@@ -95,6 +95,9 @@ arreglado —nos pasaste la buena—, pero es fácil que vuelva a pasar.
 
 ## 2 · Por escrito, a Erick — cinco minutos
 
+Igual que mandaste la corrección de `PED_SIM_004-011`: en un mensaje, con el
+mismo formato. Erick nos lo pasa y lo registramos.
+
 Estas dos no tienen pantalla. Escríbelas y Erick nos las pasa; quedan
 registradas con tu nombre y con una nota que dice que las transcribimos
 nosotros.
@@ -110,13 +113,29 @@ Si es así, basta con una frase:
 > «Todos los cables de acero sin recubrimiento, construcción 6x36, Ø18 mm,
 > alma de acero, son `73121005` NICO `02`.»
 
-### b) Cinco fracciones de tu dictamen que no encontramos
+### b) Dos fracciones que no encontramos — en ocho partidas
 
-En tu dictamen de 49 casos hay cinco fracciones que **no existen** en la
-tarifa que tenemos cargada:
+En tu dictamen de 49 casos hay ocho partidas con una fracción que **no
+existe** en la tarifa que tenemos cargada. Y para una de las dos mercancías
+nos diste dos respuestas distintas en tus dos documentos:
 
-| Pusiste | Casos | En esa subpartida sólo existe |
-|---|---|---|
+**Tubería SAW helicoidal Ø1219 mm, espesor 16 mm** — seis partidas:
+`PED_SIM_009-012`, `015-002`, `006-009`, `012-007`, `009-008`, `006-005`.
+
+- En el **formulario** pusiste `73051999` NICO `01`. Existe, y es la que
+  tenemos registrada en tres de ellas.
+- En el **dictamen de 49 casos** pusiste `73051901`. No existe en la tarifa.
+
+**Tubería HFW longitudinal Ø508 mm, espesor 20 mm** — dos partidas:
+`PED_SIM_010-002`, `010-006`.
+
+- Pusiste `73051201`. No existe; en la subpartida 730512 sólo está cargada
+  `73051291`.
+
+Puede que la tarifa que tenemos esté incompleta, o puede que sean otras.
+¿Cuáles son las correctas, y con qué NICO?
+
+---|---|---|
 | `73051901` | 3 | `73051999` |
 | `73051201` | 2 | `73051291` |
 
