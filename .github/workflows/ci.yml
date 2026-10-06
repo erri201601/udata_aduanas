@@ -145,6 +145,27 @@ jobs:
           CREATE SCHEMA IF NOT EXISTS raw;
           SQL
 
+      - name: Que los tests de integración vean esta base
+        # LOS TESTS DE INTEGRACIÓN NO CORRÍAN EN EL CI, NINGUNO (6-oct)
+        #
+        # `tests/conftest.py::_isolated_env` borra DATABASE_URL y
+        # POSTGRES_PASSWORD del entorno en cada test, a propósito: un test unit
+        # no debe tocar infraestructura. Las 10 copias de `pg_session` deshacen
+        # ese aislamiento leyendo `.env`, que aquí no existía. Sin contraseña
+        # no conectaban, y `pytest.skip` lo convertía en un verde: los 97 tests
+        # de integración salían «s» y el Postgres de arriba no lo usaba nadie.
+        #
+        # El `.env` sólo vive en este runner y lleva la credencial de CI que ya
+        # está escrita en este fichero. Los tests unit no lo leen: el aislamiento
+        # deja ADUANERO_ENV_FILE vacío.
+        #
+        # Y el esquema: los tests de integración dan por hecho `alembic upgrade
+        # head` (lo dice `test_canonical_model.py`). El job de migraciones lo
+        # aplica en SU base; ésta estaba vacía.
+        run: |
+          printf 'DATABASE_URL=%s\n' "$DATABASE_URL" > .env
+          alembic upgrade head
+
       - name: pytest
         run: pytest -v --cov=core --cov=apps --cov-report=term-missing
 
