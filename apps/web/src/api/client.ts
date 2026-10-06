@@ -244,8 +244,19 @@ export async function fetchDashboard(signal?: AbortSignal): Promise<Dashboard> {
 
 
 /** Decisiones esperando a una persona, de la más antigua a la más reciente. */
+/** Cuántos casos pide la bandeja: el máximo que acepta la API (`LIMITE_MAXIMO`).
+ *
+ * LA BANDEJA ESCONDÍA CASOS SIN DECIRLO
+ *
+ * Se pedía `/review` sin límite y el servidor devuelve 50 por omisión. Con 91
+ * casos pendientes (6-oct), la pantalla enseñaba los 50 más antiguos y nada
+ * decía que faltaban 41: nueve de los quince fregaderos que el clasificador
+ * tenía que confirmar caían después del 50 y no los habría visto nunca.
+ */
+export const BANDEJA_MAXIMO = 200
+
 export async function fetchPendientes(signal?: AbortSignal): Promise<PendienteRead[]> {
-  return pedir<PendienteRead[]>('/review', signal)
+  return pedir<PendienteRead[]>(`/review?limit=${BANDEJA_MAXIMO}`, signal)
 }
 
 /**

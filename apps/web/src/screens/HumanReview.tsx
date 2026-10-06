@@ -32,7 +32,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 
-import { fetchPendientes, revisarDecision } from '../api/client'
+import { BANDEJA_MAXIMO, fetchPendientes, revisarDecision } from '../api/client'
 import type { PendienteRead } from '../api/client'
 import { ContestarPregunta } from '../components/ContestarPregunta'
 import { SyntheticBanner } from '../components/DataOriginBadge'
@@ -175,6 +175,16 @@ export function HumanReview() {
           <h1>Revisión</h1>
           <p className="pantalla__sub">
             Decisiones que el motor no pudo sostener solo
+            {!cargando && (
+              <>
+                {' · '}
+                {/* El total siempre a la vista: una lista que se corta en
+                    silencio hace creer que no hay nada más. Si se llega al
+                    máximo que da la API, se dice que puede haber más. */}
+                {restantes.length} pendiente{restantes.length === 1 ? '' : 's'}
+                {pendientes.length >= BANDEJA_MAXIMO && ' (puede haber más)'}
+              </>
+            )}
           </p>
         </div>
         <button
