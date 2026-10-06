@@ -258,10 +258,21 @@ class Reporte:
     condiciones_sembradas_no_contadas: int = 0
     """Hallazgos ciertos sobre una partida limpia que NO se cuentan como FP.
 
-    El corpus recorta la ficha técnica de 21 partidas para que su clasificación
-    no sea evaluable, y siembra como evento sólo 6 de ellas. El detector de
-    ficha incompleta acierta en las 21: la ficha está recortada de verdad.
-    Contar las otras 15 como falsos positivos mediría el corpus, no el motor.
+    Son CIERTOS y nadie los pidió: ni aciertan —no hay evento que medir— ni
+    fallan. Hoy llegan por dos caminos distintos, y quien lea el número tiene
+    que saber que son dos:
+
+    FICHA RECORTADA A PROPÓSITO. El corpus recorta la ficha técnica de 21
+    partidas para que su clasificación no sea evaluable, y siembra como evento
+    sólo 6. El detector de ficha incompleta acierta en las 21: la ficha está
+    recortada de verdad. Contar las otras 15 como falsos positivos mediría el
+    corpus, no el motor.
+
+    DECLARACIÓN CONTRADICHA POR UN DICTAMEN. Una partida sin evento sembrado
+    no está verificada: su fracción la escribió el generador sintético. Cuando
+    un clasificador firma que es otra, el FRACTION_MISMATCH del Espejo es
+    cierto —es exactamente su trabajo— y contarlo como falso positivo
+    castigaría al motor por acertar.
 
     Una partida así sigue siendo control limpio para TODOS los demás
     detectores: lo que se excluye es el par (partida, tipo de hallazgo), no la

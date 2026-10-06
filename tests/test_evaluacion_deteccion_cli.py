@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 from apps.evaluacion.deteccion_26 import Corpus, _resolver, _tabla
+from core.evaluation.deteccion import Hallazgo, evaluar
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -188,3 +189,56 @@ def test_la_metrica_solo_mira_la_revision_vigente() -> None:
     assert "shadow_reviews" in sql, "la consulta no correlaciona con las revisiones"
     assert "shadow_review_id IS NULL" in sql, "los hallazgos sin revisión se perderían"
     assert "ORDER BY" in sql and "created_at DESC" in sql, "no toma la MÁS RECIENTE"
+
+
+# ── Una partida no es limpia porque el corpus no le sembrara nada (6-oct) ──
+
+
+def test_una_declaracion_que_un_dictamen_contradice_no_cuenta_como_falso_positivo() -> None:
+    """EL ESPEJO ACERTÓ Y LA MÉTRICA LO LLAMÓ ERROR, DIEZ VECES.
+
+    «Limpia» se definía como «sin evento sembrado», y eso daba por verificada
+    una fracción que escribió el generador sintético. Un clasificador contestó
+    el 6-oct que un cable 6x36 no cumple «constituidos por 7 alambres», el
+    motor pasó a proponer `73121005` donde el corpus declara `73121099`, y el
+    Espejo levantó diez FRACTION_MISMATCH. Cuatro llevaban el veredicto
+    firmado de ese mismo clasificador diciendo `73121005`.
+
+    Señalar una declaración equivocada es exactamente el trabajo del Espejo.
+    Es CIERTO y nadie lo pidió: ni acierto ni error, igual que las fichas que
+    el corpus recorta a propósito.
+    """
+    hallazgos = [Hallazgo(partida_id="p1", finding_type="FRACTION_MISMATCH")]
+
+    sin_la_exclusion = evaluar([], hallazgos, partidas=["p1"])
+    assert sin_la_exclusion.agregado.fp == 1, "sin la exclusión era un falso positivo"
+
+    con_la_exclusion = evaluar(
+        [],
+        hallazgos,
+        partidas=["p1"],
+        condiciones_sembradas=[("p1", "FRACTION_MISMATCH")],
+    )
+
+    assert con_la_exclusion.agregado.fp == 0
+    assert con_la_exclusion.condiciones_sembradas_no_contadas == 1
+
+
+def test_la_partida_sigue_siendo_control_limpio_para_los_demas_detectores() -> None:
+    """Se excluye el par (partida, tipo), no la partida.
+
+    Un dictamen que contradice la FRACCIÓN no dice nada del origen ni del
+    valor: si el Espejo se equivoca ahí, sigue siendo un falso positivo.
+    """
+    r = evaluar(
+        [],
+        [
+            Hallazgo(partida_id="p1", finding_type="FRACTION_MISMATCH"),
+            Hallazgo(partida_id="p1", finding_type="ORIGIN_MISMATCH"),
+        ],
+        partidas=["p1"],
+        condiciones_sembradas=[("p1", "FRACTION_MISMATCH")],
+    )
+
+    assert r.agregado.fp == 1
+    assert r.condiciones_sembradas_no_contadas == 1

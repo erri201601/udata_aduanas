@@ -63,6 +63,7 @@ from core.evaluation.deteccion import (
     evaluar,
 )
 from database.models import (
+    ClassificationDecision,
     GroundTruthRecord,
     Pedimento,
     PedimentoItem,
@@ -88,6 +89,7 @@ log = structlog.stdlib.get_logger("apps.evaluacion.deteccion")
 #: El hallazgo que emite el detector de ficha incompleta. Se toma del mapeo del
 #: §26 en vez de reescribir la cadena: si allí cambia, aquí no se desincroniza.
 DETECTOR_DE_FICHA: Final = DETECTOR_POR_ERROR["MISSING_TECHNICAL_FIELD"]
+DETECTOR_DE_FRACCION: Final = DETECTOR_POR_ERROR["WRONG_FRACTION"]
 
 
 def _subtipo_nico(session: Session, partida: PedimentoItem, operacion: date | None) -> str:
@@ -183,6 +185,89 @@ def _fichas_recortadas_a_proposito(
     }
 
 
+def _fracciones_que_un_dictamen_contradice(
+    session: Session, partidas: Mapping[uuid.UUID, PedimentoItem], sembradas: set[uuid.UUID]
+) -> set[tuple[str, str]]:
+    """Pares (partida, FRACTION_MISMATCH) que no se cuentan como falso positivo.
+
+    UNA PARTIDA NO ES LIMPIA PORQUE EL CORPUS NO LE SEMBRARA NADA
+
+    «Limpia» se definía como «sin evento sembrado», y eso daba por verificada
+    una fracción que escribió el generador sintético. Cuando el motor señala
+    que esa declaración está mal, la métrica lo contaba como falso positivo.
+
+    Pasó el 6 de octubre, y fueron diez de golpe. Un clasificador contestó en
+    la consola que un cable de construcción 6x36 no cumple «constituidos por 7
+    alambres»; el motor pasó a proponer `73121005` donde el corpus declara
+    `73121099`, y el Espejo levantó diez FRACTION_MISMATCH. Cuatro de esas diez
+    tienen el veredicto firmado de ese mismo clasificador diciendo `73121005`.
+
+    Es decir: el Espejo acertó. Señaló una declaración equivocada, que es
+    exactamente su trabajo, y la métrica lo llamó error.
+
+    NI ACIERTO NI ERROR: CIERTO Y NO CONTADO
+
+    No entra como acierto porque nadie lo sembró —no hay evento que medir— y
+    no entra como falso positivo porque es verdad. Es el mismo trato que las
+    fichas recortadas a propósito, y por la misma razón.
+
+    Se lee del veredicto humano VIGENTE y se empareja por `product_dna_id`: el
+    criterio de un clasificador es sobre la MERCANCÍA, así que vale para la
+    misma ficha declarada en otro pedimento. El día que llegue otro dictamen,
+    esto lo sigue sin que nadie lo actualice.
+    """
+    con_producto = {
+        pid: partida.product_id
+        for pid, partida in partidas.items()
+        if partida.product_id is not None and partida.declared_fraction_code is not None
+    }
+    if not con_producto:
+        return set()
+
+    # La ficha vigente de cada producto, y el último veredicto humano de esa
+    # ficha que llegó a una fracción.
+    dictamen = sa.select(
+        ClassificationDecision.product_dna_id,
+        ClassificationDecision.fraction_code,
+        ClassificationDecision.created_at,
+    ).where(
+        ClassificationDecision.data_origin == "HUMAN_VALIDATED",
+        ClassificationDecision.fraction_code.isnot(None),
+    )
+    por_ficha: dict[uuid.UUID, tuple[Any, str]] = {}
+    for dna_id, fraccion, cuando in session.execute(dictamen).all():
+        # `fraccion` ya viene filtrada a no nula en el SQL, pero la columna es
+        # `str | None` en el modelo y el tipo tiene que decirlo aquí también.
+        if dna_id is None or fraccion is None:
+            continue
+        previo = por_ficha.get(dna_id)
+        if previo is None or cuando > previo[0]:
+            por_ficha[dna_id] = (cuando, fraccion)
+
+    ficha_de: dict[uuid.UUID, uuid.UUID] = {
+        fila.product_id: fila.id
+        for fila in session.execute(
+            sa.select(ProductDna.product_id, ProductDna.id)
+            .where(ProductDna.product_id.in_(set(con_producto.values())))
+            .where(ProductDna.is_current.is_(True))
+        ).all()
+    }
+
+    contradichas: set[tuple[str, str]] = set()
+    for pid, product_id in con_producto.items():
+        if pid in sembradas:
+            # El corpus ya la sembró: su hallazgo es un acierto, no un
+            # «cierto y no contado».
+            continue
+        dna_id = ficha_de.get(product_id)
+        firmado = por_ficha.get(dna_id) if dna_id is not None else None
+        if firmado is None:
+            continue
+        if firmado[1] != partidas[pid].declared_fraction_code:
+            contradichas.add((str(pid), DETECTOR_DE_FRACCION))
+    return contradichas
+
+
 def consulta_de_hallazgos() -> sa.Select[Any]:
     """Los hallazgos que representan al motor de HOY.
 
@@ -276,7 +361,14 @@ def recolectar(
         if e.error_type == "MISSING_TECHNICAL_FIELD" and e.pedimento_item_id is not None
     }
     recortadas = _fichas_recortadas_a_proposito(session, partidas, sembradas)
-    return eventos, hallazgos, [str(i) for i in partidas], recortadas
+
+    sembradas_de_fraccion = {
+        e.pedimento_item_id
+        for e in session.scalars(consulta).all()
+        if e.error_type == "WRONG_FRACTION" and e.pedimento_item_id is not None
+    }
+    contradichas = _fracciones_que_un_dictamen_contradice(session, partidas, sembradas_de_fraccion)
+    return eventos, hallazgos, [str(i) for i in partidas], recortadas | contradichas
 
 
 def medir(session: Session, *, escenario: uuid.UUID | None = None) -> Reporte:
@@ -323,7 +415,8 @@ def informe(r: Reporte) -> str:
         f"FALSOS POSITIVOS  {a.fp} sobre {r.partidas_limpias} partidas limpias "
         f"({r.tasa_falsos_positivos} %)",
         f"  de ellos, revisión de origen: {r.falsos_positivos_de_revision}",
-        f"  hallazgos ciertos no contados (ficha recortada por el corpus): "
+        f"  ciertos y no contados (ficha recortada, o declaración que un dictamen "
+        f"contradice): "
         f"{r.condiciones_sembradas_no_contadas}",
         f"  hallazgos fuera de su anomalía: {r.hallazgos_fuera_de_su_anomalia}",
         "",
