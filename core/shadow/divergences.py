@@ -45,6 +45,18 @@ class DivergenceType(StrEnum):
     Subvaluar es de las infracciones más perseguidas.
     """
 
+    EXCHANGE_RATE_MISMATCH = "EXCHANGE_RATE_MISMATCH"
+    """El tipo de cambio declarado en el pedimento no es el FIX vigente.
+
+    Cambia el valor en aduana convertido a MXN, y con él el IGI y el IVA —
+    mismo tipo de consecuencia que `VALUE_MISMATCH`. La fecha de publicación
+    que corresponde a la fecha de operación es, por ahora,
+    `NEEDS_VALIDATION`: no hay una fuente almacenada (Ley Aduanera/CFF) que
+    diga si aplica la del día de la operación, la del día anterior al pago,
+    o alguna otra regla — se usa `operation_date` por continuidad con
+    `_valor_esperado` (Persona 2, 6-oct-2026), no porque esté verificado.
+    """
+
     IGI_RATE_MISMATCH = "IGI_RATE_MISMATCH"
     """El IGI declarado no es el que sale de aplicar la tarifa a esa fracción.
 
@@ -96,6 +108,8 @@ DEFAULT_SEVERITY: Final[dict[DivergenceType, str]] = {
     DivergenceType.FRACTION_MISMATCH: "CRITICAL",
     # Subvaluación: de las infracciones más perseguidas.
     DivergenceType.VALUE_MISMATCH: "CRITICAL",
+    # Cambia el valor en aduana convertido, igual que una subvaluación.
+    DivergenceType.EXCHANGE_RATE_MISMATCH: "CRITICAL",
     # Detiene la mercancía en el punto de entrada.
     DivergenceType.MISSING_NOM: "HIGH",
     # Puede cambiar la preferencia arancelaria.

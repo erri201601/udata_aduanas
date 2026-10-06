@@ -46,7 +46,7 @@ def _partida(**kw: Any) -> PedimentoItem:
 
 
 def test_la_partida_declarada_se_copia_tal_cual() -> None:
-    d = _declarada(_partida())
+    d = _declarada(_partida(), exchange_rate=None)
 
     assert d.fraction_code == "85285900"
     assert d.applied_nom_codes == ("NOM-019-SCFI",)
@@ -54,7 +54,7 @@ def test_la_partida_declarada_se_copia_tal_cual() -> None:
 
 
 def test_una_partida_sin_nom_declaradas_no_falla() -> None:
-    assert _declarada(_partida(applied_nom_codes=None)).applied_nom_codes == ()
+    assert _declarada(_partida(applied_nom_codes=None), exchange_rate=None).applied_nom_codes == ()
 
 
 # ── Sin espejo no hay comparación ────────────────────────────────────────────

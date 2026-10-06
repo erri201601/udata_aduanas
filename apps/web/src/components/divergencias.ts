@@ -47,6 +47,10 @@ export const DIVERGENCIAS: Record<string, Divergencia> = {
     etiqueta: 'Valor en aduana',
     explica: 'El valor declarado no cuadra con precio pagado más incrementables.',
   },
+  EXCHANGE_RATE_MISMATCH: {
+    etiqueta: 'Tipo de cambio',
+    explica: 'El tipo de cambio declarado no es el FIX vigente para la fecha de operación.',
+  },
   IGI_RATE_MISMATCH: {
     etiqueta: 'IGI',
     explica: 'El IGI declarado no corresponde a la tarifa de la fracción declarada.',

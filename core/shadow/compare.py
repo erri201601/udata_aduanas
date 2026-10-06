@@ -254,6 +254,26 @@ def compare_item(declared: DeclaredItem, expected: ExpectedItem) -> list[Diverge
                 f"Falta el identificador {ident} que exige la operación.",
             )
 
+    # ── Tipo de cambio ───────────────────────────────────────────────────────
+    # El mismo valor se repite en cada línea del pedimento (es del documento,
+    # no de la partida) — ver docstring de `DeclaredItem.exchange_rate`.
+    if expected.exchange_rate is not None and declared.exchange_rate is not None:
+        diferencia = abs(declared.exchange_rate - expected.exchange_rate)
+        relativa = diferencia / expected.exchange_rate if expected.exchange_rate else Decimal("0")
+        if relativa > VALUE_TOLERANCE:
+            emitir(
+                DivergenceType.EXCHANGE_RATE_MISMATCH,
+                "exchange_rate",
+                str(declared.exchange_rate),
+                str(expected.exchange_rate),
+                (
+                    f"El tipo de cambio FIX para la fecha de operación es "
+                    f"{expected.exchange_rate} y se declaró {declared.exchange_rate} "
+                    f"— diferencia de {relativa:.1%}. Cambia el valor en aduana "
+                    "convertido a MXN y, con él, el IGI y el IVA."
+                ),
+            )
+
     # ── Valor en aduana ──────────────────────────────────────────────────────
     if expected.customs_value is not None and declared.customs_value is not None:
         if declared.customs_value_currency != expected.customs_value_currency:
@@ -313,6 +333,7 @@ def _depende_de_clasificar(divergencia: Divergence, expected: ExpectedItem) -> b
 _COMPROBACIONES: Final[tuple[tuple[str, str], ...]] = (
     ("fracción arancelaria", "fraction_code"),
     ("NICO", "nico"),
+    ("tipo de cambio", "exchange_rate"),
     ("valor en aduana", "customs_value"),
     ("impuesto general de importación", "igi_amount"),
     ("IVA", "vat_amount"),
@@ -369,6 +390,12 @@ def _lagunas(expected: ExpectedItem, declared: DeclaredItem | None = None) -> li
     distinguirlas (§36).
     """
     razones: list[str] = []
+    if expected.exchange_rate is None and declared is not None and declared.exchange_rate:
+        razones.append(
+            "no se pudo comprobar el tipo de cambio: no hay tasa FIX cargada "
+            "para la fecha de operación y la divisa de la factura, o el "
+            "pedimento no declara una divisa distinta de MXN que convertir"
+        )
     if expected.customs_value is None:
         razones.append(
             "no consta el precio pagado ni los incrementables de la partida, "

@@ -148,6 +148,43 @@ def test_valores_en_divisas_distintas_no_se_restan() -> None:
     assert d.field == "customs_value_currency"
 
 
+# ── Tipo de cambio ────────────────────────────────────────────────────────
+
+
+def test_tipo_de_cambio_distinto_es_critico() -> None:
+    """Cambia el valor en aduana convertido, igual que una subvaluación."""
+    r = compare(
+        [declarado(exchange_rate=Decimal("17.0000"))],
+        [esperado(exchange_rate=Decimal("20.0000"))],
+    )
+
+    d = next(x for x in r.divergences if x.kind is DivergenceType.EXCHANGE_RATE_MISMATCH)
+    assert d.severity == "CRITICAL"
+    assert d.declared_value == "17.0000"
+    assert d.expected_value == "20.0000"
+
+
+def test_una_diferencia_minima_de_tipo_de_cambio_no_es_hallazgo() -> None:
+    """Por debajo del 1% es ruido de redondeo, no un tipo de cambio mal."""
+    r = compare(
+        [declarado(exchange_rate=Decimal("20.05"))],
+        [esperado(exchange_rate=Decimal("20.00"))],
+    )
+
+    assert not any(x.kind is DivergenceType.EXCHANGE_RATE_MISMATCH for x in r.divergences)
+
+
+def test_sin_fix_cargado_el_tipo_de_cambio_no_se_acusa() -> None:
+    """`expected.exchange_rate is None` es «no se pudo comprobar», no «coincide» —
+    no se emite un hallazgo sobre una base que no se tiene."""
+    r = compare(
+        [declarado(exchange_rate=Decimal("20.00"))],
+        [esperado(exchange_rate=None)],
+    )
+
+    assert not any(x.kind is DivergenceType.EXCHANGE_RATE_MISMATCH for x in r.divergences)
+
+
 def test_un_sku_clasificado_distinto_antes_es_hallazgo() -> None:
     """Sale del historial, no de la norma.
 
