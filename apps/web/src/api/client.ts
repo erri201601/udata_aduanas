@@ -27,6 +27,8 @@ export type ClassifyRequest = components['schemas']['ClassifyRequest']
 export type ClassifyResponse = components['schemas']['ClassifyResponse']
 export type Dashboard = components['schemas']['Dashboard']
 export type PendienteRead = components['schemas']['PendienteRead']
+export type PreguntaAgrupada = components['schemas']['PreguntaAgrupada']
+export type CasoDeLaPregunta = components['schemas']['CasoDeLaPregunta']
 export type RevisionRequest = components['schemas']['RevisionRequest']
 export type RevisionResponse = components['schemas']['RevisionResponse']
 export type ServiceCheck = components['schemas']['ServiceCheck']
@@ -246,6 +248,16 @@ export async function fetchDashboard(signal?: AbortSignal): Promise<Dashboard> {
 /** Decisiones esperando a una persona, de la más antigua a la más reciente. */
 export async function fetchPendientes(signal?: AbortSignal): Promise<PendienteRead[]> {
   return pedir<PendienteRead[]>('/review', signal)
+}
+
+/**
+ * Las preguntas del motor, agrupadas: primero la que más casos desatasca.
+ *
+ * Cuenta sobre el conjunto ENTERO de pendientes, no sobre la página de
+ * `fetchPendientes`: el número de cada tarjeta es el real.
+ */
+export async function fetchPreguntas(signal?: AbortSignal): Promise<PreguntaAgrupada[]> {
+  return pedir<PreguntaAgrupada[]>('/review/preguntas', signal)
 }
 
 /**

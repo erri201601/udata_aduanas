@@ -40,15 +40,18 @@
 
 import { useState } from 'react'
 
-import { responderVocabulario } from '../api/client'
+import { ApiError, responderVocabulario } from '../api/client'
 
 interface Props {
   /** Lo que exige la posición, tal cual lo dice la tarifa. */
   exige: string
   /** La posición sobre la que se pregunta, para el aviso de confirmación. */
   codigo: string
-  /** La ficha compacta, de donde salen los valores elegibles. */
-  mercancia: string
+  /** Las fichas compactas, de donde salen los valores elegibles.
+   *
+   * Una o varias: en la bandeja agrupada, los casos de una misma pregunta
+   * pueden traer fichas distintas, y el término se elige de entre todas. */
+  mercancia: string | string[]
   /** Se llama al guardar, con cuántos casos quedaron recalculándose.
    *
    * La bandeja de arriba tiene que volver a pedirse: los casos que esta
@@ -66,21 +69,26 @@ interface Props {
  * «material» no aparece en la ficha y una respuesta sobre esa palabra no se
  * aplica nunca.
  */
-function valoresDe(mercancia: string): string[] {
-  return mercancia
-    .split('·')
+function valoresDe(mercancia: string | string[]): string[] {
+  const fichas = Array.isArray(mercancia) ? mercancia : [mercancia]
+  const valores = fichas
+    .flatMap((ficha) => ficha.split('·'))
     .map((trozo) => {
       const igual = trozo.indexOf('=')
       const valor = igual >= 0 ? trozo.slice(igual + 1) : trozo
       return valor.replace(/[«»"']/g, '').trim()
     })
     .filter((v) => v.length >= 2)
+  // Sin repetir: varias fichas de cable dicen todas «acero», y un botón por
+  // ficha sería ruido — además de una clave duplicada para React.
+  return [...new Set(valores)]
 }
 
 type Estado =
   | { fase: 'pregunta' }
   | { fase: 'guardando' }
   | { fase: 'guardado'; recalculando: number; total: number }
+  | { fase: 'ya_contestada' }
   | { fase: 'error'; mensaje: string }
 
 export function ContestarPregunta({ exige, codigo, mercancia, onGuardada }: Props) {
@@ -108,11 +116,30 @@ export function ContestarPregunta({ exige, codigo, mercancia, onGuardada }: Prop
       })
       onGuardada?.(guardada.recalculando)
     } catch (causa) {
+      /* UN 409 AQUÍ NO ES UN ERROR (Persona 1, 6-oct)
+         La respuesta se guarda por (término de la ficha, cláusula), sin
+         posición. Si dos tarjetas comparten la cláusula, contestar la primera
+         contesta la segunda, y volver a mandarla da 409. Decir «no se guardó»
+         haría creer que hay que repetirla. */
+      if (causa instanceof ApiError && causa.status === 409) {
+        setEstado({ fase: 'ya_contestada' })
+        onGuardada?.(0)
+        return
+      }
       setEstado({
         fase: 'error',
         mensaje: causa instanceof Error ? causa.message : 'No se pudo guardar',
       })
     }
+  }
+
+  if (estado.fase === 'ya_contestada') {
+    return (
+      <p className="contestar__guardado" role="status">
+        Ya estaba contestada con ese mismo término: alguien la respondió antes,
+        quizá desde otra tarjeta con la misma cláusula. No hace falta repetirla.
+      </p>
+    )
   }
 
   if (estado.fase === 'guardado') {
@@ -133,7 +160,9 @@ export function ContestarPregunta({ exige, codigo, mercancia, onGuardada }: Prop
             {estado.total > estado.recalculando
               ? ` de ${estado.total}; el resto en la siguiente pasada`
               : ''}
-            . La bandeja se actualiza al terminar.
+            . Cuenta todos los casos que preguntaban esta cláusula, también los
+            de otras posiciones: la respuesta no lleva posición. La bandeja se
+            actualiza al terminar.
           </>
         ) : (
           'Ningún caso pendiente dependía de esta pregunta.'
@@ -234,8 +263,10 @@ export function ContestarPregunta({ exige, codigo, mercancia, onGuardada }: Prop
       )}
 
       <p className="contestar__alcance">
-        Tu respuesta se guarda sobre <code>{codigo}</code> y vale para{' '}
-        <strong>todas</strong> las fichas que digan lo mismo, no sólo para ésta.
+        La pregunta sale de <code>{codigo}</code>, pero tu respuesta se guarda
+        sobre la cláusula, sin posición: vale para <strong>todas</strong> las
+        fichas que digan el término que elijas, en cualquier posición que exija
+        esa frase.
       </p>
     </div>
   )

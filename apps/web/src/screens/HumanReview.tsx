@@ -28,20 +28,26 @@
  *
  * Son dos niveles y dos campos, no diez dígitos en una caja. «La fracción de 8
  * dígitos y el NICO son niveles distintos; no deben mezclarse» (César, 5-oct).
+ *
+ * LAS PREGUNTAS VAN PRIMERO, AGRUPADAS (6-oct)
+ *
+ * Una respuesta vale para todos los casos que comparten la pregunta. Con una
+ * tarjeta por caso, la pregunta que desatascaba 14 estaba en la séptima y se
+ * repetía catorce veces. Ahora arriba van las preguntas, ordenadas por cuántos
+ * casos desatascan (`GET /review/preguntas`), y cada caso de abajo sólo dice
+ * qué pregunta espera.
  */
 
 import { useCallback, useEffect, useState } from 'react'
 
-import { fetchPendientes, revisarDecision } from '../api/client'
-import type { PendienteRead } from '../api/client'
-import { ContestarPregunta } from '../components/ContestarPregunta'
+import { fetchPendientes, fetchPreguntas, revisarDecision } from '../api/client'
+import type { PendienteRead, PreguntaAgrupada } from '../api/client'
+import { PreguntaAgrupadaCard } from '../components/PreguntaAgrupadaCard'
 import { SyntheticBanner } from '../components/DataOriginBadge'
 
 interface PreguntaRGI {
-  mercancia: string
   codigo: string
   exige: string
-  texto: string
 }
 
 /** Las preguntas del último paso de la traza, si las hay.
@@ -70,6 +76,7 @@ const ETIQUETAS_CAUSA: Record<string, string> = {
 
 export function HumanReview() {
   const [pendientes, setPendientes] = useState<PendienteRead[]>([])
+  const [preguntas, setPreguntas] = useState<PreguntaAgrupada[]>([])
   const [error, setError] = useState<string | null>(null)
   const [cargando, setCargando] = useState(true)
   const [enCurso, setEnCurso] = useState<string | null>(null)
@@ -96,8 +103,15 @@ export function HumanReview() {
   const cargar = useCallback(async (signal?: AbortSignal) => {
     setCargando(true)
     try {
-      const filas = await fetchPendientes(signal)
+      // Las dos a la vez y las dos siempre: una pregunta contestada cambia la
+      // lista de casos, y un veredicto puede quitar el último caso de una
+      // pregunta. Refrescar sólo una enseñaría números que no cuadran.
+      const [filas, agrupadas] = await Promise.all([
+        fetchPendientes(signal),
+        fetchPreguntas(signal),
+      ])
       setPendientes(filas)
+      setPreguntas(agrupadas)
       setError(null)
       // Lo que ya se despachó en esta sesión deja de estar pendiente en la
       // lista nueva, así que la marca local sobra. Conservarla escondería
@@ -206,6 +220,30 @@ export function HumanReview() {
         <em>Una corrección anónima no es auditable.</em>
       </label>
 
+      {/* Primero lo que más rinde: una respuesta aquí desatasca varios casos
+          a la vez. El orden y el número los da el servidor sobre el conjunto
+          entero de pendientes, no sobre la página de abajo. */}
+      {preguntas.length > 0 && (
+        <section className="preguntas-grupo">
+          <h2>
+            {preguntas.length} pregunta{preguntas.length === 1 ? '' : 's'} del motor
+          </h2>
+          <p className="pantalla__sub">
+            Ordenadas por cuántos casos desatasca cada una. Contestar recalcula
+            esos casos en segundo plano; la bandeja se vuelve a pedir al terminar.
+          </p>
+          <ul className="preguntas-grupo__lista">
+            {preguntas.map((q) => (
+              <PreguntaAgrupadaCard
+                key={`${q.codigo}|${q.exige}`}
+                pregunta={q}
+                onGuardada={recargarTrasRecalcular}
+              />
+            ))}
+          </ul>
+        </section>
+      )}
+
       {restantes.length === 0 && !cargando ? (
         <p className="vacio">
           {pendientes.length > 0
@@ -247,17 +285,14 @@ export function HumanReview() {
                   buscar el caso en un selector y encontrar el formulario
                   enterrado en la traza — y una cola que obliga a salir de ella
                   no se usa.
-                  El dato ya venía: `PendienteRead` trae `rgi_trace`. */}
+                  Desde el 6-oct el formulario está UNA vez, arriba, en la
+                  tarjeta de su pregunta: aquí repetirlo era contestar lo mismo
+                  caso por caso. El caso sólo dice qué pregunta espera. */}
               {preguntasDe(p).map((q) => (
-                <div className="revision-fila__pregunta" key={`${q.codigo}-${q.exige}`}>
-                  <p className="revision-fila__pregunta-texto">{q.texto}</p>
-                  <ContestarPregunta
-                    exige={q.exige}
-                    codigo={q.codigo}
-                    mercancia={q.mercancia}
-                    onGuardada={recargarTrasRecalcular}
-                  />
-                </div>
+                <p className="revision-fila__espera" key={`${q.codigo}-${q.exige}`}>
+                  Espera la pregunta sobre <code>{q.codigo}</code> «{q.exige}» —
+                  se contesta arriba, una vez para todos los casos que la tienen.
+                </p>
               ))}
 
               <p className="revision-fila__meta">

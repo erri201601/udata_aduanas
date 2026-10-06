@@ -1722,6 +1722,79 @@ code {
   font-weight: 600;
 }
 
+/* El caso de la bandeja sólo dice qué pregunta espera: el formulario está
+   una vez, arriba, en la tarjeta de su pregunta. */
+.revision-fila__espera {
+  margin: 0.6rem 0 0;
+  font-size: 0.8rem;
+  color: var(--tenue);
+}
+
+/* --- Preguntas agrupadas ----------------------------------------------
+   Van antes que los casos y con más peso: una respuesta aquí desatasca
+   varios casos a la vez. */
+
+.preguntas-grupo { margin: 1.2rem 0 1.6rem; }
+.preguntas-grupo h2 { margin: 0 0 0.2rem; font-size: 1.05rem; }
+
+.preguntas-grupo__lista {
+  list-style: none;
+  margin: 0.8rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.9rem;
+}
+
+.pregunta-grupo {
+  padding: 0.9rem 1rem;
+  background: rgba(47, 111, 219, 0.06);
+  border-left: 3px solid var(--acento);
+  border-radius: 0 8px 8px 0;
+}
+
+.pregunta-grupo__titular { margin: 0; font-size: 0.92rem; line-height: 1.5; }
+
+.pregunta-grupo__fichas {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.pregunta-grupo__mas,
+.pregunta-grupo__aviso,
+.pregunta-grupo__caso-meta,
+.pregunta-grupo__caso-ficha {
+  font-size: 0.74rem;
+  color: var(--tenue);
+}
+
+.pregunta-grupo__aviso { margin: 0.4rem 0 0; line-height: 1.45; }
+
+.pregunta-grupo__ver { margin-top: 0.6rem; font-size: 0.8rem; }
+
+.pregunta-grupo__casos {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.45rem;
+  font-size: 0.82rem;
+}
+
+.pregunta-grupo__casos > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 0.5rem;
+  padding-top: 0.45rem;
+  border-top: 1px dashed var(--borde);
+}
+
+.pregunta-grupo__caso-ficha { flex-basis: 100%; overflow-wrap: anywhere; }
+
 /* --- Contestar la pregunta --------------------------------------------
    El «no» es un botón igual de grande que el «sí», y no es estética: el «no»
    es lo que DESCARTA una posición y deja al motor con dos candidatas en vez

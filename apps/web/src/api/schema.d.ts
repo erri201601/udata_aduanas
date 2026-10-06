@@ -428,6 +428,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/review/preguntas": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Las preguntas del motor, agrupadas por cuántos casos desatascan
+         * @description La bandeja vista por pregunta y no por caso.
+         *
+         *     EL TIEMPO DEL CLASIFICADOR ES EL RECURSO MÁS ESCASO
+         *
+         *     Medido el 6-oct: 119 casos pendientes, 30 con pregunta, y son CUATRO
+         *     preguntas repetidas. Una respuesta vale para todos los casos que comparten
+         *     la pregunta, pero la pantalla enseñaba una tarjeta por caso: para dar con
+         *     la que valía 14 había que bajar hasta la séptima.
+         *
+         *     Aquí van primero las que más rinden. Qué se pregunta lo decide el motor; el
+         *     endpoint no filtra nada por su cuenta, sólo agrupa lo que el motor dejó en
+         *     la traza de los casos pendientes.
+         */
+        get: operations["preguntas_review_preguntas_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/review/vocabulario": {
         parameters: {
             query?: never;
@@ -609,6 +640,35 @@ export interface components {
              * @description Foto o ficha del producto
              */
             imagen: string;
+        };
+        /**
+         * CasoDeLaPregunta
+         * @description Un caso que esa pregunta desatascaría, con lo justo para reconocerlo.
+         */
+        CasoDeLaPregunta: {
+            /**
+             * Decision Id
+             * Format: uuid
+             */
+            decision_id: string;
+            /** Producto */
+            producto?: string | null;
+            /** Sku */
+            sku?: string | null;
+            /**
+             * Mercancia
+             * @default
+             */
+            mercancia: string;
+            /** Fraction Code */
+            fraction_code?: string | null;
+            /**
+             * Operation Date
+             * Format: date
+             */
+            operation_date: string;
+            /** Data Origin */
+            data_origin: string;
         };
         /**
          * Clasificaciones
@@ -1933,6 +1993,24 @@ export interface components {
             corregidas: number;
             contra_el_motor_de_hoy?: components["schemas"]["ContraElMotorDeHoy"];
         };
+        /**
+         * PreguntaAgrupada
+         * @description Una pregunta del motor y todos los casos que la tienen delante.
+         */
+        PreguntaAgrupada: {
+            /** Codigo */
+            codigo: string;
+            /** Exige */
+            exige: string;
+            /** Texto */
+            texto: string;
+            /** Fichas */
+            fichas: string[];
+            /** Tambien En */
+            tambien_en?: string[];
+            /** Casos */
+            casos: components["schemas"]["CasoDeLaPregunta"][];
+        };
         /** ProductAttributeRead */
         ProductAttributeRead: {
             /**
@@ -3106,6 +3184,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preguntas_review_preguntas_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreguntaAgrupada"][];
                 };
             };
         };

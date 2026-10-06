@@ -896,7 +896,7 @@ def _pendiente_con_pregunta(exige: str, product_id: uuid.UUID) -> Classification
 
 
 class SesionDePendientes:
-    """Sólo lo que `_casos_que_preguntaban` necesita: la lista de pendientes."""
+    """Sólo lo que `productos_que_preguntaban` necesita: la lista de pendientes."""
 
     def __init__(self, filas: list[ClassificationDecision]) -> None:
         self._filas = filas
@@ -919,7 +919,7 @@ def test_se_recalculan_los_casos_que_preguntaban_esa_clausula() -> None:
     repetir aquí la regla de emparejamiento del motor es justo lo que ya se
     desvió una vez.
     """
-    from apps.api.routers.review import _casos_que_preguntaban
+    from database.repositories.preguntas import productos_que_preguntaban
 
     mio, ajeno = uuid.uuid4(), uuid.uuid4()
     sesion = SesionDePendientes(
@@ -929,7 +929,7 @@ def test_se_recalculan_los_casos_que_preguntaban_esa_clausula() -> None:
         ]
     )
 
-    assert _casos_que_preguntaban(sesion, "constituidos por 7 alambres") == [mio]  # type: ignore[arg-type]
+    assert productos_que_preguntaban(sesion, "constituidos por 7 alambres") == [mio]  # type: ignore[arg-type]
 
 
 def test_un_producto_no_se_recalcula_dos_veces() -> None:
@@ -938,22 +938,22 @@ def test_un_producto_no_se_recalcula_dos_veces() -> None:
     Clasificar cuesta ~1.5 s: recalcular ocho veces el mismo producto son doce
     segundos de tarea de fondo para el mismo resultado.
     """
-    from apps.api.routers.review import _casos_que_preguntaban
+    from database.repositories.preguntas import productos_que_preguntaban
 
     uno = uuid.uuid4()
     sesion = SesionDePendientes(
         [_pendiente_con_pregunta("constituidos por 7 alambres", uno) for _ in range(8)]
     )
 
-    assert _casos_que_preguntaban(sesion, "constituidos por 7 alambres") == [uno]  # type: ignore[arg-type]
+    assert productos_que_preguntaban(sesion, "constituidos por 7 alambres") == [uno]  # type: ignore[arg-type]
 
 
 def test_una_clausula_que_nadie_preguntaba_no_recalcula_nada() -> None:
-    from apps.api.routers.review import _casos_que_preguntaban
+    from database.repositories.preguntas import productos_que_preguntaban
 
     sesion = SesionDePendientes([_pendiente_con_pregunta("Galvanizados", uuid.uuid4())])
 
-    assert _casos_que_preguntaban(sesion, "constituidos por 7 alambres") == []  # type: ignore[arg-type]
+    assert productos_que_preguntaban(sesion, "constituidos por 7 alambres") == []  # type: ignore[arg-type]
 
 
 def test_sin_nada_que_recalcular_no_se_abre_conexion() -> None:

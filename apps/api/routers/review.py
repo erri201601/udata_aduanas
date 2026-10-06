@@ -75,6 +75,13 @@ from database.models import (
     TariffHeading,
 )
 from database.repositories import save_classification
+from database.repositories.preguntas import (
+    pendientes_vigentes,
+    preguntas_de,
+    preguntas_pendientes,
+    productos_por_id,
+    productos_que_preguntaban,
+)
 from database.repositories.tariff import TariffCatalogRepository
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
 from pydantic import BaseModel, Field
@@ -283,26 +290,10 @@ def pendientes(
     Las decisiones sin ficha pasan una a una: sin `product_dna_id` no hay por
     qué agruparlas, y descartarlas sería perder casos en silencio.
     """
-    otra = sa.orm.aliased(ClassificationDecision, name="otra")
-    reciente = (
-        sa.select(sa.func.max(otra.created_at))
-        .where(otra.product_dna_id == ClassificationDecision.product_dna_id)
-        .scalar_subquery()
-    )
+    # La definición de «pendiente» es UNA y vive en el repositorio: la misma
+    # que cuenta los casos de cada pregunta y la que decide qué se recalcula.
     filas = session.scalars(
-        sa.select(ClassificationDecision)
-        .where(
-            ClassificationDecision.requires_human_review.is_(True),
-            # Las revisiones humanas no vuelven a la bandeja.
-            ClassificationDecision.data_origin != "HUMAN_VALIDATED",
-            # Un caso por ficha, no uno por vez que se clasificó.
-            sa.or_(
-                ClassificationDecision.product_dna_id.is_(None),
-                ClassificationDecision.created_at == reciente,
-            ),
-        )
-        .order_by(ClassificationDecision.created_at)
-        .limit(limit)
+        pendientes_vigentes().order_by(ClassificationDecision.created_at).limit(limit)
     ).all()
 
     pendientes: list[PendienteRead] = []
@@ -322,6 +313,104 @@ def pendientes(
             )
         )
     return pendientes
+
+
+class CasoDeLaPregunta(BaseModel):
+    """Un caso que esa pregunta desatascaría, con lo justo para reconocerlo."""
+
+    decision_id: uuid.UUID
+    producto: str | None = None
+    sku: str | None = None
+    mercancia: str = ""
+    """Lo que dice SU ficha. Varía de un caso a otro dentro de la misma pregunta."""
+    fraction_code: str | None = None
+    operation_date: date
+    data_origin: str
+    """Para marcar SYNTHETIC DEMO DATA caso por caso, no sólo en el banner."""
+
+
+class PreguntaAgrupada(BaseModel):
+    """Una pregunta del motor y todos los casos que la tienen delante."""
+
+    codigo: str
+    exige: str
+    """La cláusula. Es lo que se manda como `termino_tarifa` al contestar."""
+    texto: str
+    fichas: list[str]
+    """Las fichas distintas del grupo. De aquí salen los valores que se pueden
+    elegir al contestar: con una sola ficha, una respuesta vale para todos; con
+    varias, sólo para las que digan el término elegido."""
+    tambien_en: list[str] = Field(default_factory=list)
+    """Otras posiciones con la MISMA cláusula. La respuesta se guarda sin
+    posición, así que contestar aquí también las contesta a ellas."""
+    casos: list[CasoDeLaPregunta]
+    """TODOS los casos, sin página: el número de la tarjeta es su longitud, y
+    contarlo sobre una página haría decir 14 donde son 20."""
+
+
+@router.get("/preguntas", summary="Las preguntas del motor, agrupadas por cuántos casos desatascan")
+def preguntas(session: SessionDep) -> list[PreguntaAgrupada]:
+    """La bandeja vista por pregunta y no por caso.
+
+    EL TIEMPO DEL CLASIFICADOR ES EL RECURSO MÁS ESCASO
+
+    Medido el 6-oct: 119 casos pendientes, 30 con pregunta, y son CUATRO
+    preguntas repetidas. Una respuesta vale para todos los casos que comparten
+    la pregunta, pero la pantalla enseñaba una tarjeta por caso: para dar con
+    la que valía 14 había que bajar hasta la séptima.
+
+    Aquí van primero las que más rinden. Qué se pregunta lo decide el motor; el
+    endpoint no filtra nada por su cuenta, sólo agrupa lo que el motor dejó en
+    la traza de los casos pendientes.
+    """
+    grupos = preguntas_pendientes(session)
+
+    posiciones_de: dict[str, set[str]] = {}
+    for g in grupos:
+        posiciones_de.setdefault(g.exige, set()).add(g.codigo)
+
+    ids = [d.product_id for g in grupos for d in g.decisiones if d.product_id is not None]
+    productos = productos_por_id(session, list(dict.fromkeys(ids)))
+
+    salida: list[PreguntaAgrupada] = []
+    for g in grupos:
+        casos: list[CasoDeLaPregunta] = []
+        for d in g.decisiones:
+            producto = productos.get(d.product_id) if d.product_id else None
+            mercancia = next(
+                (str(q.get("mercancia") or "") for q in preguntas_de(d) if q["exige"] == g.exige),
+                "",
+            )
+            casos.append(
+                CasoDeLaPregunta(
+                    decision_id=d.id,
+                    producto=producto.commercial_name if producto else None,
+                    sku=producto.sku if producto else None,
+                    mercancia=mercancia,
+                    fraction_code=d.fraction_code,
+                    operation_date=d.operation_date,
+                    data_origin=d.data_origin,
+                )
+            )
+        salida.append(
+            PreguntaAgrupada(
+                codigo=g.codigo,
+                exige=g.exige,
+                texto=g.texto,
+                fichas=list(g.fichas),
+                tambien_en=sorted(posiciones_de[g.exige] - {g.codigo}),
+                casos=casos,
+            )
+        )
+
+    log.info(
+        "review.preguntas",
+        preguntas=len(salida),
+        # Un caso con dos preguntas cuenta en las dos tarjetas: esto es la suma
+        # de tarjetas, no el número de casos distintos.
+        casos_por_pregunta=sum(len(p.casos) for p in salida),
+    )
+    return salida
 
 
 # NOTA DE ORDEN: este bloque va ANTES de `POST /{decision_id}` a propósito.
@@ -407,46 +496,6 @@ def _solo_el_valor(termino: str) -> str:
 #: más, se recalculan los 40 primeros y la respuesta lo dice: quedarse corto en
 #: silencio haría creer que el resto ya está al día.
 MAX_RECALCULAR: Final = 40
-
-
-def _casos_que_preguntaban(session: Session, clausula: str) -> list[uuid.UUID]:
-    """Los productos cuya última decisión preguntaba exactamente esa cláusula.
-
-    POR QUÉ ESTE CONJUNTO Y NO «TODO LO QUE DIGA EL TÉRMINO»
-
-    Se podría buscar qué fichas mencionan el término comercial, pero eso exige
-    repetir aquí la regla de emparejamiento del motor —palabras distintivas,
-    singulares, frase con límite de palabra— y una copia de esa regla se
-    desvía. Ya se desvió una vez: comprobar sólo el lado de la tarifa hizo que
-    la respuesta de un producto se aplicara a todos.
-
-    La traza del motor ya dice a qué casos pertenece cada pregunta, y es el
-    dato exacto: son los que tenían esa pregunta delante. Recalcular alguno de
-    más sería inofensivo —saldría la misma decisión— pero no hace falta.
-    """
-    pendientes = session.scalars(
-        sa.select(ClassificationDecision).where(
-            ClassificationDecision.requires_human_review.is_(True),
-            ClassificationDecision.data_origin != "HUMAN_VALIDATED",
-            ClassificationDecision.product_id.is_not(None),
-        )
-    ).all()
-
-    afectados: list[uuid.UUID] = []
-    vistos: set[uuid.UUID] = set()
-    for fila in pendientes:
-        traza = fila.rgi_trace or []
-        if not traza:
-            continue
-        ultimo = traza[-1] if isinstance(traza[-1], dict) else {}
-        for pregunta in ultimo.get("preguntas") or []:
-            if pregunta.get("exige") != clausula:
-                continue
-            if fila.product_id is not None and fila.product_id not in vistos:
-                vistos.add(fila.product_id)
-                afectados.append(fila.product_id)
-            break
-    return afectados
 
 
 def _recalcular(productos: Sequence[uuid.UUID]) -> None:
@@ -600,7 +649,11 @@ def responder_vocabulario(
     # Se recalcula DESPUÉS de responder, no durante. Clasificar cuesta ~1.5 s y
     # una familia son veinte casos: hacerlo síncrono dejaría el formulario
     # treinta segundos colgado y quien contesta no sabría si se guardó.
-    afectados = _casos_que_preguntaban(session, peticion.termino_tarifa)
+    #
+    # El conjunto sale de la TRAZA —los casos que tenían esa pregunta delante—
+    # y no de buscar qué fichas dicen el término: eso exigiría repetir aquí la
+    # regla de emparejamiento del motor, y esa copia ya se desvió una vez.
+    afectados = productos_que_preguntaban(session, peticion.termino_tarifa)
     tareas.add_task(_recalcular, afectados[:MAX_RECALCULAR])
 
     return VocabularioGuardado(
