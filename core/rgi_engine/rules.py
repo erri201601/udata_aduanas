@@ -1795,6 +1795,45 @@ def _unica_o_mas_especifica(
         if len(describen) == 1:
             return describen[0]
 
+        # SI VARIAS COMPARTEN EL GRUPO QUE LA DESCRIBE, SE ELIGE ENTRE ÉSAS
+        #
+        # Esto faltaba y tiraba la mejor pista que da la nomenclatura. Caso
+        # real, 43 partidas del corpus (6-oct):
+        #
+        #     ficha  «TUBERIA DE ACERO AL CARBONO PARA OLEODUCTO, SOLDADA
+        #             LONGITUDINALMENTE POR ARCO SUMERGIDO»
+        #
+        #     730520  spec 3  grupo: —
+        #     730531  spec 3  grupo: «Los demás, soldados:»
+        #     730539  spec 3  grupo: «Los demás, soldados:»
+        #     730511  spec 2  grupo: «Tubos de los tipos utilizados en
+        #                             oleoductos o gasoductos:»
+        #     730512  spec 0  grupo: el mismo
+        #     730519  spec 0  grupo: el mismo
+        #     730590  spec 0  grupo: —
+        #
+        # La ficha dice OLEODUCTO y el encabezado de guion dice oleoductos:
+        # la propia LIGIE ya separó a las tres que pueden ser. El motor lo
+        # detectaba —`describen` las encontraba— y como eran tres en vez de
+        # una, descartaba el hallazgo y pasaba al desempate por especificidad,
+        # que lo ganaban 730520, 730531 y 730539: las que NO están en el grupo
+        # que describe la mercancía. Tres líderes, ninguna elegida, y la
+        # respuesta era «ninguna es más específica» sobre siete candidatas de
+        # las que tres ya estaban señaladas.
+        #
+        # Acotar no es elegir. Dentro del grupo siguen decidiendo las mismas
+        # reglas de siempre —condición cumplida, residual, especificidad y
+        # `_algo_la_sostiene`—, sólo que entre las que la nomenclatura ya
+        # agrupó. Es el mismo criterio que el descarte por residual: primero
+        # se quita lo imposible, después se desempata.
+        #
+        # Y no puede inventar una candidata: `describen` es un subconjunto de
+        # `cands`. A diferencia del puente de búsqueda del ADR 0007, esto no
+        # cambia QUÉ candidatas se encontraron —no toca el recorte por
+        # cobertura— sólo entre cuáles se decide.
+        if describen and len(describen) < len(cands):
+            cands = describen
+
     # ── Antes que la especificidad: la condición que la mercancía CUMPLE ──
     #
     # YA SE USA TAMBIÉN AL BAJAR (1-oct). Antes no se podía, y la razón era
