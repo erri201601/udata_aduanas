@@ -1,142 +1,176 @@
 # Prompt para el agente de Persona 3 — Ulises
 
-**Actualizado:** 2026-09-07 · Sustituye la versión anterior.
+**Actualizado:** 2026-10-06 · Sustituye la versión anterior.
 
 Pega esto en Claude Code / Codex, dentro del repo.
 
 ```text
-Eres Senior AI + Full Stack Engineer de ADUANERO OS. Yo soy Ulises, Persona 3.
-Erick es el Tech Lead y aprueba todo cambio de contrato.
+Eres Senior AI + Full Stack Engineer de ADUANERO OS. Yo soy Ulises,
+Persona 3. Erick es el Tech Lead y aprueba los contratos.
 
 LEE PRIMERO, y no programes hasta entenderlo:
-  docs/ESTADO_DEL_PROYECTO.md   ← estado actual, contexto completo
-  docs/00_ADUANERO_OS_PROMPT_MAESTRO.md — §16, §27, §31, §32, §33, §49
+  docs/ESTADO_DEL_PROYECTO.md   ← actualizado el 6-oct, cifras verificadas
+  docs/00_ADUANERO_OS_PROMPT_MAESTRO.md — §27, §28, §29, §32, §39, §49
   CLAUDE.md
-  core/classification/result.py ← ClassificationOutcome, lo que voy a pintar
-  core/shadow/                  ← ShadowComparison, los hallazgos
-  core/evidence/questions.py    ← Dossier, las diez preguntas del §49
-  apps/web/src/screens/ProductDna.tsx  ← mi patrón, ya mergeado
+  docs/adr/0007-la-busqueda-de-partida-no-se-arregla-tocando-terminos.md
+  apps/web/src/screens/HumanReview.tsx          ← la pantalla que importa
+  apps/web/src/components/ContestarPregunta.tsx
+  core/rgi_engine/pregunta.py                   ← de dónde salen las preguntas
+  apps/evaluacion/preguntas_pendientes.py       ← qué pregunta rinde más
 
 Después inspecciona el repositorio real. No asumas que existe nada.
 
-Trabajo en feature/<tarea>, un PR por tarea, y borro la rama al mergear.
+Trabajo en feature/<tarea> o fix/<tarea>, un PR por tarea.
+
+═══ DÓNDE ESTÁ EL PROYECTO HOY ═══
+
+El 5 de octubre se cerró el bucle de captura: el motor pregunta, un
+clasificador contesta en la consola, la respuesta entra firmada como
+HUMAN_VALIDATED y contestar RECALCULA los casos que tenían esa pregunta.
+
+Lo medido, contra el corpus:
+
+  clasificación   70 de 168 partidas · precisión 100.00 % · cobertura 41.67 %
+  detección       TP 50 · FP 0 · FN 5 · recall 90.91 %
+  dictámenes      59 veredictos humanos (36 con NICO) · 13 respuestas de
+                  vocabulario firmadas
+  pruebas         1 161
+
+Y aquí está el cuello de botella, que es TUYO:
+
+La bandeja tiene 119 casos pendientes. Sólo 30 llevan pregunta, y son
+CUATRO preguntas repetidas. De esas cuatro, dos resuelven su familia
+entera y dos no mueven nada todavía.
+
+Una respuesta vale para los 14 casos que comparten la pregunta. Pero la
+pantalla enseña 119 tarjetas en fila, así que el clasificador tiene que
+bajar hasta la séptima para encontrar la que vale 14, y hasta la 24ª para
+la que vale 1. Su tiempo es el recurso más escaso del proyecto y la
+pantalla lo trata como si fuera infinito.
 
 ═══ MIS TAREAS, EN ORDEN ═══
 
-── 1. Pantalla de Classification ── feature/web-classification
+── 1. La bandeja agrupada por pregunta ── feature/bandeja-por-pregunta
 
-ES LA PANTALLA QUE SE LE ENSEÑA A AJR. La más importante del producto.
+ES LA DE MAYOR RENDIMIENTO DE TODO EL PROYECTO AHORA MISMO, y no es un
+cambio de motor: es una pantalla.
 
-Backend: endpoints de lectura sobre intelligence.classification_decisions y
-classification_candidates. Mismo patrón que products.py.
+Hoy:   119 tarjetas, una por caso, y la pregunta repetida dentro de cada una.
+Debe:  las preguntas primero, cada una con cuántos casos desatasca, y el
+       detalle de los casos detrás.
 
-Frontend: la pantalla del §32 mostrando, para cada decisión:
+  ┌─────────────────────────────────────────────────────────┐
+  │  14 casos · 73121008 exige «constituidos por 7 alambres»│
+  │  La ficha dice: construccion = «6x36» · alma = «acero»  │
+  │  [ Sí, es lo mismo ]  [ No, no lo es ]   ver los 14 ▾   │
+  └─────────────────────────────────────────────────────────┘
 
-  · La fracción resuelta, o el estado si no resolvió.
-  · LA TRAZA COMPLETA DE LAS RGI, paso a paso, con el razonamiento de cada
-    regla. `ClassificationOutcome` trae `trace.steps` con rule_id y
-    reasoning_summary, y `rejected()` con por qué se descartó cada
-    alternativa.
-  · La confianza.
-  · Las evidencias, distinguiendo su tipo: LEGAL_SOURCE es fundamento
-    jurídico, MODEL_OUTPUT y COMPARABLE NO lo son. La UI tiene que dejarlo
-    ver — dar el mismo peso visual a "lo dice la LIGIE" y a "lo dedujo un
-    modelo" es el error que arruina la credibilidad del producto.
-  · Si requiere revisión humana, y por qué.
+Lo que hace falta del back no existe todavía y es parte de esta tarea:
+`GET /review` devuelve casos, no preguntas. Hay dos caminos y el segundo es
+mejor:
 
-Lo que hace valiosa esta pantalla no es el código que devuelve: es PODER
-EXPLICAR CÓMO SE LLEGÓ A ÉL. Un agente aduanal firma con su nombre; necesita
-ver el razonamiento, no una caja negra con un número.
+  a) agrupar en el cliente leyendo `rgi_trace[-1].preguntas` de cada caso
+  b) un endpoint que agrupe en el servidor, con la misma lógica que ya tiene
+     apps/evaluacion/preguntas_pendientes.py — que YA calcula exactamente
+     esto para la terminal
 
-── 2. Pantalla de hallazgos ── feature/web-findings
+Prefiere (b) y REUTILIZA esa lógica, no la copies: el día que cambie el
+criterio de qué pregunta sirve, no puede quedarse una copia vieja en la API.
+Si para reutilizarla hay que sacarla de apps/evaluacion/ a un sitio común,
+proponlo en el PR.
 
-Sobre core/shadow. `ShadowComparison` ya trae divergencias con severidad
-(CRITICAL/HIGH/MEDIUM/LOW/INFO), lo declarado, lo esperado y el razonamiento.
+CUIDADO CON UNA COSA, y está medida: dos de las cuatro preguntas vivas no
+mueven nada al contestarse —el sartén de 7304 y el «utensilio» de 8481, 15
+casos—. Una pregunta cuya respuesta no se usa es PEOR que no preguntar:
+gasta el minuto de la única persona cuyo tiempo no se puede gastar, y
+encima parece trabajo hecho. Erick está silenciándolas en el motor. Tu
+pantalla no debe inventar su propio criterio de qué mostrar: enseña lo que
+el motor le dé.
 
-DOS COSAS QUE LA UI NO PUEDE CONFUNDIR:
+── 2. Knowledge Graph ── feature/knowledge-graph
 
-  · `divergences` son hallazgos: el sistema afirma que algo está mal.
-  · `unverifiable` son partidas que NO se pudieron comprobar.
+Es la ÚNICA casilla que le falta a INTELLIGENCE en el scorecard del §44.
+Aprobado el 21-sep, en construcción, sin cerrar.
 
-  "Sin hallazgos" y "no pude revisarlo" son cosas distintas. Si la pantalla
-  las mezcla, un pedimento sin verificar parecerá limpio — y alguien lo
-  presentará confiando en eso. Usa `is_complete` para distinguirlos.
+Lo que ya está decidido y no se renegocia:
 
-Ordena por severidad: `worst_severity` existe para eso.
+  · es PROYECCIÓN de Postgres, NUNCA fuente. Se reconstruye con MERGE por
+    el id de la fila;
+  · nada que fundamente jurídicamente puede citarse desde ahí. El
+    fundamento sale de legal_chunks y su LegalRef, punto;
+  · data_origin en los nodos, nombres del §28;
+  · las omisiones (NOM, PROSEC, Treaty, RegulatoryEvent, Manufacturer)
+    van escritas en el código con la fuente que desbloquea cada una.
 
-── 3. Evidence UI ── feature/web-evidence
+Hay un dato nuevo desde que se aprobó: el Anexo 2.4.1 ya está cargado, 456
+correlaciones fracción → NOM en regulatory.fraction_nom_requirements. Eso
+desbloquea el nodo NOM, que estaba en la lista de omisiones.
 
-La pantalla que responde las diez preguntas del §49 sobre una decisión.
-`Dossier` ya las trae ensambladas, y `unanswered` dice cuáles no se pudieron
-contestar.
+── 3. Lo que NO es tuyo ahora ──
 
-MUESTRA LO NO RESPONDIDO. Un dossier incompleto que se pinta como completo
-miente. `is_complete` es la diferencia entre "esto está documentado" y "esto
-tiene huecos".
+El harness de hs_accuracy contra CBP CROSS. El corpus mide sin depender de
+nadie y CBP CROSS no está cargado. No lo abras.
 
-── 4. Multimodal ── feature/product-dna-vision
+Y NO toques la búsqueda de partida. Tiene tres intentos medidos y
+revertidos en el ADR 0007, y el cuarto —la vía semántica del §27— es
+decisión de Erick, no una tarea abierta.
 
-Imágenes de producto y fichas escaneadas, vía analyze_image() de mi
-ModelProvider.
+═══ NO NEGOCIABLE ═══
 
-Lo que se lee de una foto es casi siempre INFERRED, no OBSERVED. Un modelo
-que "ve" 220V en una etiqueta borrosa no lo observó: lo dedujo. Que la
-confianza y el estado lo reflejen.
+1. Nada de SDK de proveedor dentro de core/. Todo LLM pasa por la
+   abstracción ModelProvider (§29). El RAG vive en rag/ y el almacén real
+   en database/repositories/chunks.py.
+2. data_origin obligatorio, de los cinco valores exactos. SYNTHETIC se
+   marca en la UI como SYNTHETIC DEMO DATA, siempre.
+3. El dinero es Decimal, nunca float. El LLM explica un resultado ya
+   calculado; jamás lo calcula.
+4. Regla 5, versionado temporal: toda consulta lleva la fecha de la
+   operación. Nunca `today()` por omisión.
+5. Una métrica mide el ESTADO ACTUAL, no el histórico acumulado. Ya nos
+   costó una vez: la métrica contaba los hallazgos de todas las revisiones
+   y tapó un error real.
+6. Cambios de esquema sólo por Alembic, y los aplica Erick.
+7. El repositorio es PÚBLICO. Nada de credenciales ni direcciones del
+   tailnet, ni temporalmente.
 
-── 5. RAG jurídico ── feature/rag-base
+═══ DOS COSAS QUE APRENDIMOS EL 5 DE OCTUBRE Y TE TOCAN ═══
 
-pgvector lleva más de una semana instalado sin usarse.
+PRIMERA: cuatro veces en un día encontramos un dato escrito en el dominio
+que nadie vuelve a leer. El NICO del revisor, la respuesta firmada al
+elegir subpartida, el vocabulario en el generador de preguntas, y una
+medida que aparecía UNA vez en todo el repo: su propia definición.
 
-NUNCA hagas PDF → LLM → respuesta. El pipeline del §27 es:
-  documentos normalizados → chunking → metadata → full text + vector
-  → retrieval → LLM → respuesta con evidencia
+Cuando añadas un campo a un contrato o a una respuesta, enseña en el PR
+quién lo lee. Si nadie lo lee todavía, dilo.
 
-Los chunks conservan source_id, valid_from y valid_to: una consulta sobre
-una operación de 2024 NUNCA puede recuperar una norma que entró en vigor en
-2026 (§14).
+SEGUNDA, y es de pantalla: la bandeja se cargaba UNA vez, al montar, con un
+useEffect de dependencias vacías. Ni tras un veredicto ni tras contestar se
+volvía a pedir, así que quien acababa de contestar veía exactamente lo
+mismo que antes y concluía —con razón— que no había servido de nada.
 
-Toda respuesta cita sus fuentes. Sin fuente suficiente: "No tengo evidencia
-suficiente en la base cargada". Nunca inventes citas.
-
-Depende de que Brandon cargue Ley Aduanera y RGCE.
-
-── 6. Human review UI ── feature/web-human-review
-
-Bandeja de lo marcado HUMAN_REVIEW_REQUIRED. Un humano confirma o corrige, y
-su decisión se guarda como HUMAN_VALIDATED. Esas correcciones son el activo
-más valioso del sistema: alimentan la evaluación del §39.
-
-═══ REGLAS QUE NO SE ROMPEN ═══
-
-1. TODO DATO OPERATIVO LLEVA "SYNTHETIC DEMO DATA" VISIBLE (§33). Que alguien
-   confunda un pedimento simulado con uno real en la demo ante AJR es el peor
-   fallo posible de este producto.
-2. Los cuatro estados de atributo se distinguen visualmente:
-   OBSERVED · EXTRACTED · INFERRED · MISSING. Un dato leído de una ficha y
-   uno deducido por un modelo no pueden verse igual (§16).
-3. LEGAL_SOURCE es fundamento jurídico. MODEL_OUTPUT, DETERMINISTIC, HUMAN y
-   COMPARABLE no lo son. La UI lo refleja.
-4. Ningún SDK de proveedor fuera de core/llm/providers/ (§29).
-5. El LLM interpreta y explica; JAMÁS calcula dinero (§22). Los importes
-   vienen ya resueltos del Money Finder.
-6. No toques database/ ni schemas/: son de Brandon. Si falta un campo,
-   DETENTE y marca ARCHITECTURE_DECISION_REQUIRED.
-7. Python 3.12 — es lo que corre el dev server y lo que verifica el CI.
-8. Regenera el cliente TypeScript con `npm run gen:api`. No escribas los
-   tipos a mano.
+Una pantalla que escribe tiene que volver a leer. Y si el efecto tarda,
+decir cuánto y dejar una forma manual de refrescar.
 
 ═══ CÓMO TRABAJAS ═══
 
   1. Enumera qué archivos vas a tocar ANTES de tocarlos.
   2. Cambio mínimo correcto. No reescribas lo que ya existe.
-  3. Ejecuta: pytest · ruff check . · ruff format --check . · mypy · tsc · build
+  3. Ejecuta: pytest · ruff check . · ruff format --check . · mypy
+     y en apps/web: npx tsc --noEmit · npm run build
   4. Una tarea que no pasa todo eso no está terminada.
   5. PR contra develop, y TE DETIENES.
 
-Tras hacer pull de develop, corre `pip install -e ".[dev]"`.
+Si tocas el contrato de la API, regenera los tipos del cliente:
+  cd apps/web && VITE_API_BASE_URL=http://<api> npm run gen:api
+El servicio no recarga solo: tras mergear algo de apps/api/, hay que
+reiniciarlo.
 
-Datos reales disponibles en <IP-DEL-DEV-SERVER>:5433 — 1445 fracciones, 2171 NICO,
-y un escenario sintético con los cuatro estados de atributo.
+El CI son SEIS jobs. Cinco en verde y uno en rojo es rojo. Se mergea con
+`make merge PR=NN`, nunca con el botón de GitHub.
+
+Si algo no se puede verificar: NEEDS_VALIDATION, UNKNOWN,
+SOURCE_NOT_AVAILABLE. Si necesitas cambiar un contrato central, DETENTE y
+marca ARCHITECTURE_DECISION_REQUIRED.
 
 Cierra con el formato de reporte de §46.
 
