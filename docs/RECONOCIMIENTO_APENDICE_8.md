@@ -201,13 +201,61 @@ para que un `WHERE fraction_code = ...` la resuelva.
 - Si Erick no aprueba el campo "programa": la categoría (b) no se carga en
   ninguna tabla todavía — no hay fila sin consumidor posible.
 
-## Pendiente de tu decisión
+## Decisión de Persona 1 (6-oct)
 
-- ¿Apruebas (1) y (2) — cargar el texto completo + la tabla de 10 filas
-  por clave de documento?
-- ¿Quieres que abra el `ARCHITECTURE_DECISION_REQUIRED` del campo
-  "programa" ahora, o prefieres decidirlo tú directamente sin que yo
-  proponga opciones todavía?
-- ¿Alguien más (Ulises/César) ya está modelando "programa"/"régimen" desde
-  otro ángulo que yo debería leer antes de abrir ese ADR, para no
-  duplicar?
+1. **Texto completo + etiqueta → SÍ.** Lector: el RAG/AduLex, como ya se
+   hizo con RGCE. Implementado: `pedimento_identifiers.label`/
+   `supuestos_de_aplicacion` (migración `d9fc5116df71`, nullable, aditiva)
+   + un chunk de `regulatory.legal_chunks` por clave con ambos campos
+   (`ingestion.dof.load.add_missing_identifier_text`/
+   `load_identifier_chunks`, CLI: `ingestion.dof.cli --apendice8-texto`).
+2. **Tabla `pedimento_identifier_requirements` (10 filas, categoría a) →
+   NO POR AHORA.** Verificado contra el corpus: los 16 pedimentos
+   sintéticos son 100% clave de documento `A1`; ninguna de las 10 claves
+   de la categoría (a) (`A3`, `AF`, `TD`, `V1`, `V4`-`V9`) es `A1`.
+   Diferido, con este dato escrito — no hay fila sin consumidor posible.
+3. **ADR del campo "programa"/"decreto" (categoría b) → NO SE ABRE
+   AHORA**, mismo motivo, con más fuerza: abrirlo sin saber si el corpus
+   va a traer ese dato en alguna parte sería modelar en falso.
+4. **Consecuencia correcta:** `required_identifiers` sigue en `None` para
+   `A1`. No es un hueco por cerrar — es la respuesta honesta con los datos
+   que hay.
+
+## Resultado de la carga (6-oct): 2 hallazgos reales no anticipados
+
+**172 claves distintas, 178 filas** (164→178: PR #158 cargó 174 filas/168
+claves; esta carga corrigió un regex que nunca aceptaba guión largo y
+agregó las 4 que se perdían). **168 de 178 filas con `label`+
+`supuestos_de_aplicacion` completos** (162 claves distintas con cobertura
+total; 16 filas sin texto son las 10 claves estructuralmente distintas de
+la sección "Qué depende..." de arriba, que no traen columna "Nivel" ni
+anclan al mismo modelo bbox — no es un hueco de parseo, es el documento).
+
+1. **Guión largo ("–", U+2013) en vez de guión normal ("-", U+002D):**
+   4 claves reales (`CR`, `EO`, `PB`, `PO`) nunca se cargaron en PR #158
+   porque el regex original sólo aceptaba guión normal. Encontrado por
+   validación cruzada al extraer "Supuestos de Aplicación" por
+   coordenadas: aparecían claves bbox sin equivalente en el catálogo ya
+   cargado. Mismo guión largo trae además una inconsistencia de formato
+   adicional: en `EO`/`PO` el guión es una palabra bbox SEPARADA del
+   código (dos tokens), no pegada como en `CR`/`PB` o el resto del
+   documento — sin ese caso aparte, el label real salía con el guión
+   colgando al frente ("– Emisor del certificado de origen.").
+2. **6 claves repiten código con nivel `G` Y `P`, cada una con su propio
+   supuesto** (`CF`, `EP`, `IF`, `SH`, `TB`, `ZL` — ya documentado en el
+   docstring de `PedimentoIdentifier`, pero nunca antes verificado contra
+   la extracción de texto). La primera versión de
+   `parse_identifiers_con_texto` deduplicaba por `code` solo al combinar
+   páginas — perdía en silencio la segunda mitad de cada una de las 6
+   (p. ej. "CF- Registro..." nivel G se guardaba, "CF- Preferencia..."
+   nivel P se descartaba). Corregido a `(code, level)`. El mismo defecto
+   existía un nivel más arriba: `load_identifier_chunks` generaba el
+   `article` del chunk sin el nivel, así que aunque la fila quedara
+   completa en la tabla, la segunda mitad de las 6 claves igual se perdía
+   al chocar contra la primera en el chequeo de idempotencia de chunks
+   — corregido añadiendo `(nivel G/P)` al `article`.
+
+Las dos fallas se encontraron ANTES de cargar nada a la base compartida
+(verificadas contra el PDF real + pruebas de regresión antes del primer
+`alembic upgrade`/backfill local) — ningún dato incorrecto llegó a
+`shared`.
