@@ -96,9 +96,9 @@ en el mismo disco que la base.** La réplica a `yayo` está configurada y falla
 por la razón más simple: la máquina está apagada (`Connection timed out`). El
 script sale con código 3 en vez de dar un verde falso.
 
-La consola web escucha **sólo en `127.0.0.1`**, así que hoy sólo se puede usar
-sentado en el dev server. Abrirla en el tailnet es decisión de Persona 1 y no
-está tomada.
+La consola web escucha **sólo en `127.0.0.1`**, y así se queda: Persona 1
+decidió el 6-oct que el clasificador trabaje desde el dev server, para no
+complicar el acceso. No hay nada que abrir en el tailnet.
 
 ---
 
@@ -713,7 +713,7 @@ rama suelta de `legal-chunks-legal-rule-id`.
 |---|---|---|
 | 1 | **Decidir la búsqueda de partida por significado** | 🔴 es el hueco 1 del §7 y el único que no se puede decidir desde dentro: toca el camino que mide el harness y afecta a los 181 productos |
 | 2 | **Preguntar al clasificador las cinco fracciones de 7305** | 🔴 es lo único de sus 49 casos que quedó sin aplicar |
-| 3 | **Decidir si la consola se abre en el tailnet** | 🔴 hoy sólo se puede contestar sentado en el dev server |
+| 3 | Abrir la consola en el tailnet | ✅ **decidido el 6-oct: no se abre.** El clasificador trabaja desde el dev server |
 | 4 | Rotar las tres credenciales expuestas | ⏸ diferido a producción. Disparador: el primer dato real de cliente |
 | 5 | Respaldos fuera de esta máquina | ⏸ la máquina de respaldo está apagada |
 | 6 | Modelo de negocio y fecha de entrega | ⏸ fuera del alcance de los agentes por decisión suya |
@@ -758,6 +758,7 @@ En paralelo y sin esperar a nadie:
 | `docs/TAREA_P2_CANONICAL_MODEL.md` · `docs/TAREA_P2_CORPUS_JURIDICO.md` | encargos a Persona 2 |
 | `docs/TAREA_P3_MODEL_PROVIDER.md` · `docs/TAREA_P3_RAG_INTEGRACION.md` | encargos a Persona 3 |
 | `docs/PROMPT_P2.md` · `docs/PROMPT_P3.md` | prompts de arranque para los agentes |
+| `docs/PARA_CESAR_como_contestar.md` | cómo contesta el clasificador en la consola |
 | `apps/evaluacion/corpus_espejo.py` | valida un corpus antes de cargarlo |
 | `apps/evaluacion/clasificacion_39.py` | mide precisión y cobertura de la clasificación (§39) |
 | `apps/evaluacion/deteccion_26.py` | mide precisión/recall del §26 · `--escenarios` lista los corpus |
