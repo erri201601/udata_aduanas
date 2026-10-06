@@ -2274,3 +2274,124 @@ def test_sin_contestar_el_cable_sigue_sin_resolverse() -> None:
     traza = classify(_cable_6x36(), catalog=_catalogo_731210(), notes=NotasFalsas())
 
     assert traza.final_status is RGIStatus.HUMAN_REVIEW_REQUIRED
+
+
+# ── El grupo que la describe acota dónde se elige (6-oct) ───────────────────
+
+
+def _tuberia_oleoducto() -> ClassificationContext:
+    return ClassificationContext(
+        description=(
+            "TUBERIA DE ACERO AL CARBONO PARA OLEODUCTO, SOLDADA LONGITUDINALMENTE "
+            "POR ARCO SUMERGIDO, DIAMETRO 914.4 MM"
+        ),
+        operation_date=OPERACION,
+        facts=(
+            ProductFact(name="material", value="acero al carbono", status="OBSERVED"),
+            ProductFact(name="proceso_soldadura", value="SAW longitudinal", status="OBSERVED"),
+        ),
+        search_terms=("tubos",),
+    )
+
+
+def _catalogo_7305() -> CatalogoFalso:
+    """Las siete subpartidas de 7305, con sus grupos de guion reales.
+
+    Tres cuelgan del grupo «Tubos de los tipos utilizados en oleoductos o
+    gasoductos:» y las que ganan por especificidad NO son de ese grupo. Esa
+    asimetría es el caso entero.
+    """
+
+    def sub(code: str, texto: str, grupo: str | None, spec: int) -> TariffCandidate:
+        return TariffCandidate(
+            code=code, text=texto, level="SUBHEADING", specificity=spec, group_text=grupo
+        )
+
+    oleo = "Tubos de los tipos utilizados en oleoductos o gasoductos:"
+    return CatalogoFalso(
+        headings=[
+            TariffCandidate(
+                code="7305",
+                text="Los demás tubos de sección circular, de hierro o acero.",
+                level="HEADING",
+                specificity=4,
+            )
+        ],
+        subheadings=[
+            sub("730520", 'Tubos de entubación ("casing") para extracción de petróleo.', None, 3),
+            sub(
+                "730531",
+                "Los demás, soldados. Soldados longitudinalmente.",
+                "Los demás, soldados:",
+                3,
+            ),
+            sub("730539", "Los demás, soldados. Los demás.", "Los demás, soldados:", 3),
+            sub("730511", f"{oleo} Soldados longitudinalmente con arco sumergido.", oleo, 2),
+            sub("730512", f"{oleo} Los demás, soldados longitudinalmente.", oleo, 0),
+            sub("730519", f"{oleo} Los demás.", oleo, 0),
+            sub("730590", "Los demás.", None, 0),
+        ],
+        fractions=[
+            TariffCandidate(
+                code="73051102",
+                text="Soldados longitudinalmente con arco sumergido.",
+                level="FRACTION",
+                specificity=2,
+            )
+        ],
+    )
+
+
+def test_el_grupo_que_describe_la_mercancia_acota_donde_se_elige() -> None:
+    """43 PARTIDAS DEL CORPUS, Y LA PISTA ESTABA A LA VISTA.
+
+    La ficha dice OLEODUCTO y el encabezado de guion dice «oleoductos»: la
+    propia LIGIE ya separó a las tres subpartidas que pueden ser. El motor las
+    encontraba —`describen` las devolvía— y como eran tres en vez de una,
+    tiraba el hallazgo y pasaba al desempate por especificidad… que lo ganaban
+    730520, 730531 y 730539, las que NO están en ese grupo. Tres líderes,
+    ninguna elegida, y la respuesta era «ninguna es más específica» sobre
+    siete candidatas de las que tres ya estaban señaladas.
+
+    Acotar no es elegir: dentro del grupo deciden las reglas de siempre.
+    """
+    traza = classify(_tuberia_oleoducto(), catalog=_catalogo_7305(), notes=NotasFalsas())
+
+    assert traza.final_status is RGIStatus.RESOLVED
+    assert traza.resolved_code == "73051102"
+
+
+def test_sin_el_grupo_la_mercancia_no_se_resuelve() -> None:
+    """El contraste: lo que resuelve es el encabezado, no la especificidad.
+
+    La misma tubería sin la palabra que casa con el grupo vuelve al empate, y
+    el motor se niega. Sin este test, el de arriba pasaría igual si resolviera
+    por cualquier otro motivo.
+    """
+    sin_oleoducto = ClassificationContext(
+        description="TUBERIA DE ACERO AL CARBONO, SOLDADA, DIAMETRO 914.4 MM",
+        operation_date=OPERACION,
+        facts=(ProductFact(name="material", value="acero al carbono", status="OBSERVED"),),
+        search_terms=("tubos",),
+    )
+
+    traza = classify(sin_oleoducto, catalog=_catalogo_7305(), notes=NotasFalsas())
+
+    assert traza.final_status is not RGIStatus.RESOLVED
+
+
+def test_acotar_no_puede_inventar_una_candidata() -> None:
+    """`describen` es un subconjunto: si el grupo describe a TODAS, no acota.
+
+    Y a diferencia del puente de búsqueda del ADR 0007, esto no cambia qué
+    candidatas se encontraron —no toca el recorte por cobertura— sólo entre
+    cuáles se decide.
+    """
+    from core.rgi_engine.rules import _el_grupo_la_describe
+
+    cat = _catalogo_7305()
+    subs = cat.subheadings(on_date=OPERACION, heading="7305")
+    describen = [c for c in subs if _el_grupo_la_describe(c, "TUBERIA PARA OLEODUCTO")]
+
+    assert {c.code for c in describen} == {"730511", "730512", "730519"}
+    assert len(describen) < len(subs), "si describiera a todas, no habría nada que acotar"
