@@ -236,7 +236,9 @@ def _fracciones_que_un_dictamen_contradice(
     )
     por_ficha: dict[uuid.UUID, tuple[Any, str]] = {}
     for dna_id, fraccion, cuando in session.execute(dictamen).all():
-        if dna_id is None:
+        # `fraccion` ya viene filtrada a no nula en el SQL, pero la columna es
+        # `str | None` en el modelo y el tipo tiene que decirlo aquí también.
+        if dna_id is None or fraccion is None:
             continue
         previo = por_ficha.get(dna_id)
         if previo is None or cuando > previo[0]:
