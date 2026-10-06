@@ -177,3 +177,31 @@ def test_las_decisiones_sin_ficha_pasan_una_a_una(pg_session: Session) -> None: 
     b = _motor(pg_session, None, 10)
 
     assert _pendientes(pg_session) >= {a.id, b.id}
+
+
+# ── El script de la terminal ────────────────────────────────────────────────
+
+
+def test_el_script_saca_el_sku_de_cada_producto(pg_session: Session) -> None:  # noqa: F811
+    """`dict(resultado.tuples())` fallaba: un `Result` tiene `.keys()` y `dict()`
+    lo trataba como mapping. Sólo se ve ejecutándolo contra filas de verdad."""
+    from apps.evaluacion.preguntas_pendientes import skus_de
+
+    dna = _ficha(pg_session)
+    producto = pg_session.get(Product, dna.product_id)
+    assert producto is not None
+
+    assert skus_de(pg_session, {dna.product_id}) == {dna.product_id: producto.sku}
+    assert skus_de(pg_session, set()) == {}
+
+
+def test_el_script_corre_de_principio_a_fin(
+    pg_session: Session,  # noqa: F811
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Con su propia conexión, como en la terminal. `pg_session` sólo está
+    para que la configuración apunte a la base de los tests de integración."""
+    from apps.evaluacion.preguntas_pendientes import main
+
+    assert main([]) == 0
+    assert "casos pendientes" in capsys.readouterr().out

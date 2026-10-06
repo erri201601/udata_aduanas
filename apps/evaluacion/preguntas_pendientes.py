@@ -36,9 +36,32 @@ from __future__ import annotations
 
 import argparse
 from collections import defaultdict
+from typing import TYPE_CHECKING
 
 from database.models import Product
 from database.repositories.preguntas import pendientes, preguntas_de
+
+if TYPE_CHECKING:
+    import uuid
+    from collections.abc import Iterable
+
+    from sqlalchemy.orm import Session
+
+
+def skus_de(sesion: Session, ids: Iterable[uuid.UUID]) -> dict[uuid.UUID, str]:
+    """El SKU de cada producto, para poner ejemplos legibles.
+
+    `.tuples().all()` y no `.tuples()` a secas: un `Result` tiene `.keys()`, y
+    `dict()` trata como mapping a cualquier cosa que lo tenga — pedía
+    `resultado["id"]` en vez de iterar los pares, y el script fallaba al
+    imprimir (Persona 1, revisión del #214).
+    """
+    import sqlalchemy as sa
+
+    filas = sesion.execute(
+        sa.select(Product.id, Product.sku).where(Product.id.in_(list(ids)))
+    ).tuples()
+    return dict(filas.all())
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -56,9 +79,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         casos = sesion.scalars(pendientes()).all()
         ids = {c.product_id for c in casos if c.product_id is not None}
-        skus = dict(
-            sesion.execute(sa.select(Product.id, Product.sku).where(Product.id.in_(ids))).tuples()
-        )
+        skus = skus_de(sesion, ids)
     finally:
         sesion.rollback()
         sesion.close()
