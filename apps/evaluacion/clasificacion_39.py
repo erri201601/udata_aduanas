@@ -87,6 +87,12 @@ class Resultado:
     """Partidas cuyo producto nunca se clasificó. No es una abstención del
     motor: es que nadie se lo pidió."""
 
+    sin_fundamento: int = 0
+    """Partidas cuyo último veredicto dice que con esta ficha no se puede
+    determinar la fracción. No se miden: no hay verdad contra la que medir, y
+    usar la declaración contradiría al clasificador que la acaba de poner en
+    duda."""
+
     contra_dictamen: int = 0
     """Cuántas se midieron contra el dictamen de un clasificador."""
     contra_declaracion: int = 0
@@ -139,8 +145,18 @@ _CON_FRACCION_FIABLE = sa.text(
            -- escribe así —una respuesta, varios SKU debajo— y es como ya
            -- empareja el resto del sistema.
            --
-           -- Sólo veredictos con fracción: un `FALTA_INFORMACION` dice que no
-           -- se puede determinar, y eso no es una verdad contra la que medir.
+           -- MANDA EL ÚLTIMO VEREDICTO, LLEGUE O NO A UNA FRACCIÓN (6-oct)
+           --
+           -- Aquí se filtraba `fraction_code IS NOT NULL` ANTES de elegir el
+           -- más reciente, y eso convertía un `FALTA_INFORMACION` en invisible:
+           -- la consulta lo saltaba y volvía al dictamen anterior. Pasó con el
+           -- cable PED_SIM_010-005. El 5-oct el clasificador dictaminó
+           -- `73121099`; el 6-oct escribió «no tengo fundamento suficiente
+           -- para elegir 73121005 ni 73121099», y esta medición seguía usando
+           -- `73121099` como verdad. Una fracción que su autor retiró.
+           --
+           -- Se elige el último, y si no tiene fracción `sin_fundamento` lo
+           -- dice: la ficha no tiene verdad contra la que medir.
            (
              SELECT h.fraction_code
              FROM intelligence.classification_decisions h
@@ -151,10 +167,22 @@ _CON_FRACCION_FIABLE = sa.text(
                      ORDER BY d2.created_at DESC LIMIT 1
                    )
                AND h.data_origin = 'HUMAN_VALIDATED'
-               AND h.fraction_code IS NOT NULL
              ORDER BY h.created_at DESC
              LIMIT 1
            ) AS dictamen,
+           COALESCE((
+             SELECT h.fraction_code IS NULL
+             FROM intelligence.classification_decisions h
+             WHERE h.product_dna_id = (
+                     SELECT d2.product_dna_id
+                     FROM intelligence.classification_decisions d2
+                     WHERE d2.product_id = i.product_id
+                     ORDER BY d2.created_at DESC LIMIT 1
+                   )
+               AND h.data_origin = 'HUMAN_VALIDATED'
+             ORDER BY h.created_at DESC
+             LIMIT 1
+           ), FALSE) AS sin_fundamento,
            EXISTS (
              SELECT 1 FROM intelligence.classification_decisions d
              WHERE d.product_id = i.product_id AND d.data_origin <> 'HUMAN_VALIDATED'
@@ -219,6 +247,9 @@ def medir(sesion: sa.orm.Session) -> Resultado:
     """
     salida = Resultado()
     for fila in sesion.execute(_CON_FRACCION_FIABLE).all():
+        if fila.sin_fundamento:
+            salida.sin_fundamento += 1
+            continue
         if not fila.hubo_decision:
             salida.sin_decision += 1
             continue
@@ -256,6 +287,8 @@ def informe(r: Resultado) -> str:
         "",
         f"MEDIBLES  {r.medibles} partidas con decisión del motor",
         f"  sin clasificar nunca: {r.sin_decision} (no cuentan: nadie se lo pidió)",
+        f"  sin fundamento: {r.sin_fundamento} (un clasificador dijo que con esa ficha"
+        " no se puede determinar)",
         "",
         f"CONTESTÓ  {r.contestadas} de {r.medibles}",
         f"  acertó  {r.acerto}",
