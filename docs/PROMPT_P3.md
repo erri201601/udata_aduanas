@@ -1,6 +1,6 @@
 # Prompt para el agente de Persona 3 — Ulises
 
-**Actualizado:** 2026-10-06 · Sustituye la versión anterior.
+**Actualizado:** 2026-10-06, tarde · Sustituye la versión de la mañana: cambia la tarea 1.
 
 Pega esto en Claude Code / Codex, dentro del repo.
 
@@ -50,44 +50,87 @@ pantalla lo trata como si fuera infinito.
 
 ═══ MIS TAREAS, EN ORDEN ═══
 
-── 1. La bandeja agrupada por pregunta ── feature/bandeja-por-pregunta
+── 0. POR QUÉ CAMBIA LA TAREA ──
 
-ES LA DE MAYOR RENDIMIENTO DE TODO EL PROYECTO AHORA MISMO, y no es un
-cambio de motor: es una pantalla.
+La bandeja agrupada por pregunta ya no rinde. El 6-oct entraron tres cosas
+en el motor (#201, #203) y la bandeja pasó de 30 tarjetas con pregunta a DOS,
+que valen un caso cada una. Agrupar dos preguntas no le ahorra nada a nadie.
 
-Hoy:   119 tarjetas, una por caso, y la pregunta repetida dentro de cada una.
-Debe:  las preguntas primero, cada una con cuántos casos desatasca, y el
-       detalle de los casos detrás.
+Lo que ahora necesita el clasificador es otra cosa: dar veredicto sobre lo que
+el motor YA RESOLVIÓ. Hoy la precisión se mide en 72 partidas contra la
+fracción declarada —que escribió el generador sintético— y sólo en 26 contra
+su criterio. Cada veredicto suyo sobre un acierto del motor convierte un
+número sintético en uno humano. Y en la consola no hay dónde hacerlo.
 
-  ┌─────────────────────────────────────────────────────────┐
-  │  14 casos · 73121008 exige «constituidos por 7 alambres»│
-  │  La ficha dice: construccion = «6x36» · alma = «acero»  │
-  │  [ Sí, es lo mismo ]  [ No, no lo es ]   ver los 14 ▾   │
-  └─────────────────────────────────────────────────────────┘
+Tus cuatro dudas de esta mañana siguen valiendo: lo de las tres definiciones
+de "pendiente" es la tarea 2, y no se pierde.
 
-Lo que hace falta del back no existe todavía y es parte de esta tarea:
-`GET /review` devuelve casos, no preguntas. Hay dos caminos y el segundo es
-mejor:
+── 1. Veredicto desde la pantalla de Classification ── feature/veredicto-en-classification
 
-  a) agrupar en el cliente leyendo `rgi_trace[-1].preguntas` de cada caso
-  b) un endpoint que agrupe en el servidor, con la misma lógica que ya tiene
-     apps/evaluacion/preguntas_pendientes.py — que YA calcula exactamente
-     esto para la terminal
+QUÉ HAY HOY
 
-Prefiere (b) y REUTILIZA esa lógica, no la copies: el día que cambie el
-criterio de qué pregunta sirve, no puede quedarse una copia vieja en la API.
-Si para reutilizarla hay que sacarla de apps/evaluacion/ a un sitio común,
-proponlo en el PR.
+  · POST /review/{decision_id} acepta un veredicto sobre CUALQUIER decisión,
+    también las que el motor resolvió limpio y nunca estuvieron en la
+    bandeja. El docstring lo dice: «es lo que hace falta para muestrear lo
+    que la bandeja deja pasar». La API está; la pantalla no.
+  · Classification enseña una decisión y su dictamen, pero cero llamadas a
+    revisarDecision: se puede mirar, no actuar.
+  · El formulario ya existe en HumanReview.tsx —tres salidas, fracción y NICO
+    en campos separados, nota obligatoria en FALTA_INFORMACION—. Reutilízalo,
+    no lo copies.
 
-CUIDADO CON UNA COSA, y está medida: dos de las cuatro preguntas vivas no
-mueven nada al contestarse —el sartén de 7304 y el «utensilio» de 8481, 15
-casos—. Una pregunta cuya respuesta no se usa es PEOR que no preguntar:
-gasta el minuto de la única persona cuyo tiempo no se puede gastar, y
-encima parece trabajo hecho. Erick está silenciándolas en el motor. Tu
-pantalla no debe inventar su propio criterio de qué mostrar: enseña lo que
-el motor le dé.
+LAS DOS COSAS QUE ESTA PANTALLA TIENE QUE HACER BIEN, Y LAS DOS YA FALLARON
 
-── 2. Knowledge Graph ── feature/knowledge-graph
+(a) EL VEREDICTO VA A LA DECISIÓN VIGENTE DE LA FICHA, NO A LA QUE SE PINTÓ.
+
+    El 6-oct el clasificador dio un veredicto en PED_SIM_004-011 desde una
+    pestaña abierta de antes: su veredicto quedó colgado de una decisión de
+    la víspera, no de la que el motor tenía ese momento. Antes de enviar,
+    pide la decisión vigente de esa ficha —la última por product_dna_id que
+    no sea HUMAN_VALIDATED— y manda el veredicto a ésa.
+
+    Si la vigente ya tiene veredicto, la API devuelve 409. Enséñalo como
+    «ya dictaminada el <fecha>», no como error.
+
+(b) AVISA CUANDO LA FRACCIÓN TECLEADA ES UNA QUE EL MOTOR CONSIDERÓ Y NO ELIGIÓ.
+
+    Ese mismo veredicto llevaba 73121008 en «fracción correcta» mientras su
+    propia nota explicaba que esa posición era INCOMPATIBLE con la mercancía.
+    Estaba explicando qué hizo mal el motor y pegó el código de ahí. Un aviso
+    lo habría parado:
+
+      «El motor tuvo 73121008 como candidata y no la eligió. ¿Seguro?»
+
+    Sácalo de datos estructurados: `candidate_codes` del último paso de la
+    traza y `resolved_code`. NO PARSEES reasoning_summary: es texto para
+    personas y cambia de redacción. Si para dar el MOTIVO del descarte
+    necesitas un campo estructurado en la traza, pídemelo: es un cambio del
+    contrato del motor y lo hago yo.
+
+    Es un aviso, no un bloqueo. La persona manda en el criterio.
+
+── 2. Una sola definición de «pendiente» ── fix/una-definicion-de-pendiente
+
+Lo que encontraste esta mañana sigue siendo un defecto real, aunque ya no haya
+pantalla agrupada encima: la bandeja, el script de preguntas y el recálculo al
+contestar usan tres conjuntos distintos.
+
+La definición correcta, la de la bandeja:
+
+  requires_human_review IS TRUE
+  AND data_origin <> 'HUMAN_VALIDATED'
+  AND es la última decisión de su product_dna_id
+
+En database/repositories/preguntas.py como propusiste, y que la usen GET
+/review, preguntas_pendientes.py y _casos_que_preguntaban (es mía, del #192,
+y coge TODAS las pendientes en vez de la última). Y quita del script el filtro
+que mira sólo el lado de la tarifa, como acordamos.
+
+Ojo con el rendimiento: el 6-oct el tablero tardaba 54 s por esta misma
+subconsulta sin índice. El #204 añadió (product_dna_id, created_at). Comprueba
+con EXPLAIN que tu consulta común lo usa.
+
+── 3. Knowledge Graph ── feature/knowledge-graph
 
 Es la ÚNICA casilla que le falta a INTELLIGENCE en el scorecard del §44.
 Aprobado el 21-sep, en construcción, sin cerrar.
@@ -106,7 +149,7 @@ Hay un dato nuevo desde que se aprobó: el Anexo 2.4.1 ya está cargado, 456
 correlaciones fracción → NOM en regulatory.fraction_nom_requirements. Eso
 desbloquea el nodo NOM, que estaba en la lista de omisiones.
 
-── 3. Lo que NO es tuyo ahora ──
+── 4. Lo que NO es tuyo ahora ──
 
 El harness de hs_accuracy contra CBP CROSS. El corpus mide sin depender de
 nadie y CBP CROSS no está cargado. No lo abras.
@@ -174,6 +217,7 @@ marca ARCHITECTURE_DECISION_REQUIRED.
 
 Cierra con el formato de reporte de §46.
 
-Empieza por la TAREA 1. Lee y dime qué entendiste y qué archivos vas a
-tocar, antes de escribir código.
+Empieza por la TAREA 1. Si ya tenías rama abierta para la bandeja por
+pregunta, ciérrala. Lee y dime qué entendiste y qué archivos vas a tocar,
+antes de escribir código.
 ```
