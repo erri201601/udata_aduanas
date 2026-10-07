@@ -1,10 +1,10 @@
 # ADUANERO OS — Estado del proyecto y backlog
 
-**Actualizado:** 2026-10-06  
+**Actualizado:** 2026-10-07  
 **Mantiene:** Persona 1 (Erick)
 
 Las cifras de este documento se verificaron contra la base y el repositorio el
-6 de octubre. Las que dependen de otra persona van marcadas: este documento no
+7 de octubre. Las que dependen de otra persona van marcadas: este documento no
 afirma el avance de nadie que no haya empujado código.
 
 Documento de contexto. Sirve para poner al día a cualquiera —persona o agente—
@@ -127,36 +127,42 @@ database/seeds/      canonical_v0_1.py        ✅
 schemas/             contratos Pydantic       ✅
 ingestion/snice/     LIGIE · NICO · notas     ✅ los 97 capítulos
 ingestion/dof/       Anexo 22 · RGCE 2026     ✅
-ingestion/se/        Anexo 2.4.1 (NOM)        ✅ 456 correlaciones
+ingestion/se/        Anexo 2.4.1 (NOM) ·      ✅ 456 correlaciones
+                     cuota compensatoria      ✅ cable de acero de China (ADR 0009)
+ingestion/banxico/   tipo de cambio FIX       ✅ 192 días, leído por el Espejo
 ingestion/diputados/ Ley Aduanera             ✅
-ingestion/{anam,banxico,cbp_cross,datamexico,ebti,sat,vucem,wco}/   ❌ VACÍOS
+ingestion/{anam,cbp_cross,datamexico,ebti,sat,vucem,wco}/   ❌ VACÍOS
 ingestion/sintetico/ corpus de laboratorio    ✅ cargador y validador
 synthetic/           generador sintético      ❌ sólo __init__.py (sin uso)
-graph/               Knowledge Graph          ⏳ aprobado 21-sep, sin cerrar
-tests/               1 161 tests              ✅
+graph/               Knowledge Graph          ⏳ proyección escrita (~950 líneas), nada la consume
+tests/               1 294 tests              ✅
 .github/workflows/ci.yml                      ✅ 6 jobs
 ```
 
-### Base de datos — 34 tablas
+### Base de datos — 36 tablas
 
-Alembic en `e118b7bea934`. Conteos verificados el 6 de octubre:
+Alembic en `88cd0fb12273` (cuota compensatoria, #218). Conteos verificados el 7
+de octubre:
 
 ```
-regulatory     legal_sources 4 · legal_documents 5 · legal_rules 905 ·
+regulatory     legal_sources 5 · legal_documents 5 · legal_rules 905 ·
                legal_chunks 2,144 · tariff_fractions 8,136 ·
-               tariff_headings 6,855 (ADR 0002) · tariff_heading_groups ·
+               tariff_headings 6,855 (ADR 0002) · tariff_heading_groups 1,024 ·
                nicos 11,503 · fraction_nom_requirements 456 (Anexo 2.4.1) ·
                customs_offices 127 · units_of_measure 22 ·
                pedimento_claves 66 · pedimento_identifiers 174 ·
-               non_tariff_regulations 37 · nomenclature_synonyms 13 firmados ·
+               non_tariff_regulations 37 · nomenclature_synonyms 22
+               (21 vigentes, 1 retirada) · exchange_rates 192 (FIX) ·
+               compensatory_duties 4 (cable de acero, China) ·
                regulatory_events 0
-operational    pedimentos 16 · pedimento_items 181 · products 181
-               EL CORPUS ESTÁ CARGADO. Era el cuello de botella del 21-sep.
-intelligence   classification_decisions 5,209 · candidates 32,370 ·
-               evidence_records 26,559 · shadow_reviews 390 ·
-               risk_findings 2,126 · opportunity_findings 119 ·
-               ground_truth_records 61 ·
-               veredictos humanos 59 (36 con NICO, 3 de «falta información»)
+operational    pedimentos 16 · pedimento_items 181 · products 181 ·
+               invoices 16 · invoice_items 181 · coves 16 · suppliers 4 ·
+               clients 16
+intelligence   classification_decisions 6,414 · candidates 37,875 ·
+               evidence_records 31,944 · shadow_reviews 454 ·
+               risk_findings 2,744 · opportunity_findings 143 ·
+               product_dnas 183 · ground_truth_records 61 ·
+               veredictos humanos 133 (101 con NICO, 11 de «falta información»)
 raw            sin tablas: el crudo vive en MinIO
 ```
 
@@ -169,9 +175,10 @@ los 97 capítulos, y desde el ADR 0002 cada nivel —partida, subpartida y grupo
 de guion— tiene su propio texto en `tariff_headings`, que es lo que faltaba
 para que el motor supiera de qué habla una fracción que sólo dice «Los demás».
 
-### RAW en MinIO — 13 objetos, listados el 6 de octubre
+### RAW en MinIO — 15 objetos, listados el 7 de octubre
 
 ```
+banxico/fix_2026-01-01_2026-10-06.html          0.1 MB   ← tipo de cambio FIX
 diputados/ley_aduanera_20251119.pdf             2.0 MB
 diputados/ligie_2022_texto_vigente.pdf         18.3 MB
 dof/anexo22_20260115.pdf                        9.3 MB
@@ -183,13 +190,16 @@ snice/nico_20240415.xlsx                        0.8 MB
 sintetico/corpus_espejo_v1_20260921.pdf         0.1 MB   ← corpus de laboratorio
 sintetico/corpus_espejo_v1_20260921.json        0.5 MB
 product-dna/<product_id>/<content_hash>         3 fichas subidas por la API
+se/cuota_compensatoria_cable_acero_china_ec32-24.html  0.5 MB   ← DOF 9-abr-2026
 ```
 
 `aduanero-docs` sigue vacío.
 
-⚠️ Uno de los tres objetos de `product-dna/` pesa **0 KB**. Una ficha subida
-vacía con su hash calculado es una evidencia que parece completa y no lo es:
-conviene mirarlo antes de que una decisión se apoye en ella.
+⚠️ Uno de los tres objetos de `product-dna/` pesa **0 KB**: es de
+PED_SIM_001-001 y no generó ficha. El que sí hizo daño es otro: la imagen de
+PED_SIM_005-001 (1.7 MB) se leyó el 30-sep con un parser que perdía los
+atributos, y dejó como **ficha vigente una versión vacía** — ver el hueco 7 del
+§7.
 
 La regla 7 se cumple de punta a punta: nada de lo anterior se parseó sin que
 el crudo estuviera antes en MinIO con su `content_hash`.
@@ -491,20 +501,22 @@ a producción. Ver la decisión y su disparador más abajo.
 ### Scorecard del §44
 
 ```
-DATA           6 de 14   LIGIE ✅ (los 97 capítulos, con los textos de cada
+DATA           7 de 14   LIGIE ✅ (los 97 capítulos, con los textos de cada
                          nivel: ADR 0002) · NICO ✅ · Ley Aduanera ✅ ·
                          Anexo 22 ✅ · RGCE 2026 ✅ · Anexo 2.4.1 ✅ (456
-                         correlaciones fracción → NOM, #170)
-                         PROSEC ❌ · Regla 8a ❌ · Cuotas ❌ · CBP ❌ ·
-                         EBTI ❌ · Banxico ❌ · ANAM/SAT/Data México ❌
+                         correlaciones fracción → NOM, #170) · Banxico ✅
+                         (FIX, comparado por el Espejo: #217, #219)
+                         Cuotas 🟡 1 de 21 combinaciones del corpus (#218) ·
+                         PROSEC ❌ · Regla 8a ❌ · CBP ❌ · EBTI ❌ ·
+                         ANAM/SAT/Data México ❌
 CORE           4 de 4    Product DNA ✅ · RGI ✅ · Classification ✅ ·
                          Evidence ✅
 SIMULATOR      ✅ cargado  16 pedimentos · 181 partidas · 181 productos ·
                          61 anomalías sembradas. Era el cuello de botella
                          del 21-sep y dejó de serlo.
 INTELLIGENCE   5 de 6    Shadow ✅ · Audit ✅ · Money ✅ · Opportunity ✅ ·
-                         Sentinel ✅ · Knowledge Graph ⏳ aprobado el 21-sep,
-                         sin cerrar
+                         Sentinel ✅ · Knowledge Graph ⏳ la proyección está
+                         escrita en graph/ y nada la consume
 PRODUCT        2.5 de 3  Dashboard ✅ · Copilot ✅ · Demo AJR ⏳ sin fecha
 ```
 
@@ -516,31 +528,43 @@ pedimento sintético → Shadow → divergencia → Money Finder
       ✅            ✅        ✅            ✅         ✅
 ```
 
-Cerrado de punta a punta y **medido contra el corpus** (6-oct):
+Cerrado de punta a punta y **medido contra el corpus** (7-oct):
 
 ```
 clasificación   168 partidas con fracción fiable
-                  4 sin fundamento — un clasificador dijo que con esa ficha
+                 11 sin fundamento — un clasificador dijo que con esa ficha
                     no se puede determinar; no se miden (#213)
-                164 medibles · contestó 98 · acertó 98 · falló 0
+                157 medibles · contestó 98 · acertó 98 · falló 0
                 precisión 100.00 % · margen al 95 % ±1.89
-                cobertura 59.76 % — cuántas veces se atrevió a contestar
-                se abstuvo 66 — el §8.2 funcionando, no un error
-                verdad: dictamen 34 · declaración 64
+                cobertura 62.42 % — cuántas veces se atrevió a contestar
+                se abstuvo 59 — el §8.2 funcionando, no un error
+                verdad: dictamen 43 · declaración 55
 
 detección       TP 50 · FP 0 · FN 5 · TN 126
                 precisión 100.00 % · recall 90.91 % (±7.82) · F1 95.24
-                cobertura 49 de 55 partidas sucias señaladas por algo
+                ciertos y no contados 157 (fichas recortadas, declaraciones
+                que un dictamen contradice, cuota compensatoria y tipo de
+                cambio reales sobre partidas que el corpus no sembró)
+
+bandeja         0 casos. Tablero, métricas y bandeja cuentan con la misma
+                definición (ADR 0008, #220)
 ```
 
-**La cobertura subió de 58.33 a 59.76 % sin que el motor contestara una más.**
-Lo que cambió es el denominador. Un `FALTA_INFORMACION` posterior no retiraba el
-dictamen anterior de la misma ficha: las mediciones lo saltaban y volvían a la
-fracción vieja. Con el cable PED_SIM_010-005 se veía claro: el clasificador
-escribió «no tengo fundamento suficiente para elegir 73121005 ni 73121099» y la
-medición seguía usando `73121099` como verdad. Ahora manda el último veredicto
-y, si no llega a una fracción, la partida no se mide. Salen cuatro, y en las
-cuatro el motor también se abstiene.
+**La cobertura subió de 58.33 a 62.42 % entre el 6 y el 7 de octubre sin que
+el motor contestara una partida más.** Lo que cambió es el denominador, y conviene
+decirlo antes de que alguien lo lea como mejora. Un `FALTA_INFORMACION` del
+clasificador saca la partida de la medición (#213): no hay verdad contra la que
+medir, y medirla contra la declaración contradiría a quien la acaba de poner en
+duda. Con los 57 casos que dictaminó el 7-oct, esas partidas pasaron de 4 a 11,
+y en las once el motor también se abstiene.
+
+**«55 de 55 partidas sucias señaladas» ya no significa nada.** Era 49 de 55.
+Sube porque desde el #219 el hallazgo de tipo de cambio cae en TODAS las
+partidas: los 15 pedimentos del corpus declaran entre 18.20 y 18.98 y el FIX
+de su fecha está entre 16.96 y 17.33 — el generador sintético inventó los tipos
+de cambio. **Para la demo:** cada pedimento del corpus enseña una divergencia
+CRITICAL de tipo de cambio. Es cierta contra el FIX oficial, pero su causa es
+el corpus, y hay que contarlo así.
 
 **La precisión se mide sobre un ámbito que antes tenía un punto ciego** (#185).
 Se medía sólo sobre las 126 partidas limpias, bajo una premisa falsa: que toda
@@ -549,7 +573,7 @@ que 42 partidas quedaban fuera — y entre ellas estaba la peor respuesta del
 motor. El titular decía «100 %» y ese caso no contaba. Lo encontró un
 clasificador revisando a mano, no la medición.
 
-1 221 tests en verde prueban el motor contra los casos que escribimos nosotros.
+1 294 tests en verde prueban el motor contra los casos que escribimos nosotros.
 Van **cinco** fallos graves que pasaban todos sus tests y sólo aparecieron
 ejecutando contra datos reales o contra el criterio de una persona: la RGI 3 c)
 que resolvía sin pedir revisión, el reordenamiento que destruía el orden
@@ -564,10 +588,11 @@ el repo, equivocado en producción.
 |---|---|---|
 | 1 | **La búsqueda de partida, cuando la tarifa no nombra la mercancía** | Ocho casos de la bandeja —un sartén de acero inoxidable y tres «utensilios»— acaban entre tubos y tornillos. La tarifa no dice «sartén» en ningún sitio: `poder_de_discriminacion` le da **cero** posiciones. Tres intentos de arreglarlo midiendo salieron peor ([ADR 0007](adr/0007-la-busqueda-de-partida-no-se-arregla-tocando-terminos.md)). La vía que queda es la que el §27 asigna al RAG, y es un cambio de arquitectura: **pide decisión de Persona 1**. |
 | 2 | **El puente de vocabulario no puede ensanchar ninguna búsqueda** | La tabla existe, el endpoint funciona y las respuestas entran firmadas, pero el puente cae siempre fuera del tope de seis términos. Dejarlo pasar costó 29 aciertos, porque además le da un punto de cobertura a la posición de cuyo texto salió. Hace falta que la cobertura distinga un término de la ficha de un puente — toca el puerto `TariffCatalog` y su SQL (#188). |
-| 3 | **Cinco fracciones del dictamen no existen en la TIGIE cargada** | `73051901` ×3 y `73051201` ×2. El guardarraíl del veredicto las rechazó —el mismo que impidió aceptar `73239399` para un sartén—. El propio dictamen dice que las fracciones se contrastaron «cuando fue posible» y no lista ninguna de 7305 entre las verificadas. **Hay que preguntárselo al clasificador**, no decidirlo aquí. |
-| 4 | **Knowledge Graph** | Aprobado el 21-sep y sin cerrar. Es **proyección de Postgres, nunca fuente**: se reconstruye con MERGE por el id de la fila, y nada que fundamente jurídicamente puede citarse desde ahí. Es lo único que falta de INTELLIGENCE. |
+| 3 | ~~Cinco fracciones del dictamen no existen en la TIGIE~~ | **Cerrado.** El clasificador dio las fracciones correctas el 6-oct (73051999 y 73051291) y ningún veredicto vigente tiene hoy una fracción fuera de la TIGIE de su fecha. |
+| 4 | **Knowledge Graph** | La proyección está escrita en `graph/` (~950 líneas, 21-sep) y **nada la consume** salvo el chequeo de salud. Falta ejecutarla contra la base y darle un consumidor. Es **proyección de Postgres, nunca fuente**: nada que fundamente jurídicamente puede citarse desde ahí. |
 | 5 | **Los identificadores del pedimento** | 174 claves del Anexo 22 cargadas y el Espejo no comprueba ninguna. Necesita las reglas de las RGCE que dicen cuál exige cada fracción. |
-| 6 | **Las fuentes vacías** | `anam`, `banxico`, `cbp_cross`, `datamexico`, `ebti`, `sat`, `vucem`, `wco`. Ninguna bloquea el camino crítico hoy. |
+| 6 | **Las fuentes vacías** | `anam`, `cbp_cross`, `datamexico`, `ebti`, `sat`, `vucem`, `wco`. Ninguna bloquea el camino crítico hoy. Las cuotas tienen 1 de 21 combinaciones con resolución primaria; las otras 18 siguen `NEEDS_VALIDATION`. |
+| 7 | **PED_SIM_005-001 tiene como ficha vigente una versión vacía** | El 30-sep se probó la extracción desde imagen sobre ese producto; dos lecturas devolvieron cero atributos y cada una quedó como vigente. Desde entonces el motor clasifica una ficha sin nada: «no hay términos de búsqueda». La guarda que lo impide entró el 2-oct (`guardar_dna`: una extracción vacía no desplaza a la anterior) pero no reparó lo guardado. Reparar = volver a hacer vigente la v1 del corpus (5 atributos); **pendiente de la decisión de Persona 1**, porque toca la base compartida. Las v2/v3 tampoco tienen evidencia enlazada. |
 
 ### Deuda técnica conocida
 
@@ -693,10 +718,8 @@ rama suelta de `legal-chunks-legal-rule-id`.
 
 ## 8. Backlog por persona
 
-> Al 6 de octubre. `develop` en `72905e2`, 412 commits, 0 PRs abiertos.
-> **Los últimos 60 commits son de Persona 1**: la última aportación de Persona 2
-> es del 30-sep y la de Persona 3 del 28-sep. Este documento no afirma en qué
-> están trabajando — lo de abajo es lo que consta en el repositorio.
+> Al 7 de octubre, tras el #221. Este documento no afirma en qué está
+> trabajando nadie — lo de abajo es lo que consta en el repositorio.
 
 ### Persona 2 — Brandon (Data Engineer)
 
@@ -705,29 +728,36 @@ rama suelta de `legal-chunks-legal-rule-id`.
 | 1 | El cargador del corpus | ✅ cargado: 16 pedimentos, 181 partidas, 61 anomalías |
 | 2 | La cadena del proveedor | ✅ la comprobación de país corre sobre el corpus |
 | 3 | Niveles intermedios de un guion (ADR 0004) | ✅ 30-sep |
-| 4 | **Abrir el PR del ADR 0003** | 🔴 el código lo cita y el fichero está sólo en su rama, del 28-sep |
-| 5 | **Cerrar o descartar dos ramas suyas** | 🔴 `feat/legal-chunks-legal-rule-id` (9-sep) y `fix/corpus-espejo-product-compartido-y-summary` (22-sep) |
-| 6 | Las reglas de identificadores de las RGCE | 🟡 desbloquea el hueco 5 del §7 |
-| 7 | Reconocimiento de CBP CROSS | ⏸ nada depende de ello hoy |
+| 4 | Abrir el PR del ADR 0003 | ✅ #196 |
+| 5 | Cerrar o descartar dos ramas suyas | ✅ |
+| 6 | Tipo de cambio FIX: carga y consumidor en el Espejo | ✅ #199, #217, #219 (la divisa sale de la factura) |
+| 7 | Cuota compensatoria del cable de acero de China (ADR 0009) | ✅ #218, cargada en la compartida el 7-oct |
+| 8 | **Corregir `published_at` de la cuota** | 🔴 dice 2024-12-17 (inicio de vigencia); el DOF la publicó el 2026-04-09 |
+| 9 | Las reglas de identificadores de las RGCE | 🟡 desbloquea el hueco 5 del §7 |
+| 10 | Reconocimiento de CBP CROSS | ⏸ nada depende de ello hoy |
 
 ### Persona 3 — Ulises (AI + Full Stack)
 
 | # | Tarea | Estado |
 |---|---|---|
 | 1 | Métrica de detección (§26) | ✅ corriendo: TP 50 · FP 0 · recall 90.91 % |
-| 2 | Los dictámenes humanos como fuente de precisión | ✅ 28-sep, y usada: 59 veredictos |
-| 3 | **Knowledge Graph** | 🟡 aprobado el 21-sep, sin cerrar. Lo único que falta de INTELLIGENCE |
-| 4 | Harness de `hs_accuracy` contra CBP CROSS | ⏸ baja prioridad: el corpus mide sin depender de nadie |
+| 2 | Los dictámenes humanos como fuente de precisión | ✅ 28-sep, y usada: 133 veredictos |
+| 3 | Una sola definición de «pendiente» (ADR 0008) | ✅ #214; los contadores, #220 |
+| 4 | Veredicto desde Classification, con aviso de fracción descartada | ✅ #221 (hecho por Persona 1 en su ausencia; lo revisa al volver) |
+| 5 | **Knowledge Graph** | 🟡 la proyección está escrita y nada la consume. Lo único que falta de INTELLIGENCE |
+| 6 | Harness de `hs_accuracy` contra CBP CROSS | ⏸ baja prioridad: el corpus mide sin depender de nadie |
 
 ### Persona 1 — Erick (Tech Lead)
 
 | # | Tarea | Estado |
 |---|---|---|
 | 1 | **Decidir la búsqueda de partida por significado** | 🔴 es el hueco 1 del §7 y el único que no se puede decidir desde dentro: toca el camino que mide el harness y afecta a los 181 productos |
-| 2 | **Preguntar al clasificador las cinco fracciones de 7305** | 🔴 es lo único de sus 49 casos que quedó sin aplicar |
+| 2 | Preguntar al clasificador las cinco fracciones de 7305 | ✅ contestadas el 6-oct |
+| 2b | **Reparar la ficha vacía de PED_SIM_005-001** | 🔴 hueco 7 del §7: toca la base compartida y es su decisión |
+| 2c | **Preguntar al clasificador por PED_SIM_002-008** | 🔴 conserva 73239305 con la misma ficha («material no especificado») que el 7-oct declaró sin fundamento en otros dos SKU |
 | 3 | Abrir la consola en el tailnet | ✅ **decidido el 6-oct: no se abre.** El clasificador trabaja desde el dev server |
 | 4 | Rotar las tres credenciales expuestas | ⏸ diferido a producción. Disparador: el primer dato real de cliente |
-| 5 | Respaldos fuera de esta máquina | ⏸ la máquina de respaldo está apagada |
+| 5 | Respaldos fuera de esta máquina | 🔴 la máquina de respaldo sigue apagada: el respaldo diario se hace y se verifica, pero la réplica a `yayo` falla cada día. Desde el 7-oct hay 133 veredictos humanos que sólo existen en este disco |
 | 6 | Modelo de negocio y fecha de entrega | ⏸ fuera del alcance de los agentes por decisión suya |
 
 ---
@@ -737,9 +767,9 @@ rama suelta de `legal-chunks-legal-rule-id`.
 **Decidir cómo se elige la partida cuando la tarifa no nombra la mercancía.**
 
 Todo lo demás del camino crítico está cerrado y medido: el corpus cargado, el
-motor con precisión del 100 % sobre 98 contestadas de 164 medibles, el bucle de captura
-funcionando de punta a punta y 59 veredictos de un clasificador real dentro del
-sistema. Lo que queda es el techo de la cobertura, y es un techo de
+motor con precisión del 100 % sobre 98 contestadas de 157 medibles, el bucle de captura
+funcionando de punta a punta y 133 veredictos de un clasificador real dentro del
+sistema, con la bandeja a cero. Lo que queda es el techo de la cobertura, y es un techo de
 arquitectura, no de ajuste: está medido en el
 [ADR 0007](adr/0007-la-busqueda-de-partida-no-se-arregla-tocando-terminos.md)
 que tres intentos razonables de moverlo lo empeoraron.
@@ -747,14 +777,15 @@ que tres intentos razonables de moverlo lo empeoraron.
 La frase que el proyecto podrá decir el día que se resuelva, y hoy no puede:
 *«el motor clasifica el X % de las partidas sin ayuda humana, con precisión
 medida contra el dictamen de un clasificador»*. Hoy la mitad de esa frase ya es
-verdad —la precisión— y la otra mitad está en 41.67 %.
+verdad —la precisión— y la otra mitad está en 62.42 %.
 
 En paralelo y sin esperar a nadie:
 
 1. **Separar el puente de la cobertura** (hueco 2). Es la diferencia entre una
    mesa de vocabulario que crece y una que se llena de respuestas inertes.
 2. **El Knowledge Graph** (hueco 4), lo único que le falta a INTELLIGENCE.
-3. **Las cinco fracciones de 7305**, que es una pregunta, no un desarrollo.
+3. **La ficha vacía de PED_SIM_005-001** (hueco 7), que es una decisión, no un
+   desarrollo.
 
 ## 10. Documentos del repositorio
 
