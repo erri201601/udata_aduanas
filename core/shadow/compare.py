@@ -464,9 +464,14 @@ def _lagunas(expected: ExpectedItem, declared: DeclaredItem | None = None) -> li
                 "no tiene NICO cargados, y eso es un hueco del catálogo, no del pedimento"
             )
         elif declared.nico_code in expected.valid_nico_codes:
+            # Antes decía «exige la ficha técnica, que no está cargada», y la
+            # ficha SÍ está cargada: lo que falta es una clasificación que
+            # llegue hasta el NICO. Un motivo falso en la pantalla de la demo
+            # contradice lo que se le cuenta al cliente (7-oct).
             razones.append(
                 f"el NICO {declared.nico_code} existe en la fracción declarada; saber si es "
-                "el que corresponde a la mercancía exige la ficha técnica, que no está cargada"
+                "el que corresponde a la mercancía exige una clasificación que llegue hasta "
+                "el NICO, y la de esta partida no llegó"
             )
 
     if expected.igi_amount is None:
@@ -494,16 +499,30 @@ def _lagunas(expected: ExpectedItem, declared: DeclaredItem | None = None) -> li
             "no se consultó la ficha técnica: sin producto ligado o sin Product DNA "
             "no se puede decir si el expediente alcanza"
         )
+    # LOS MOTIVOS TIENEN QUE SER LOS DE HOY (7-oct)
+    #
+    # Las dos razones de abajo se escribieron cuando el Anexo 2.4.1 y el
+    # Apéndice 8 no estaban cargados, y siguieron diciéndolo después de
+    # cargarlos: «falta cargar la correlación fracción → NOM» con 456
+    # correlaciones en la base. En la pantalla del Espejo eso contradice lo que
+    # se le cuenta al cliente. Un motivo es una afirmación, y tiene que ser
+    # verdad el día que se lee.
     if expected.required_nom_codes is None:
-        razones.append(
-            "no se conoce qué NOM exige la fracción "
-            f"{expected.fraction_code or 'esperada'}: falta cargar la correlación "
-            "fracción → NOM (Anexo 2.4.1 del Acuerdo de la SE)"
-        )
+        if expected.fraction_code is None:
+            razones.append(
+                "no se sabe qué NOM exige la partida: dependen de la fracción, y el "
+                "sistema no llegó a una fracción esperada"
+            )
+        else:
+            razones.append(
+                f"no se conoce qué NOM exige la fracción {expected.fraction_code}: no hay "
+                "correlación fracción → NOM (Anexo 2.4.1) vigente en la fecha de la operación"
+            )
     if expected.required_identifiers is None:
         razones.append(
-            "no se conocen los identificadores que exige la operación: "
-            "falta cargar el Apéndice 8 del Anexo 22"
+            "no se conocen los identificadores que exige la operación: el catálogo del "
+            "Apéndice 8 está cargado, pero no las reglas de la RGCE que dicen cuáles exige "
+            "cada operación"
         )
     return razones
 

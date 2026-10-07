@@ -1208,13 +1208,15 @@ code {
   gap: 0.35rem 0.5rem;
 }
 
+/* `--bien` era un tinte en el tema oscuro y pasó a verde sólido con el claro
+   (30-sep): el texto gris encima no se leía. Tinte del verde y texto verde. */
 .comprobaciones > li {
   font-size: 0.76rem;
-  color: var(--tenue);
+  color: var(--ok);
   padding: 0.12rem 0.5rem;
   border-radius: 999px;
-  border: 1px solid var(--borde);
-  background: var(--bien, transparent);
+  border: 1px solid color-mix(in srgb, var(--ok) 30%, transparent);
+  background: color-mix(in srgb, var(--ok) 10%, transparent);
 }
 
 .comprobado__cuenta {
@@ -1802,6 +1804,32 @@ code {
   font-size: 0.76rem;
   color: var(--mal);
   line-height: 1.5;
+}
+
+.espejo-documento {
+  margin: 0 0 1rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--borde);
+  border-left: 4px solid var(--mal);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.espejo-documento h5 {
+  margin: 0 0 0.25rem;
+}
+
+.espejo-documento__pie,
+.espejo-linea__remite {
+  margin: 0 0 0.5rem;
+  font-size: 0.76rem;
+  color: var(--tenue);
+}
+
+.hallazgo__veces {
+  margin-left: auto;
+  font-size: 0.72rem;
+  color: var(--tenue);
 }
 
 .contestar__alcance-ficha {

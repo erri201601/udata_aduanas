@@ -13,7 +13,7 @@ export type ProductRead = components['schemas']['ProductRead']
 export type ProductDnaDetail = components['schemas']['ProductDnaDetail']
 export type ProductAttributeRead = components['schemas']['ProductAttributeRead']
 export type AttributeStatus = ProductAttributeRead['status']
-export type ClassificationDecisionRead = components['schemas']['ClassificationDecisionRead']
+export type DecisionEnLista = components['schemas']['DecisionEnLista']
 export type ClassificationDetail = components['schemas']['ClassificationDetail']
 export type CasoVigente = components['schemas']['CasoVigente']
 export type ClassificationCandidateRead = components['schemas']['ClassificationCandidateRead']
@@ -165,8 +165,10 @@ async function pedir<T>(ruta: string, signal?: AbortSignal): Promise<T> {
 /** Decisiones de clasificación, de la más reciente a la más antigua. */
 export async function fetchClassifications(
   signal?: AbortSignal,
-): Promise<ClassificationDecisionRead[]> {
-  return pedir<ClassificationDecisionRead[]>('/classifications', signal)
+): Promise<DecisionEnLista[]> {
+  // Una por caso y las resueltas primero: sin el filtro llegaban todas las
+  // filas —más de 6 400— y la pantalla abría en una prueba fallida (7-oct).
+  return pedir<DecisionEnLista[]>('/classifications?vigentes=true&limit=200', signal)
 }
 
 /** La precisión del §39, medida contra los veredictos humanos. */

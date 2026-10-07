@@ -24,9 +24,10 @@ from database.models import (
     ClassificationCandidate,
     ClassificationDecision,
     EvidenceRecord,
+    Product,
     ProductDna,
 )
-from database.repositories.preguntas import dictamen_de, vigente_de
+from database.repositories.preguntas import dictamen_de, vigente_de, vigentes
 from database.repositories.tariff import TariffCatalogRepository
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
@@ -110,22 +111,65 @@ class ClassificationDetail(ClassificationDecisionRead):
     """
 
 
+class DecisionEnLista(ClassificationDecisionRead):
+    """Una decisión del listado, con el producto al que pertenece.
+
+    Sin el SKU, el selector de la pantalla decía «INSUFFICIENT_INFORMATION —
+    2026-09-30» cuarenta veces seguidas y no había forma de saber de qué
+    mercancía era cada una.
+    """
+
+    sku: str | None = None
+    producto: str | None = None
+
+
 @router.get("", summary="Lista las decisiones de clasificación")
 def listar_decisiones(
     session: SessionDep,
     product_id: uuid.UUID | None = None,
+    vigentes_por_caso: Annotated[
+        bool,
+        Query(
+            alias="vigentes",
+            description="Sólo la decisión vigente de cada caso (ADR 0008), primero las resueltas",
+        ),
+    ] = False,
     limit: Annotated[int, Query(ge=1, le=LIMITE_MAXIMO)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
-) -> list[ClassificationDecisionRead]:
-    """Decisiones, de la más reciente a la más antigua."""
-    sentencia = sa.select(ClassificationDecision)
+) -> list[DecisionEnLista]:
+    """Decisiones, de la más reciente a la más antigua.
+
+    CON `vigentes=true`, UNA POR CASO (7-oct)
+
+    Sin filtro, el listado devuelve todas las filas: cada reclasificación del
+    corpus, los veredictos humanos y las pruebas. Son más de 6 400, y las
+    primeras por fecha de operación eran intentos fallidos de una laptop de
+    prueba del 30-sep, así que la pantalla de Classification abría en un
+    «Sin fracción». Con `vigentes=true` devuelve la decisión vigente de cada
+    caso —la misma definición que la bandeja— con las resueltas primero, que
+    son las que se pueden explicar de punta a punta.
+    """
+    sentencia = sa.select(ClassificationDecision, Product.sku, Product.commercial_name).outerjoin(
+        Product, Product.id == ClassificationDecision.product_id
+    )
     if product_id is not None:
         sentencia = sentencia.where(ClassificationDecision.product_id == product_id)
 
-    filas = session.scalars(
-        sentencia.order_by(ClassificationDecision.operation_date.desc()).limit(limit).offset(offset)
-    ).all()
-    return [ClassificationDecisionRead.model_validate(f, from_attributes=True) for f in filas]
+    if vigentes_por_caso:
+        vigente = vigentes()
+        sentencia = sentencia.where(
+            ClassificationDecision.id.in_(sa.select(vigente.c.id))
+        ).order_by((ClassificationDecision.status != "RESOLVED"), Product.sku)
+    else:
+        sentencia = sentencia.order_by(ClassificationDecision.operation_date.desc())
+
+    filas = session.execute(sentencia.limit(limit).offset(offset)).all()
+    return [
+        DecisionEnLista.model_validate(d, from_attributes=True).model_copy(
+            update={"sku": sku, "producto": producto}
+        )
+        for d, sku, producto in filas
+    ]
 
 
 def _en_catalogo(session: SessionDep, veredicto: ClassificationDecision) -> bool | None:
