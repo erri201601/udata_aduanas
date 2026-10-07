@@ -24,7 +24,9 @@ from database.models import (
     ClassificationCandidate,
     ClassificationDecision,
     EvidenceRecord,
+    ProductDna,
 )
+from database.repositories.preguntas import dictamen_de, vigente_de
 from database.repositories.tariff import TariffCatalogRepository
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
@@ -181,17 +183,7 @@ def obtener_decision(decision_id: uuid.UUID, session: SessionDep) -> Classificat
     detalle = ClassificationDetail.model_validate(decision, from_attributes=True)
     return detalle.model_copy(
         update={
-            "dictamen": (
-                DictamenRead(
-                    decision_id=veredicto.id,
-                    fraction_code=veredicto.fraction_code,
-                    reasoning=veredicto.reasoning,
-                    created_at=veredicto.created_at,
-                    en_catalogo=_en_catalogo(session, veredicto),
-                )
-                if veredicto is not None
-                else None
-            ),
+            "dictamen": _dictamen(session, veredicto),
             "candidates": [
                 ClassificationCandidateRead.model_validate(c, from_attributes=True)
                 for c in candidatos
@@ -203,4 +195,90 @@ def obtener_decision(decision_id: uuid.UUID, session: SessionDep) -> Classificat
             # es la que permite que la pantalla diga la verdad.
             "trace_available": decision.rgi_trace is not None,
         }
+    )
+
+
+def _dictamen(session: SessionDep, veredicto: ClassificationDecision | None) -> DictamenRead | None:
+    if veredicto is None:
+        return None
+    return DictamenRead(
+        decision_id=veredicto.id,
+        fraction_code=veredicto.fraction_code,
+        reasoning=veredicto.reasoning,
+        created_at=veredicto.created_at,
+        en_catalogo=_en_catalogo(session, veredicto),
+    )
+
+
+class CasoVigente(BaseModel):
+    """Lo que necesita la pantalla justo antes de enviar un veredicto."""
+
+    decision: ClassificationDetail
+    """La decisión VIGENTE del caso, que puede no ser la que se estaba mirando.
+    Trae la traza, de donde sale el aviso de fracción descartada."""
+
+    dictamen_del_caso: DictamenRead | None = None
+    """El último veredicto de la ficha, revise la decisión que revise.
+
+    No es `decision.dictamen`: ése se busca por `reviews_decision_id` y es el
+    de ESA fila. Tras reclasificar un caso ya dictaminado, la vigente no tiene
+    veredicto propio y la pantalla diría «sin dictaminar» sobre un caso que una
+    persona ya cerró — eran 33 el 7-oct.
+    """
+
+
+@router.get(
+    "/{decision_id}/vigente",
+    summary="La decisión vigente del caso de esa decisión, y su dictamen",
+    responses={409: {"description": "La ficha de esa decisión ya no es la vigente"}},
+)
+def caso_vigente(decision_id: uuid.UUID, session: SessionDep) -> CasoVigente:
+    """A qué decisión va un veredicto dado desde la pantalla que explica otra.
+
+    EL VEREDICTO VA AL CASO DE HOY, NO A LA FILA QUE SE PINTÓ (ADR 0008)
+
+    El 6-oct un clasificador dio un veredicto desde una pestaña abierta de
+    antes, y quedó colgado de una decisión de la víspera. Antes de enviar, la
+    pantalla pide esto y manda el veredicto a `decision.id`.
+
+    Mismo caso, misma mercancía: si el motor volvió a clasificar la MISMA
+    ficha, lo que la persona dice sobre la mercancía sigue valiendo. Si la
+    ficha cambió de versión, es otro caso con otros hechos, y mandar ahí el
+    veredicto firmaría algo que la persona no vio: 409.
+
+    Una decisión sin ficha no tiene caso al que agruparla: es su propia
+    vigente.
+    """
+    decision = session.get(ClassificationDecision, decision_id)
+    if decision is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "decisión no encontrada")
+
+    if decision.product_dna_id is None:
+        # Un veredicto sin ficha apunta a la decisión que revisó: ésa es el caso.
+        if decision.data_origin == "HUMAN_VALIDATED" and decision.reviews_decision_id:
+            decision = session.get(ClassificationDecision, decision.reviews_decision_id)
+            if decision is None:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "decisión revisada no encontrada")
+        veredicto = session.scalars(
+            sa.select(ClassificationDecision)
+            .where(ClassificationDecision.reviews_decision_id == decision.id)
+            .order_by(ClassificationDecision.created_at.desc())
+        ).first()
+        return CasoVigente(
+            decision=obtener_decision(decision.id, session),
+            dictamen_del_caso=_dictamen(session, veredicto),
+        )
+
+    ficha = session.get(ProductDna, decision.product_dna_id)
+    if ficha is None or not ficha.is_current:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "la ficha de esta decisión cambió: es otro caso. Vuelve a cargar la decisión vigente.",
+        )
+    vigente = vigente_de(session, ficha.id)
+    if vigente is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "el caso no tiene decisión del motor")
+    return CasoVigente(
+        decision=obtener_decision(vigente.id, session),
+        dictamen_del_caso=_dictamen(session, dictamen_de(session, ficha.id)),
     )
