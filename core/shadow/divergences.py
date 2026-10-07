@@ -57,6 +57,26 @@ class DivergenceType(StrEnum):
     `_valor_esperado` (Persona 2, 6-oct-2026), no porque esté verificado.
     """
 
+    COMPENSATORY_DUTY_MISMATCH = "COMPENSATORY_DUTY_MISMATCH"
+    """La partida es de un origen/fracción con cuota compensatoria conocida
+    (`regulatory.CompensatoryDuty`, ADR 0009) y no la declaró, o el importe
+    declarado no cuadra con `rate * cantidad`.
+
+    SE EMITE AUNQUE NO SE PUEDA CALCULAR EL MONTO EXACTO: cuando la unidad
+    declarada de la partida no es la de la cuota (p. ej. la resolución fija
+    la tasa "por kilogramo" y la partida declara en metro lineal — caso
+    real, cable de acero), no se inventa un factor de conversión; el
+    hallazgo se emite igual ("falta declarar"), pero sin `expected_value`
+    numérico — el texto lo explica.
+
+    Sólo existe UNA combinación origen+fracción verificada hoy (cable de
+    acero de China, ver `ingestion.se.cuotas_compensatorias`); para
+    cualquier otra, `ExpectedItem.compensatory_duty_applies` es `None`
+    ("no se sabe"), nunca `False` ("se sabe que no aplica") — no se ha
+    verificado lo suficiente para afirmar lo segundo de ninguna
+    combinación todavía.
+    """
+
     IGI_RATE_MISMATCH = "IGI_RATE_MISMATCH"
     """El IGI declarado no es el que sale de aplicar la tarifa a esa fracción.
 
@@ -110,6 +130,8 @@ DEFAULT_SEVERITY: Final[dict[DivergenceType, str]] = {
     DivergenceType.VALUE_MISMATCH: "CRITICAL",
     # Cambia el valor en aduana convertido, igual que una subvaluación.
     DivergenceType.EXCHANGE_RATE_MISMATCH: "CRITICAL",
+    # Cambia lo que se paga, igual que una fracción o un IGI equivocados.
+    DivergenceType.COMPENSATORY_DUTY_MISMATCH: "CRITICAL",
     # Detiene la mercancía en el punto de entrada.
     DivergenceType.MISSING_NOM: "HIGH",
     # Puede cambiar la preferencia arancelaria.

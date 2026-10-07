@@ -33,6 +33,7 @@ from database.models.operational import (
     SyntheticScenario,
 )
 from database.models.regulatory import (
+    CompensatoryDuty,
     CustomsOffice,
     ExchangeRate,
     FractionNomRequirement,
@@ -57,6 +58,7 @@ __all__ = [
     "ClassificationCandidate",
     "ClassificationDecision",
     "Client",
+    "CompensatoryDuty",
     "Cove",
     "CustomsOffice",
     "EvidenceRecord",

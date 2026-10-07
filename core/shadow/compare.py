@@ -274,6 +274,48 @@ def compare_item(declared: DeclaredItem, expected: ExpectedItem) -> list[Diverge
                 ),
             )
 
+    # ── Cuota compensatoria ──────────────────────────────────────────────────
+    # `compensatory_duty_applies` es `True` o `None`, nunca `False` (ver su
+    # docstring) -- por eso el `if` de abajo basta: no hay un tercer caso
+    # que tratar aquí.
+    if expected.compensatory_duty_applies:
+        monto_esperado = expected.compensatory_duty_amount
+        if declared.cc_amount is None:
+            if monto_esperado is not None:
+                razon = (
+                    f"Esta mercancía, de este origen, tiene una cuota compensatoria "
+                    f"conocida ({monto_esperado} esperado) y no se declaró ninguna."
+                )
+            else:
+                razon = (
+                    "Esta mercancía, de este origen, tiene una cuota compensatoria "
+                    "conocida y no se declaró ninguna. El importe exacto no se pudo "
+                    "calcular: la unidad declarada de la partida no es la de la "
+                    "cuota — no se inventa un factor de conversión."
+                )
+            emitir(
+                DivergenceType.COMPENSATORY_DUTY_MISMATCH,
+                "cc_amount",
+                None,
+                str(monto_esperado) if monto_esperado is not None else None,
+                razon,
+            )
+        elif monto_esperado is not None:
+            diferencia = abs(declared.cc_amount - monto_esperado)
+            relativa = diferencia / monto_esperado if monto_esperado else Decimal("0")
+            if relativa > VALUE_TOLERANCE:
+                emitir(
+                    DivergenceType.COMPENSATORY_DUTY_MISMATCH,
+                    "cc_amount",
+                    str(declared.cc_amount),
+                    str(monto_esperado),
+                    (
+                        f"La cuota compensatoria declarada no cuadra con tasa × "
+                        f"cantidad: sale {monto_esperado} y se declaró "
+                        f"{declared.cc_amount}."
+                    ),
+                )
+
     # ── Valor en aduana ──────────────────────────────────────────────────────
     if expected.customs_value is not None and declared.customs_value is not None:
         if declared.customs_value_currency != expected.customs_value_currency:
@@ -334,6 +376,7 @@ _COMPROBACIONES: Final[tuple[tuple[str, str], ...]] = (
     ("fracción arancelaria", "fraction_code"),
     ("NICO", "nico"),
     ("tipo de cambio", "exchange_rate"),
+    ("cuota compensatoria", "compensatory_duty_applies"),
     ("valor en aduana", "customs_value"),
     ("impuesto general de importación", "igi_amount"),
     ("IVA", "vat_amount"),
@@ -395,6 +438,12 @@ def _lagunas(expected: ExpectedItem, declared: DeclaredItem | None = None) -> li
             "no se pudo comprobar el tipo de cambio: no hay tasa FIX cargada "
             "para la fecha de operación y la divisa de la factura, o el "
             "pedimento no declara una divisa distinta de MXN que convertir"
+        )
+    if expected.compensatory_duty_applies is None:
+        razones.append(
+            "no se sabe si esta combinación de origen y fracción tiene cuota "
+            "compensatoria: sólo cable de acero de China está verificado hoy "
+            "(ADR 0009) -- el resto queda NEEDS_VALIDATION"
         )
     if expected.customs_value is None:
         razones.append(

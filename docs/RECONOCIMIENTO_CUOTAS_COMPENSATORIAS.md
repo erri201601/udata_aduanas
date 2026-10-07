@@ -4,6 +4,21 @@
 > cruce contra el corpus sintético ya cargado, como pidió Persona 1 antes
 > de decidir si se abre esta tarea. 2026-10-06.
 
+> **CORRECCIÓN DE PERSONA 1 (6-oct), leer antes que el resto del
+> documento:** la fuente citada en el cruce 1 (`codigo=5619643`) NO dice
+> lo que este documento afirmaba — es la resolución del examen de
+> vigencia de **2021**, no una prórroga de 2026. Los cruces 2 (aluminio)
+> y 3 (India) también se descartaron: el aluminio se apoyaba en una nota
+> de prensa, no en una resolución primaria; la tubería de India es de un
+> exportador (Welspun Corp) distinto al del corpus (BHARAT MERCANTILE
+> EXPORTS PVT LTD). **Sólo el cruce 1 (cable de acero de China) avanzó**,
+> con la fuente primaria correcta verificada de punta a punta — ver
+> `docs/adr/0009-cuota-compensatoria-cable-de-acero.md`, que es ahora la
+> fuente de verdad sobre esta cuota. Esta sección y las que siguen quedan
+> tal cual se escribieron el 6-oct, como registro de qué se afirmó y por
+> qué estaba mal — no se reescriben para que el error no se repita en
+> silencio.
+
 ## La pregunta que hay que contestar antes de migrar
 
 Erick, al asignar esta tarea (después de tipo de cambio): *"¿alguna

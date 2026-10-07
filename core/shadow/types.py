@@ -48,6 +48,9 @@ class DeclaredItem(BaseModel):
     repite igual en cada línea, mismo patrón que las tasas de DTA/IVA que
     llegan por `ReviewRequest`: es un dato del documento completo, no de
     esta partida en particular."""
+    cc_amount: Decimal | None = None
+    """Cuota compensatoria declarada en la partida. `None` = no consta —
+    el pedimento real puede simplemente no declararla."""
 
 
 #: `ExpectedItem.origin_source` cuando el país esperado se dedujo del proveedor
@@ -102,6 +105,24 @@ class ExpectedItem(BaseModel):
     verificada contra una fuente almacenada — ver el docstring de
     `DivergenceType.EXCHANGE_RATE_MISMATCH`.
     """
+
+    compensatory_duty_applies: bool | None = None
+    """¿Esta partida (origen + fracción, a la fecha de operación) tiene una
+    cuota compensatoria conocida? `None` = no se sabe (default: sólo una
+    combinación está verificada hoy, ver
+    `ingestion.se.cuotas_compensatorias`). `True` = sí, hay una fila
+    vigente en `regulatory.CompensatoryDuty`. NUNCA `False`: no se ha
+    verificado lo suficiente para afirmar que una combinación no tiene
+    cuota — eso exigiría conocer TODAS las resoluciones reales, no sólo
+    una."""
+
+    compensatory_duty_amount: Decimal | None = None
+    """El importe esperado (`rate * cantidad`), sólo cuando la unidad
+    declarada de la partida coincide con la de la cuota. `None` aunque
+    `compensatory_duty_applies` sea `True` cuando no coincide (p. ej. la
+    cuota es "por kilogramo" y la partida declara en metro lineal) — no se
+    inventa un factor de conversión; el hallazgo se emite igual, sin monto
+    numérico (ver `DivergenceType.COMPENSATORY_DUTY_MISMATCH`)."""
 
     declared_unit_is_known: bool | None = None
     """¿La unidad declarada existe en el Apéndice 7? `None` = no se consultó."""

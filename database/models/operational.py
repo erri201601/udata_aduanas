@@ -260,6 +260,12 @@ class PedimentoItem(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Synthe
     igi_amount_currency: Mapped[str | None] = mapped_column(_CCY, nullable=True)
     vat_amount: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
     vat_amount_currency: Mapped[str | None] = mapped_column(_CCY, nullable=True)
+    cc_amount: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    """Cuota compensatoria, cuando el pedimento la declara. Mismo patrón que
+    `igi_amount`/`vat_amount`: `NULL` significa "no consta en el documento",
+    no cero — un pedimento real puede simplemente no declararla, y eso ya es
+    un hallazgo (`regulatory.CompensatoryDuty`, ADR 0009)."""
+    cc_amount_currency: Mapped[str | None] = mapped_column(_CCY, nullable=True)
     applied_nom_codes: Mapped[list[str]] = mapped_column(
         ARRAY(sa.String(16)), nullable=False, server_default="{}"
     )

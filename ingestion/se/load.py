@@ -14,11 +14,12 @@ dice.
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING, Final
 
 import sqlalchemy as sa
 import structlog
-from database.models import FractionNomRequirement
+from database.models import CompensatoryDuty, FractionNomRequirement
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -26,6 +27,7 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
     from ingestion.se.anexo_2_4_1 import FilaNom
+    from ingestion.se.cuotas_compensatorias import ParsedCompensatoryDuty
 
 log = structlog.stdlib.get_logger("ingestion.se.load")
 
@@ -88,4 +90,61 @@ def cargar(
 
     session.flush()
     log.info("se.anexo241.cargado", creadas=creadas, recibidas=len(filas))
+    return creadas
+
+
+def cargar_cuotas_compensatorias(
+    session: Session,
+    filas: Sequence[ParsedCompensatoryDuty],
+    *,
+    content_hash: str,
+    source_url: str,
+    source_document: str,
+    retrieved_at: datetime | None = None,
+) -> int:
+    """Escribe las cuotas compensatorias que falten. Idempotente.
+
+    Identidad por `(origin_country, fraction_code, exporter_name,
+    valid_from)` — misma `UniqueConstraint` de la tabla. Una fila ya
+    cargada no se vuelve a tocar: si una resolución se corrige, cerrar la
+    versión anterior a mano es la corrección correcta, no una
+    reconciliación automática (mismo criterio que `cargar()`, arriba).
+    """
+    retrieved_at = retrieved_at or datetime.now(UTC)
+    existentes = {
+        (d.origin_country, d.fraction_code, d.exporter_name, d.valid_from)
+        for d in session.scalars(sa.select(CompensatoryDuty)).all()
+    }
+
+    creadas = 0
+    for fila in filas:
+        clave = (fila.origin_country, fila.fraction_code, fila.exporter_name, fila.valid_from)
+        if clave in existentes:
+            continue
+        existentes.add(clave)
+        session.add(
+            CompensatoryDuty(
+                origin_country=fila.origin_country,
+                fraction_code=fila.fraction_code,
+                exporter_name=fila.exporter_name,
+                rate=Decimal(fila.rate),
+                rate_currency=fila.rate_currency,
+                rate_unit=fila.rate_unit,
+                scope_note=fila.scope_note,
+                # OFFICIAL: sale de la resolución publicada en el DOF, no
+                # de nosotros.
+                data_origin="OFFICIAL",
+                valid_from=fila.valid_from,
+                valid_to=fila.valid_to,
+                published_at=fila.valid_from,
+                source_url=source_url,
+                source_document=source_document,
+                content_hash=content_hash,
+                retrieved_at=retrieved_at,
+            )
+        )
+        creadas += 1
+
+    session.flush()
+    log.info("se.cuotas_compensatorias.cargado", creadas=creadas, recibidas=len(filas))
     return creadas

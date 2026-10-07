@@ -621,6 +621,105 @@ class ExchangeRate(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Regulat
     precisión que `operational.pedimentos.exchange_rate` (§22 maestro)."""
 
 
+class CompensatoryDuty(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base):
+    """Cuota compensatoria del DOF — resoluciones definitivas de la Secretaría
+    de Economía (ADR 0009), no un catálogo único: cada fila sale de SU PROPIA
+    resolución, con su `source_url`/`content_hash` propios.
+
+    Mismo patrón que `FractionNomRequirement` (ADR 0003): clave natural +
+    vigencia + procedencia, sin lógica en la tabla. El LLM nunca calcula el
+    monto de la cuota; sólo lo cita (regla 6 CLAUDE.md) — quien calcula es
+    `core/taxation`, igual que IGI/IVA.
+
+    PRIMERA FILA CARGADA, VERIFICADA CONTRA EL TEXTO PRIMARIO (no contra un
+    resumen de prensa — ver `docs/adr/0009-cuota-compensatoria-cable-de-acero.md`
+    para el porqué de esa distinción): cable de acero originario de China,
+    "RESOLUCIÓN final del procedimiento administrativo de examen de vigencia
+    de la cuota compensatoria impuesta a las importaciones de cables de
+    acero originarias de la República Popular China, independientemente del
+    país de procedencia" (expediente EC 32-24, DOF 2026-04-09). 2.58 USD/kg,
+    prorrogada 5 años desde el 17-dic-2024 (vence el 17-dic-2029) — la propia
+    resolución fija el término, por eso `valid_to` NO es `NULL` aquí como en
+    `ExchangeRate`: no es una vigencia abierta que se cierre con la fila
+    siguiente, es la fecha que la norma misma declara.
+
+    LA CUOTA SIGUE A LA MERCANCÍA/ORIGEN, NO SÓLO A LA FRACCIÓN LISTADA
+
+    El punto 213 de esa resolución dice, verbatim: "...que ingresan a través
+    de las fracciones arancelarias de la TIGIE 7312.10.01, 7312.10.05,
+    7312.10.07 y 7312.10.99, **o por cualquier otra**." `fraction_code` guarda
+    cada fracción TAL COMO la lista la resolución (una fila por fracción,
+    nunca armonizada contra otro catálogo — ver `scope_note`): si una
+    mercancía de origen China entra por una fracción no listada aquí, esta
+    tabla NO lo sabe decir, y el consumidor debe marcarlo `NEEDS_VALIDATION`,
+    no asumir que no aplica.
+
+    EXPORTADOR: `NULL` CASI SIEMPRE SIGNIFICA DOS COSAS DISTINTAS
+
+    Cuando una resolución SÍ nombra exportadores con tasas propias (caso
+    descartado de este primer corte: tubería de acero de India, Welspun
+    Corp con 81.61 USD/t), `exporter_name = NULL` es la tasa residual
+    ("las demás empresas exportadoras"). Cuando la resolución NO distingue
+    por exportador en absoluto (caso del cable de China: una sola tasa para
+    todo origen China, verificado en el texto), `exporter_name` es `NULL`
+    porque no hay nada que distinguir — las dos NO son lo mismo, y
+    `scope_note` dice cuál es cuál para cada fila. Se cruza con
+    `operational.suppliers.legal_name` por COINCIDENCIA EXACTA normalizada
+    (mayúsculas, espacios, puntuación) — nunca aproximada: una coincidencia
+    parecida le daría a alguien la tasa de un exportador nombrado por error,
+    que sería inventar una exención (decisión de Persona 1, 6-oct).
+    """
+
+    __tablename__ = "compensatory_duties"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "origin_country",
+            "fraction_code",
+            "exporter_name",
+            "valid_from",
+            name="uq_compensatory_duties_origin_fraction_exporter_valid_from",
+        ),
+        sa.Index(
+            "ix_compensatory_duties_vigencia",
+            "origin_country",
+            "fraction_code",
+            "valid_from",
+            "valid_to",
+        ),
+        {"schema": _SCHEMA},
+    )
+
+    origin_country: Mapped[str] = mapped_column(sa.String(2), nullable=False)
+    """ISO-2. La resolución dice "originarias de China" — el ORIGEN, nunca el
+    país de procedencia/transbordo (el punto 213 de la resolución del cable
+    lo declara "independientemente del país de procedencia")."""
+
+    fraction_code: Mapped[str] = mapped_column(sa.String(8), nullable=False)
+    """Ocho dígitos, sin puntos — tal como la lista LA RESOLUCIÓN, no
+    armonizada contra `tariff_fractions` ni contra ningún otro catálogo
+    (ver docstring de la clase: la cuota sigue a la mercancía/origen)."""
+
+    exporter_name: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    """`NULL` = sin distinción por exportador en esta resolución, o la tasa
+    residual "las demás" cuando sí la hay — `scope_note` dice cuál. Nunca se
+    normaliza aquí: la normalización (mayúsculas/espacios/puntuación) para
+    cruzar con `operational.suppliers.legal_name` es del lado que consulta,
+    no de esta tabla."""
+
+    rate: Mapped[Decimal] = mapped_column(sa.Numeric(18, 6), nullable=False)
+    rate_currency: Mapped[str] = mapped_column(sa.String(3), nullable=False)
+    rate_unit: Mapped[str] = mapped_column(sa.String(8), nullable=False)
+    """Unidad sobre la que aplica `rate` — p. ej. `"KG"`, tal como la
+    resolución ("2.58 dólares... por kilogramo"). Calcular el importe exige
+    que la cantidad declarada de la partida esté en esta misma unidad; si no
+    coincide, el consumidor no convierte solo — `HUMAN_REVIEW_REQUIRED`."""
+
+    scope_note: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    """Aclaración textual de la fila — por qué `exporter_name` es `NULL` en
+    este caso concreto, u otra acotación de la resolución que no cabe en las
+    columnas de arriba. Mismo criterio que `FractionNomRequirement.scope_note`."""
+
+
 class RegulatoryEvent(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base):
     """Salida del DOF Regulatory Watcher: una publicación relevante y su alcance."""
 

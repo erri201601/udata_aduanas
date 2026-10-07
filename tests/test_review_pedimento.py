@@ -156,8 +156,18 @@ def test_una_simulacion_en_una_partida_contamina_el_informe() -> None:
 # ── De dónde sale el país esperado (Persona 1, 21-sep) ──────────────────────
 
 
+class _SinCuotasCompensatorias:
+    """`cuotas_vigentes()` siempre vacío: ninguna cuota cargada para esta
+    combinación -- `compensatory_duty_applies` sale `None` ("no se sabe"),
+    sin interferir con lo que estos tests sí verifican (país/NICO)."""
+
+    def all(self) -> list[object]:
+        return []
+
+
 class _SesionConProveedor:
-    """Sólo responde la consulta del país del proveedor."""
+    """Sólo responde la consulta del país del proveedor (y, para que
+    `_cuota_compensatoria_esperada` no truene, una lista vacía de cuotas)."""
 
     def __init__(self, pais: str | None) -> None:
         self.pais = pais
@@ -166,6 +176,9 @@ class _SesionConProveedor:
     def scalar(self, sentencia: object) -> object:
         self.consultas.append(str(sentencia))
         return self.pais
+
+    def scalars(self, sentencia: object) -> _SinCuotasCompensatorias:
+        return _SinCuotasCompensatorias()
 
 
 def _partida(**kw: object) -> object:
