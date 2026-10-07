@@ -1806,6 +1806,20 @@ code {
   line-height: 1.5;
 }
 
+.espejo__auditar {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+  max-width: 22rem;
+  text-align: right;
+}
+
+.espejo__auditar small {
+  font-size: 0.72rem;
+  color: var(--tenue);
+}
+
 .espejo-documento {
   margin: 0 0 1rem;
   padding: 1rem 1.25rem;
