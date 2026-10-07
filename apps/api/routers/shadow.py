@@ -41,6 +41,7 @@ from typing import TYPE_CHECKING, Final
 import sqlalchemy as sa
 from core.audit import total_por_partida
 from core.shadow import comprobaciones_posibles
+from core.shadow.divergences import DivergenceType
 from database.models import Pedimento, PedimentoItem, RiskFinding, ShadowReview
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
@@ -62,8 +63,15 @@ ORDEN_SEVERIDAD: Final = ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO")
 #: contra el motor de verdad, no contra una cadena escrita a mano.
 _LINEA = re.compile(r"^\s*línea\s+(\d+)\s*:\s*(.+)$", re.IGNORECASE | re.DOTALL)
 
-#: El campo con el que el espejo guarda la fracción esperada.
-_CAMPO_FRACCION: Final = "tariff_fraction"
+#: El hallazgo que lleva la fracción esperada, por su TIPO.
+#:
+#: Antes se buscaba por el nombre del campo, `"tariff_fraction"`, y el
+#: comparador lo guarda como `"fraction_code"`: la cara «esperado» de esta
+#: pantalla no enseñó nunca una fracción, ni siquiera cuando el motor la
+#: resolvía. El test pasaba porque su fixture escribía a mano el nombre
+#: equivocado (7-oct). El tipo es un enum del comparador y no se renombra en
+#: un descuido.
+_TIPO_FRACCION: Final = DivergenceType.FRACTION_MISMATCH.value
 
 
 class DivergenciaRead(BaseModel):
@@ -379,7 +387,7 @@ def espejo(pedimento_id: uuid.UUID, session: SessionDep) -> PedimentoEspejo:
         huecos = motivos.get(partida.line_number, [])
         comprobadas = hechas.get(partida.line_number, [])
         esperada = next(
-            (d.expected_value for d in divergencias if d.field == _CAMPO_FRACCION),
+            (d.expected_value for d in divergencias if d.finding_type == _TIPO_FRACCION),
             None,
         )
 

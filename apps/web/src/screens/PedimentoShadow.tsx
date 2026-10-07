@@ -256,8 +256,9 @@ function Partida({
                         </>
                       ) : (
                         <>
-                          Se movería {monto} si esto se corrigiera. Depende de la expectativa
-                          del motor, así que no es una deuda cierta todavía.
+                          Se movería {monto} si esto se corrigiera. Depende de la fracción
+                          esperada —del motor o de un dictamen—, así que no es una deuda
+                          cierta todavía.
                         </>
                       )
                     ) : esDeCalculo(d.finding_type) ? (

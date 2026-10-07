@@ -93,7 +93,7 @@ def _hallazgo(**kwargs: Any) -> Any:
         "pedimento_item_id": PARTIDA_ID,
         "shadow_review_id": REVISION_ID,
         "finding_type": "FRACTION_MISMATCH",
-        "field": "tariff_fraction",
+        "field": "fraction_code",
         "declared_value": "84714902",
         "expected_value": "84713001",
         "severity": "CRITICAL",
@@ -559,3 +559,39 @@ def test_un_adeudo_y_un_sobrepago_no_se_netean() -> None:
         "la exposición es lo que se debe, sin descontar lo que se pagó de más"
     )
     assert d["sobrepagos"] == 1
+
+
+def test_la_cara_esperada_lee_lo_que_el_comparador_escribe() -> None:
+    """El contrato contra el comparador de verdad, no contra un fixture.
+
+    La pantalla buscaba la fracción esperada en el campo `"tariff_fraction"` y
+    el comparador escribe `"fraction_code"`: la cara «esperado» no enseñó nunca
+    una fracción. Este test pasaba igual, porque su fixture escribía a mano el
+    nombre equivocado (7-oct).
+    """
+    from core.shadow.compare import compare
+    from core.shadow.divergences import DivergenceType
+
+    from tests.test_pedimento_shadow import declarado, esperado
+
+    divergencia = next(
+        d
+        for d in compare([declarado(fraction_code="84714902")], [esperado()]).divergences
+        if d.kind is DivergenceType.FRACTION_MISMATCH
+    )
+    with _cliente(
+        pedimento=_pedimento(),
+        partidas=[_partida()],
+        revision=_revision(unverifiable=[]),
+        hallazgos=[
+            _hallazgo(
+                finding_type=divergencia.kind.value,
+                field=divergencia.field,
+                declared_value=divergencia.declared_value,
+                expected_value=divergencia.expected_value,
+            )
+        ],
+    ) as c:
+        linea = c.get(f"/pedimentos/{PEDIMENTO_ID}/shadow").json()["lineas"][0]
+
+    assert linea["expected_fraction_code"] == "84713001"
