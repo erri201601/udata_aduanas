@@ -1572,6 +1572,11 @@ export interface components {
             customs_value_currency?: string | null;
             /** Expected Fraction Code */
             expected_fraction_code?: string | null;
+            /**
+             * Fraccion Coincide
+             * @default false
+             */
+            fraccion_coincide: boolean;
             /** Estado */
             estado: string;
             /**

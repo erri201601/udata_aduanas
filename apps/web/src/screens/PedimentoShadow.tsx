@@ -93,7 +93,16 @@ function Comparacion({ linea }: { linea: LineaEspejo }) {
             <div>
               <dt>Fracción</dt>
               <dd>
-                <code className="cara__divergente">{linea.expected_fraction_code}</code>
+                {/* Coincidir también es un resultado, y se dice: callarlo hacía
+                    que la caja negara una comprobación que sí se hizo. */}
+                {linea.fraccion_coincide ? (
+                  <>
+                    <code className="cara__coincide">{linea.expected_fraction_code}</code>{' '}
+                    <span className="cara__nota">coincide con lo declarado</span>
+                  </>
+                ) : (
+                  <code className="cara__divergente">{linea.expected_fraction_code}</code>
+                )}
               </dd>
             </div>
           </dl>
@@ -394,6 +403,15 @@ export function PedimentoShadow() {
     (datos?.comprobaciones_posibles?.length ?? 0) * (datos?.partidas ?? 0)
 
   const documento = datos?.revision ? delDocumento(datos.lineas) : []
+  const delPedimento = new Set(documento.map(claveDe))
+  /* Las partidas que sólo difieren por lo del documento. Sin este número el
+     cartel decía «ninguna coincidió» y se leía como doce mercancías mal
+     declaradas, cuando en nueve la única diferencia era el tipo de cambio del
+     pedimento (600015, 7-oct). */
+  const soloDelDocumento =
+    datos?.lineas.filter(
+      (l) => l.divergencias.length > 0 && l.divergencias.every((d) => delPedimento.has(claveDe(d))),
+    ).length ?? 0
 
   return (
     <section className="pantalla">
@@ -474,10 +492,22 @@ export function PedimentoShadow() {
                 De las {comprobadas} partidas que se pudieron comprobar, ninguna coincidió con
                 lo esperado.
               </strong>
+              {soloDelDocumento > 0 && (
+                <p>
+                  <strong>
+                    En {soloDelDocumento} de ellas la única diferencia es lo que difiere en
+                    todo el pedimento
+                  </strong>{' '}
+                  ({documento.map((d) => etiquetaDe(d.finding_type).toLowerCase()).join(', ')}):
+                  un dato del documento, no de cada mercancía. Lo propio de cada partida está
+                  en las otras {comprobadas - soloDelDocumento}.
+                </p>
+              )}
               <p>
-                Las otras {datos.sin_verificar} no se pudieron comprobar, y no cuentan ni a
-                favor ni en contra. Cero conformes aquí es un resultado sobre el pedimento, no
-                una limitación del sistema.
+                {datos.sin_verificar > 0 &&
+                  `Las otras ${datos.sin_verificar} no se pudieron comprobar, y no cuentan ni a favor ni en contra. `}
+                Cero conformes aquí es un resultado sobre el pedimento, no una limitación del
+                sistema.
               </p>
             </div>
           )}
@@ -612,7 +642,7 @@ export function PedimentoShadow() {
                 key={linea.line_number}
                 linea={linea}
                 posibles={datos.comprobaciones_posibles ?? []}
-                delPedimento={new Set(documento.map(claveDe))}
+                delPedimento={delPedimento}
               />
             ))}
           </ul>

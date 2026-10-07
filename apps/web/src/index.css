@@ -1152,6 +1152,8 @@ code {
 .cara dt { font-size: 0.78rem; color: var(--tenue); }
 .cara dd { margin: 0; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
 .cara__divergente { color: var(--mal); font-weight: 600; }
+.cara__coincide { color: var(--ok); font-weight: 600; }
+.cara__nota { font-size: 0.76rem; color: var(--tenue); }
 
 .cara__sin-expectativa {
   margin: 0;
