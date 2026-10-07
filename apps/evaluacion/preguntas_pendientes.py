@@ -17,43 +17,51 @@ CÓMO SE CONTESTA
      "son_lo_mismo": false, "reviewer": "nombre", "nota": "por qué"}
 
 El `no` vale tanto como el `sí`: es el que descarta.
+
+QUÉ CUENTA COMO PENDIENTE (ADR 0008, 6-oct)
+
+Lo decide `database.repositories.preguntas.pendientes`, lo mismo que la bandeja
+y el recálculo al contestar. Este script tenía su propia consulta —`status` en
+vez de la bandera, la última decisión por producto en vez de por ficha— y un
+filtro de «ya contestadas» que miraba sólo el lado de la tarifa: el defecto que
+`core.rgi_engine.pregunta._ya_esta_contestada` existe para evitar. Ni siquiera
+miraba `kind`, así que un EXCLUYE sobre tuberías callaba la pregunta de un
+sartén. Por eso la terminal no enseñaba la pregunta de 8481 y la bandeja sí.
+
+Ahora enseña lo que el motor dejó en la traza, agrupado. Cuenta CASOS
+distintos, no filas: sus cifras pueden no coincidir con las de antes.
 """
 
 from __future__ import annotations
 
 import argparse
 from collections import defaultdict
+from typing import TYPE_CHECKING
 
-import sqlalchemy as sa
+from database.models import Product
+from database.repositories.preguntas import pendientes, preguntas_de
 
-_PENDIENTES = sa.text(
+if TYPE_CHECKING:
+    import uuid
+    from collections.abc import Iterable
+
+    from sqlalchemy.orm import Session
+
+
+def skus_de(sesion: Session, ids: Iterable[uuid.UUID]) -> dict[uuid.UUID, str]:
+    """El SKU de cada producto, para poner ejemplos legibles.
+
+    `.tuples().all()` y no `.tuples()` a secas: un `Result` tiene `.keys()`, y
+    `dict()` trata como mapping a cualquier cosa que lo tenga — pedía
+    `resultado["id"]` en vez de iterar los pares, y el script fallaba al
+    imprimir (Persona 1, revisión del #214).
     """
-    SELECT p.sku,
-           q->>'mercancia'       AS dice_la_ficha,
-           q->>'exige'           AS exige_la_tarifa,
-           q->>'codigo'          AS posicion,
-           q->>'texto'           AS pregunta
-    FROM intelligence.classification_decisions d
-    JOIN operational.products p ON p.id = d.product_id
-    CROSS JOIN LATERAL jsonb_array_elements(
-        COALESCE(d.rgi_trace -> -1 -> 'preguntas', '[]'::jsonb)
-    ) AS q
-    WHERE d.data_origin <> 'HUMAN_VALIDATED'
-      AND d.status = 'HUMAN_REVIEW_REQUIRED'
-      -- Sólo la decisión vigente de cada producto: las viejas preguntan por
-      -- un texto de tarifa que quizá ya cambió.
-      AND d.created_at = (
-        SELECT MAX(o.created_at) FROM intelligence.classification_decisions o
-        WHERE o.product_id = d.product_id AND o.data_origin <> 'HUMAN_VALIDATED'
-      )
-      -- Y no las ya contestadas: el bucle no vuelve a preguntar.
-      AND NOT EXISTS (
-        SELECT 1 FROM regulatory.nomenclature_synonyms s
-        WHERE lower(s.nomenclature_term) = lower(q->>'exige')
-          AND s.data_origin = 'HUMAN_VALIDATED'
-      )
-    """
-)
+    import sqlalchemy as sa
+
+    filas = sesion.execute(
+        sa.select(Product.id, Product.sku).where(Product.id.in_(list(ids)))
+    ).tuples()
+    return dict(filas.all())
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -61,6 +69,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--target", default="local", choices=["local", "shared"])
     args = parser.parse_args(argv)
 
+    import sqlalchemy as sa
     from sqlalchemy.orm import Session as SesionSql
 
     from apps.api.config import url_de_postgres
@@ -68,45 +77,48 @@ def main(argv: list[str] | None = None) -> int:
     motor = sa.create_engine(url_de_postgres(args.target))
     sesion = SesionSql(motor)
     try:
-        filas = sesion.execute(_PENDIENTES).all()
+        # Se saca lo que hace falta ANTES de cerrar. El `rollback()` de abajo
+        # expira los objetos, y leer `rgi_trace` de una decisión expirada y sin
+        # sesión revienta con `DetachedInstanceError` (revisión del #214).
+        casos = [(c.id, c.product_id, preguntas_de(c)) for c in sesion.scalars(pendientes()).all()]
+        skus = skus_de(sesion, {pid for _, pid, _ in casos if pid is not None})
     finally:
         sesion.rollback()
         sesion.close()
         motor.dispose()
 
-    # Agrupadas por LO QUE EXIGE LA TARIFA, no por caso ni por pareja.
-    #
-    # Antes se agrupaba por (término de la ficha, término de la tarifa), cuando
-    # la pregunta elegía un atributo de la ficha a dedo. Ese emparejado se
-    # quitó porque producía preguntas sin sentido —«¿es "caja 12 unidades" lo
-    # mismo que "Lana de hierro o acero"?»—, así que la clave es la cláusula
-    # legal: es lo que de verdad bloquea, y la misma cláusula en veinte
-    # productos es una pregunta, no veinte.
-    por_clausula: dict[tuple[str, str], list[str]] = defaultdict(list)
+    # Agrupadas por LO QUE EXIGE LA TARIFA en su posición, no por caso: la
+    # misma cláusula en veinte productos es una pregunta, no veinte.
+    por_clausula: dict[tuple[str, str], set[str]] = defaultdict(set)
     fichas: dict[tuple[str, str], set[str]] = defaultdict(set)
-    for f in filas:
-        clave = (f.posicion, f.exige_la_tarifa)
-        por_clausula[clave].append(f.sku)
-        if f.dice_la_ficha:
-            fichas[clave].add(f.dice_la_ficha)
+    con_pregunta: set[str] = set()
+    for caso_id, product_id, preguntas in casos:
+        for q in preguntas:
+            clave = (str(q["codigo"]), str(q["exige"]))
+            sku = skus.get(product_id) if product_id else None
+            por_clausula[clave].add(sku or str(caso_id))
+            con_pregunta.add(str(caso_id))
+            if q.get("mercancia"):
+                fichas[clave].add(str(q["mercancia"]))
 
+    print(f"{len(casos)} casos pendientes; {len(con_pregunta)} llevan pregunta.\n")
     if not por_clausula:
         print("No hay preguntas pendientes.")
         return 0
 
-    print(f"{len(por_clausula)} preguntas desatascarían {len(filas)} casos.\n")
-    print("Ordenadas por cuánto rinde cada una.\n")
-    for (posicion, tarifa), skus in sorted(por_clausula.items(), key=lambda x: -len(x[1])):
-        clave = (posicion, tarifa)
-        print(f"── {len(skus)} caso(s) · posición {posicion}")
+    print(f"{len(por_clausula)} preguntas, ordenadas por cuánto rinde cada una.\n")
+    for (posicion, tarifa), skus_caso in sorted(
+        por_clausula.items(), key=lambda x: (-len(x[1]), x[0])
+    ):
+        print(f"── {len(skus_caso)} caso(s) · posición {posicion}")
         print(f"   La tarifa exige: «{tarifa}»")
         # Las fichas que caen aquí. Si son varias distintas, se enseñan: la
         # respuesta puede no ser la misma para todas, y quien contesta tiene
         # que poder verlo.
-        for ficha in sorted(fichas[clave])[:3]:
+        for ficha in sorted(fichas[(posicion, tarifa)])[:3]:
             print(f"   La ficha dice:   {ficha}")
         print("   ¿La cumple?   [sí / no]")
-        print(f"   ejemplos: {', '.join(sorted(set(skus))[:4])}")
+        print(f"   ejemplos: {', '.join(sorted(skus_caso)[:4])}")
         print()
     return 0
 

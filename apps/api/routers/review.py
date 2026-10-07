@@ -75,6 +75,8 @@ from database.models import (
     TariffHeading,
 )
 from database.repositories import save_classification
+from database.repositories.preguntas import pendientes as pendientes_vigentes
+from database.repositories.preguntas import productos_que_preguntaban
 from database.repositories.tariff import TariffCatalogRepository
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
 from pydantic import BaseModel, Field
@@ -282,27 +284,19 @@ def pendientes(
 
     Las decisiones sin ficha pasan una a una: sin `product_dna_id` no hay por
     qué agruparlas, y descartarlas sería perder casos en silencio.
+
+    UN CASO DICTAMINADO NO VUELVE POR RECLASIFICARLO (ADR 0008, 6-oct)
+
+    Medido contra la base compartida: 33 de los 90 casos de la bandeja ya
+    tenían veredicto de César. El corpus se reclasificó después, la decisión
+    nueva quedó como la más reciente y ningún veredicto apuntaba a ELLA. El
+    dictamen es sobre el caso —la ficha—, no sobre una fila concreta del motor.
     """
-    otra = sa.orm.aliased(ClassificationDecision, name="otra")
-    reciente = (
-        sa.select(sa.func.max(otra.created_at))
-        .where(otra.product_dna_id == ClassificationDecision.product_dna_id)
-        .scalar_subquery()
-    )
+    # La definición de «pendiente» es UNA y vive en el repositorio (ADR 0008):
+    # la misma que decide qué se recalcula al contestar y qué cuenta el script
+    # de preguntas. La página se pone aquí, no en la definición.
     filas = session.scalars(
-        sa.select(ClassificationDecision)
-        .where(
-            ClassificationDecision.requires_human_review.is_(True),
-            # Las revisiones humanas no vuelven a la bandeja.
-            ClassificationDecision.data_origin != "HUMAN_VALIDATED",
-            # Un caso por ficha, no uno por vez que se clasificó.
-            sa.or_(
-                ClassificationDecision.product_dna_id.is_(None),
-                ClassificationDecision.created_at == reciente,
-            ),
-        )
-        .order_by(ClassificationDecision.created_at)
-        .limit(limit)
+        pendientes_vigentes().order_by(ClassificationDecision.created_at).limit(limit)
     ).all()
 
     pendientes: list[PendienteRead] = []
@@ -407,46 +401,6 @@ def _solo_el_valor(termino: str) -> str:
 #: más, se recalculan los 40 primeros y la respuesta lo dice: quedarse corto en
 #: silencio haría creer que el resto ya está al día.
 MAX_RECALCULAR: Final = 40
-
-
-def _casos_que_preguntaban(session: Session, clausula: str) -> list[uuid.UUID]:
-    """Los productos cuya última decisión preguntaba exactamente esa cláusula.
-
-    POR QUÉ ESTE CONJUNTO Y NO «TODO LO QUE DIGA EL TÉRMINO»
-
-    Se podría buscar qué fichas mencionan el término comercial, pero eso exige
-    repetir aquí la regla de emparejamiento del motor —palabras distintivas,
-    singulares, frase con límite de palabra— y una copia de esa regla se
-    desvía. Ya se desvió una vez: comprobar sólo el lado de la tarifa hizo que
-    la respuesta de un producto se aplicara a todos.
-
-    La traza del motor ya dice a qué casos pertenece cada pregunta, y es el
-    dato exacto: son los que tenían esa pregunta delante. Recalcular alguno de
-    más sería inofensivo —saldría la misma decisión— pero no hace falta.
-    """
-    pendientes = session.scalars(
-        sa.select(ClassificationDecision).where(
-            ClassificationDecision.requires_human_review.is_(True),
-            ClassificationDecision.data_origin != "HUMAN_VALIDATED",
-            ClassificationDecision.product_id.is_not(None),
-        )
-    ).all()
-
-    afectados: list[uuid.UUID] = []
-    vistos: set[uuid.UUID] = set()
-    for fila in pendientes:
-        traza = fila.rgi_trace or []
-        if not traza:
-            continue
-        ultimo = traza[-1] if isinstance(traza[-1], dict) else {}
-        for pregunta in ultimo.get("preguntas") or []:
-            if pregunta.get("exige") != clausula:
-                continue
-            if fila.product_id is not None and fila.product_id not in vistos:
-                vistos.add(fila.product_id)
-                afectados.append(fila.product_id)
-            break
-    return afectados
 
 
 def _recalcular(productos: Sequence[uuid.UUID]) -> None:
@@ -600,7 +554,10 @@ def responder_vocabulario(
     # Se recalcula DESPUÉS de responder, no durante. Clasificar cuesta ~1.5 s y
     # una familia son veinte casos: hacerlo síncrono dejaría el formulario
     # treinta segundos colgado y quien contesta no sabría si se guardó.
-    afectados = _casos_que_preguntaban(session, peticion.termino_tarifa)
+    #
+    # El conjunto sale de la TRAZA de los casos pendientes (ADR 0008), no de
+    # buscar qué fichas dicen el término.
+    afectados = productos_que_preguntaban(session, peticion.termino_tarifa)
     tareas.add_task(_recalcular, afectados[:MAX_RECALCULAR])
 
     return VocabularioGuardado(
