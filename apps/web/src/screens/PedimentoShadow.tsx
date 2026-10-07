@@ -19,7 +19,7 @@
 
 import { useEffect, useState } from 'react'
 
-import { fetchEspejo, fetchPedimentos } from '../api/client'
+import { TASAS_DEL_CORPUS, fetchEspejo, fetchPedimentos, revisarPedimento } from '../api/client'
 import type { LineaEspejo, PedimentoEspejo, PedimentoRead } from '../api/client'
 import { detalleDe, etiquetaDe } from '../components/divergencias'
 import { SyntheticBanner } from '../components/DataOriginBadge'
@@ -304,6 +304,29 @@ export function PedimentoShadow() {
   const [elegido, setElegido] = useState<string | null>(null)
   const [datos, setDatos] = useState<PedimentoEspejo | null>(null)
   const [error, setError] = useState<string | null>(null)
+  /* AUDITAR DESDE AQUÍ, NO DESDE UNA TERMINAL (7-oct)
+   *
+   * La pantalla sólo leía la última auditoría y decía «hay que lanzar POST
+   * /pedimentos/{id}/review». En la demo eso era abrir una terminal delante
+   * del cliente en el momento que más importa: el sistema construyendo lo que
+   * debería declararse sin mirar lo declarado. `version` vuelve a pedir el
+   * espejo cuando termina. */
+  const [revisando, setRevisando] = useState(false)
+  const [version, setVersion] = useState(0)
+
+  async function revisarAhora() {
+    if (!elegido) return
+    setRevisando(true)
+    setError(null)
+    try {
+      await revisarPedimento(elegido)
+      setVersion((v) => v + 1)
+    } catch (causa: unknown) {
+      setError(causa instanceof Error ? causa.message : 'No se pudo auditar el pedimento')
+    } finally {
+      setRevisando(false)
+    }
+  }
 
   useEffect(() => {
     const control = new AbortController()
@@ -332,7 +355,7 @@ export function PedimentoShadow() {
         setError(causa instanceof Error ? causa.message : 'No se pudo cargar el espejo')
       })
     return () => control.abort()
-  }, [elegido])
+  }, [elegido, version])
 
   /* «Ninguna se pudo comprobar» es que NINGUNA produjo veredicto, no que
      ninguna saliera conforme. Una partida DIVERGENTE sí se comprobó: se
@@ -393,6 +416,18 @@ export function PedimentoShadow() {
             </select>
           </label>
         )}
+        {elegido && (
+          <div className="espejo__auditar">
+            <button className="boton" onClick={() => void revisarAhora()} disabled={revisando}>
+              {revisando ? 'Auditando…' : 'Revisar ahora'}
+            </button>
+            <small>
+              {revisando
+                ? 'Construyendo lo que debería declararse, partida por partida, sin mirar lo declarado. Unos 15 segundos.'
+                : `Con IVA ${Number(TASAS_DEL_CORPUS.iva_rate) * 100} % y DTA de ${Number(TASAS_DEL_CORPUS.dta_rate) * 1000} al millar.`}
+            </small>
+          </div>
+        )}
       </header>
 
       {datos?.is_simulation && <SyntheticBanner />}
@@ -409,7 +444,7 @@ export function PedimentoShadow() {
           <strong>Este pedimento nunca se ha auditado.</strong>
           <p>
             No hay corrida del espejo, así que no consta qué se revisó. No está limpio: está
-            sin tocar. Para auditarlo hay que lanzar <code>POST /pedimentos/{'{id}'}/review</code>.
+            sin tocar. Para auditarlo, «Revisar ahora».
           </p>
         </div>
       )}

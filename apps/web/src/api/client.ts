@@ -34,6 +34,8 @@ export type ServiceCheck = components['schemas']['ServiceCheck']
 export type ServiceStatus = ServiceCheck['status']
 export type Sentinel = components['schemas']['Sentinel']
 export type PedimentoEspejo = components['schemas']['PedimentoEspejo']
+export type ReviewRequest = components['schemas']['ReviewRequest']
+export type ReviewResponse = components['schemas']['ReviewResponse']
 export type RespuestaCopilot = components['schemas']['Respuesta']
 export type Pasaje = components['schemas']['Pasaje']
 export type Consulta = components['schemas']['Consulta']
@@ -389,6 +391,39 @@ export async function fetchEspejo(
   signal?: AbortSignal,
 ): Promise<PedimentoEspejo> {
   return pedir<PedimentoEspejo>(`/pedimentos/${pedimentoId}/shadow`, signal)
+}
+
+/**
+ * Las tasas con las que se audita el corpus: IVA general y DTA de 8 al millar.
+ *
+ * Sin tasas el Espejo no puede calcular el IVA esperado y devuelve `None` en
+ * vez de suponer un número: los hallazgos de IVA desaparecen. Son las mismas
+ * con las que se midió siempre la detección del §26, y la pantalla las enseña
+ * junto al botón para que nadie crea que salen de la nada.
+ */
+export const TASAS_DEL_CORPUS: ReviewRequest = { iva_rate: '0.16', dta_rate: '0.008' }
+
+/**
+ * Audita el pedimento: construye lo que debería declararse SIN mirar lo
+ * declarado, compara y guarda los hallazgos. Tarda ~15 s en uno de 12
+ * partidas: reclasifica cada una.
+ */
+export async function revisarPedimento(
+  pedimentoId: string,
+  tasas: ReviewRequest = TASAS_DEL_CORPUS,
+  signal?: AbortSignal,
+): Promise<ReviewResponse> {
+  const respuesta = await fetch(`${API_BASE_URL}/pedimentos/${pedimentoId}/review`, {
+    method: 'POST',
+    signal,
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(tasas),
+  })
+  if (!respuesta.ok) {
+    const detalle = await respuesta.json().catch(() => null)
+    throw new ApiError(detalle?.detail ?? `La API respondió ${respuesta.status}`, respuesta.status)
+  }
+  return (await respuesta.json()) as ReviewResponse
 }
 
 /** Estado del corpus antes de preguntar: con qué se va a buscar. */
