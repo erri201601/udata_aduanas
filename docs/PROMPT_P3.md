@@ -1,6 +1,22 @@
 # Prompt para el agente de Persona 3 — Ulises
 
-**Actualizado:** 2026-10-06, tarde · Sustituye la versión de la mañana: cambia la tarea 1.
+**Actualizado:** 2026-10-07 · Las tareas 1 y 2 están HECHAS; queda la 3.
+
+> **Ulises, antes de nada (7-oct).** Mientras no estabas, Erick y Claude
+> cerraron lo que te quedaba de las tareas 1 y 2. No las rehagas:
+>
+> - **Tarea 2** — tu #214, mergeado el 7-oct con un arreglo del script
+>   (`DetachedInstanceError`; su test pasaba en vacío en el CI). Y el #220
+>   unificó los dos contadores que tu ADR dejó anotados: tablero, métricas y
+>   bandeja dicen hoy los tres 0.
+> - **Tarea 1** — `feature/veredicto-en-classification`:
+>   `GET /classifications/{id}/vigente` (`CasoVigente`), el formulario de la
+>   bandeja extraído a `components/FormularioVeredicto.tsx` y usado en las
+>   dos pantallas, y `components/DarVeredicto.tsx` en Classification con (a)
+>   y (b) tal como están descritos abajo.
+>
+> Lo tuyo ahora es la **tarea 3, Knowledge Graph**. Revisa esos PRs cuando
+> vuelvas: si algo no te convence, dilo.
 
 Pega esto en Claude Code / Codex, dentro del repo.
 

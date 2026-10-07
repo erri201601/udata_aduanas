@@ -206,6 +206,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/classifications/{decision_id}/vigente": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * La decisión vigente del caso de esa decisión, y su dictamen
+         * @description A qué decisión va un veredicto dado desde la pantalla que explica otra.
+         *
+         *     EL VEREDICTO VA AL CASO DE HOY, NO A LA FILA QUE SE PINTÓ (ADR 0008)
+         *
+         *     El 6-oct un clasificador dio un veredicto desde una pestaña abierta de
+         *     antes, y quedó colgado de una decisión de la víspera. Antes de enviar, la
+         *     pantalla pide esto y manda el veredicto a `decision.id`.
+         *
+         *     Mismo caso, misma mercancía: si el motor volvió a clasificar la MISMA
+         *     ficha, lo que la persona dice sobre la mercancía sigue valiendo. Si la
+         *     ficha cambió de versión, es otro caso con otros hechos, y mandar ahí el
+         *     veredicto firmaría algo que la persona no vio: 409.
+         *
+         *     Una decisión sin ficha no tiene caso al que agruparla: es su propia
+         *     vigente.
+         */
+        get: operations["caso_vigente_classifications__decision_id__vigente_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/copilot/consultas": {
         parameters: {
             query?: never;
@@ -418,6 +452,13 @@ export interface paths {
          *
          *     Las decisiones sin ficha pasan una a una: sin `product_dna_id` no hay por
          *     qué agruparlas, y descartarlas sería perder casos en silencio.
+         *
+         *     UN CASO DICTAMINADO NO VUELVE POR RECLASIFICARLO (ADR 0008, 6-oct)
+         *
+         *     Medido contra la base compartida: 33 de los 90 casos de la bandeja ya
+         *     tenían veredicto de César. El corpus se reclasificó después, la decisión
+         *     nueva quedó como la más reciente y ningún veredicto apuntaba a ELLA. El
+         *     dictamen es sobre el caso —la ficha—, no sobre una fila concreta del motor.
          */
         get: operations["pendientes_review_get"];
         put?: never;
@@ -465,6 +506,55 @@ export interface paths {
          *     agente aduanal puede defender y algo que no.
          */
         post: operations["responder_vocabulario_review_vocabulario_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/review/vocabulario/{respuesta_id}/retirar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retira una respuesta de vocabulario que resultó equivocada, sin borrarla
+         * @description Una respuesta firmada que resultó equivocada deja de aplicarse y se queda.
+         *
+         *     EL CASO (César, 6-oct)
+         *
+         *     Contestó a «¿el cable cumple "Galvanizados"?» eligiendo el valor «acero»
+         *     de la ficha. El sistema guardó «nada de acero es galvanizado», que él
+         *     mismo llamó una generalización falsa: un cable puede ser de acero
+         *     galvanizado, sin recubrimiento o con otro tratamiento. Pidió cerrarla
+         *     como «respuesta incorrecta de alcance», no borrarla.
+         *
+         *     NO SE CIERRA CON FECHA DE HOY, Y ESO ES LO QUE IMPORTA AQUÍ
+         *
+         *     La vigencia de una respuesta de vocabulario sigue a la del texto de la
+         *     tarifa que describe, no al día en que se contestó (ver
+         *     `_desde_cuando_rige_la_tarifa`): ésta rige desde 2022. Cerrarla con
+         *     `valid_to = hoy` la dejaría aplicándose a toda operación anterior a hoy
+         *     —el corpus entero va de marzo a agosto de 2026—. Parecería cerrada y
+         *     seguiría actuando.
+         *
+         *     Una respuesta equivocada no caducó: nunca fue cierta. Así que `valid_to`
+         *     se pone el día ANTERIOR a `valid_from`, y el filtro de vigencia
+         *     —`valid_from <= fecha <= valid_to`— no la deja pasar para ninguna fecha.
+         *     La fila se conserva entera, con el motivo añadido a su nota.
+         *
+         *     LO QUE NO HACE
+         *
+         *     No vuelve a clasificar: lo que cambia se ve en la siguiente
+         *     reclasificación. Y como la pareja sigue en la tabla, el UNIQUE impide
+         *     volver a contestar exactamente la misma con la misma fecha de inicio; si
+         *     algún día hace falta, se discute antes de relajarlo.
+         */
+        post: operations["retirar_vocabulario_review_vocabulario__respuesta_id__retirar_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -609,6 +699,14 @@ export interface components {
              * @description Foto o ficha del producto
              */
             imagen: string;
+        };
+        /**
+         * CasoVigente
+         * @description Lo que necesita la pantalla justo antes de enviar un veredicto.
+         */
+        CasoVigente: {
+            decision: components["schemas"]["ClassificationDetail"];
+            dictamen_del_caso?: components["schemas"]["DictamenRead"] | null;
         };
         /**
          * Clasificaciones
@@ -2194,6 +2292,16 @@ export interface components {
             nota?: string | null;
         };
         /**
+         * RetiroVocabulario
+         * @description Quién retira una respuesta y por qué. Las dos cosas son obligatorias.
+         */
+        RetiroVocabulario: {
+            /** Reviewer */
+            reviewer: string;
+            /** Motivo */
+            motivo: string;
+        };
+        /**
          * ReviewRequest
          * @description Las tasas de la operación. Todas opcionales; sin ellas no hay monto.
          */
@@ -2537,6 +2645,30 @@ export interface components {
              */
             de_un_total: number;
         };
+        /** VocabularioRetirado */
+        VocabularioRetirado: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Commercial Term */
+            commercial_term: string;
+            /** Nomenclature Term */
+            nomenclature_term: string;
+            /** Kind */
+            kind: string;
+            /**
+             * Valid From
+             * Format: date
+             */
+            valid_from: string;
+            /**
+             * Valid To
+             * Format: date
+             */
+            valid_to: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -2802,6 +2934,44 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ClassificationDetail"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    caso_vigente_classifications__decision_id__vigente_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                decision_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CasoVigente"];
+                };
+            };
+            /** @description La ficha de esa decisión ya no es la vigente */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -3130,6 +3300,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VocabularioGuardado"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retirar_vocabulario_review_vocabulario__respuesta_id__retirar_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                respuesta_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetiroVocabulario"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VocabularioRetirado"];
                 };
             };
             /** @description Validation Error */

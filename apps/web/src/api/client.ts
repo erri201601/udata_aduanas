@@ -15,6 +15,7 @@ export type ProductAttributeRead = components['schemas']['ProductAttributeRead']
 export type AttributeStatus = ProductAttributeRead['status']
 export type ClassificationDecisionRead = components['schemas']['ClassificationDecisionRead']
 export type ClassificationDetail = components['schemas']['ClassificationDetail']
+export type CasoVigente = components['schemas']['CasoVigente']
 export type ClassificationCandidateRead = components['schemas']['ClassificationCandidateRead']
 export type EvidenceRecordRead = components['schemas']['EvidenceRecordRead']
 export type EvidenceKind = NonNullable<EvidenceRecordRead['evidence_kind']>
@@ -180,6 +181,29 @@ export async function fetchClassification(
   signal?: AbortSignal,
 ): Promise<ClassificationDetail> {
   return pedir<ClassificationDetail>(`/classifications/${decisionId}`, signal)
+}
+
+/**
+ * La decisión VIGENTE del caso al que pertenece esa decisión, y su dictamen.
+ *
+ * Se pide justo antes de enviar un veredicto desde la pantalla que explica una
+ * decisión: el veredicto va al caso de hoy, no a la fila que se pintó (ADR
+ * 0008). Un 409 significa que la ficha cambió y es otro caso; su mensaje se
+ * conserva porque es lo que hay que enseñar.
+ */
+export async function fetchCasoVigente(
+  decisionId: string,
+  signal?: AbortSignal,
+): Promise<CasoVigente> {
+  const respuesta = await fetch(`${API_BASE_URL}/classifications/${decisionId}/vigente`, {
+    signal,
+    headers: { Accept: 'application/json' },
+  })
+  if (!respuesta.ok) {
+    const detalle = await respuesta.json().catch(() => null)
+    throw new ApiError(detalle?.detail ?? `La API respondió ${respuesta.status}`, respuesta.status)
+  }
+  return (await respuesta.json()) as CasoVigente
 }
 
 
