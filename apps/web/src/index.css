@@ -1804,6 +1804,17 @@ code {
   line-height: 1.5;
 }
 
+.contestar__alcance-ficha {
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+/* Un dato que está en más de un tercio de las fichas casi nunca es el que
+   distingue a una mercancía: se enseña en el color de lo que hay que mirar. */
+.contestar__alcance-ficha--general {
+  color: var(--aviso);
+}
+
 .contestar__guardado {
   margin: 0.8rem 0 0;
   padding: 0.6rem 0.8rem;

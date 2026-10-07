@@ -512,6 +512,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/review/vocabulario/alcance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A cuántas fichas alcanzaría una respuesta de vocabulario
+         * @description Cuántas fichas dicen el término que se está eligiendo.
+         *
+         *     POR QUÉ HACÍA FALTA (César, 6-oct)
+         *
+         *     César contestó una pregunta sobre un cable eligiendo «acero» como dato de
+         *     la ficha, y el sistema guardó «nada de acero es galvanizado». Quería decir
+         *     «este cable no lo es»; el dato que debió elegir era «sin recubrimiento».
+         *     La pantalla le decía «tu respuesta vale para todas las fichas que digan lo
+         *     mismo», pero no CUÁNTAS eran — y con «acero» eran casi todo el corpus.
+         *
+         *     Una respuesta se aplica a cada ficha que diga su término comercial (y en
+         *     cada posición cuyo texto diga la cláusula). Este número es el primer
+         *     factor, que es el que elige quien contesta: cuanto más general el dato, a
+         *     más alcanza.
+         *
+         *     LA MISMA REGLA QUE EL MOTOR, NO UNA PARECIDA
+         *
+         *     Se pregunta con `la_ficha_dice`, la función con la que el motor decide si
+         *     una respuesta firmada se aplica a una ficha. La ficha se arma como en
+         *     `core.classification.orchestrator.classify_product`: el resumen más los
+         *     VALORES de los hechos. Una copia de la regla ya se desvió una vez.
+         */
+        get: operations["alcance_vocabulario_review_vocabulario_alcance_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/review/vocabulario/{respuesta_id}/retirar": {
         parameters: {
             query?: never;
@@ -659,6 +699,20 @@ export interface components {
             abstenciones: number;
             /** Porcentaje */
             porcentaje?: string | null;
+        };
+        /**
+         * AlcanceVocabulario
+         * @description A cuántas fichas alcanzaría una respuesta, ANTES de guardarla.
+         */
+        AlcanceVocabulario: {
+            /** Termino Ficha */
+            termino_ficha: string;
+            /** Fichas */
+            fichas: number;
+            /** De Un Total */
+            de_un_total: number;
+            /** Ejemplos */
+            ejemplos?: string[];
         };
         /**
          * AttributeStatus
@@ -3300,6 +3354,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VocabularioGuardado"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    alcance_vocabulario_review_vocabulario_alcance_get: {
+        parameters: {
+            query: {
+                termino_ficha: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlcanceVocabulario"];
                 };
             };
             /** @description Validation Error */

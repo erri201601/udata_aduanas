@@ -1733,26 +1733,37 @@ def _lo_aprendido_la_descarta(
     # aparezca en el texto, normalizada y con límite de palabra, para que
     # «acero» no arrastre a «acero inoxidable» ni al revés.
     texto_candidata = _plano(candidata.text)
-    ficha_entera = " ".join([context.description, *(f.value or "" for f in context.known_facts())])
-    consta = _palabras_con_singular(ficha_entera)
-    ficha_plana = _plano(ficha_entera)
     for de_la_ficha, de_la_tarifa in context.exclusiones:
-        afirmadas = _palabras_con_singular(de_la_ficha)
-        if afirmadas:
-            # TODAS las palabras, no alguna: «cerámica vidriada» es una
-            # respuesta sobre esas dos juntas. Con una basta, una ficha que
-            # sólo dijera «cerámica» arrastraría un veredicto que nadie dio.
-            if not afirmadas <= consta:
-                continue
-        # Un término SIN palabras distintivas —«6x19», una notación— se busca
-        # literal. Antes se descartaba por no tener palabras, así que la
-        # respuesta se guardaba y no se aplicaba nunca: alguien contestaba y no
-        # pasaba nada.
-        elif _plano(de_la_ficha).strip() not in ficha_plana:
+        if not la_ficha_dice(de_la_ficha, context):
             continue
         if _frase_en(de_la_tarifa, texto_candidata):
             return f"la ficha dice «{de_la_ficha}», que no es «{de_la_tarifa}»"
     return None
+
+
+def la_ficha_dice(termino: str, context: ClassificationContext) -> bool:
+    """¿Dice ESTA ficha el término comercial de una respuesta de vocabulario?
+
+    Es la mitad de la ficha de `_lo_aprendido_la_descarta`, sacada a una
+    función pública sin cambiar nada, para que quien necesite saber A QUÉ
+    FICHAS alcanzará una respuesta lo pregunte con la misma regla con que el
+    motor la aplica. Una copia de esta regla ya se desvió una vez: la de
+    `pregunta.py` no busca literal las notaciones.
+
+    La ficha es la descripción más los VALORES de los hechos, nunca los
+    nombres de los campos.
+    """
+    ficha_entera = " ".join([context.description, *(f.value or "" for f in context.known_facts())])
+    afirmadas = _palabras_con_singular(termino)
+    if afirmadas:
+        # TODAS las palabras, no alguna: «cerámica vidriada» es una respuesta
+        # sobre esas dos juntas. Con una basta, una ficha que sólo dijera
+        # «cerámica» arrastraría un veredicto que nadie dio.
+        return afirmadas <= _palabras_con_singular(ficha_entera)
+    # Un término SIN palabras distintivas —«6x19», una notación— se busca
+    # literal. Antes se descartaba por no tener palabras, así que la respuesta
+    # se guardaba y no se aplicaba nunca: alguien contestaba y no pasaba nada.
+    return _plano(termino).strip() in _plano(ficha_entera)
 
 
 def _frase_en(frase: str, texto_plano: str) -> bool:
