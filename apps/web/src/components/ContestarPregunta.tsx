@@ -38,9 +38,13 @@
  * defecto.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
-import { responderVocabulario } from '../api/client'
+import {
+  type AlcanceVocabulario,
+  fetchAlcanceVocabulario,
+  responderVocabulario,
+} from '../api/client'
 
 interface Props {
   /** Lo que exige la posición, tal cual lo dice la tarifa. */
@@ -88,6 +92,38 @@ export function ContestarPregunta({ exige, codigo, mercancia, onGuardada }: Prop
   const [quien, setQuien] = useState('')
   const [nota, setNota] = useState('')
   const [estado, setEstado] = useState<Estado>({ fase: 'pregunta' })
+  /** El alcance, con el término para el que se pidió: si quien contesta ya
+   *  eligió otro, el número viejo no se enseña. */
+  const [alcance, setAlcance] = useState<{ para: string; datos: AlcanceVocabulario } | null>(
+    null,
+  )
+
+  /* A CUÁNTAS FICHAS ALCANZA, ANTES DE GUARDAR (César, 6-oct)
+   *
+   * César eligió «acero» al contestar sobre un cable y se guardó «nada de
+   * acero es galvanizado». La pantalla decía «vale para todas las fichas que
+   * digan lo mismo» sin decir cuántas: con «acero» eran 134 de 181. El número
+   * se pide al servidor, que lo calcula con la misma regla con la que el
+   * motor aplica la respuesta. Si no responde, se contesta igual: es ayuda,
+   * no requisito. */
+  useEffect(() => {
+    const termino = terminoFicha.trim()
+    if (termino.length < 2) return
+    const control = new AbortController()
+    const espera = window.setTimeout(() => {
+      fetchAlcanceVocabulario(termino, control.signal)
+        .then((datos) => setAlcance({ para: termino, datos }))
+        .catch(() => undefined)
+    }, 300)
+    return () => {
+      window.clearTimeout(espera)
+      control.abort()
+    }
+  }, [terminoFicha])
+
+  const alcanceVigente = alcance && alcance.para === terminoFicha.trim() ? alcance.datos : null
+  /** Más de un tercio del corpus: casi nunca es lo que distingue a ESTA mercancía. */
+  const muyGeneral = alcanceVigente !== null && alcanceVigente.fichas * 3 > alcanceVigente.de_un_total
 
   const listo = terminoFicha.trim().length >= 2 && quien.trim().length >= 1
 
@@ -168,10 +204,38 @@ export function ContestarPregunta({ exige, codigo, mercancia, onGuardada }: Prop
           placeholder="…o escríbelo, si ninguno sirve"
           maxLength={120}
         />
-        <small>
-          Elige el dato que estás comparando. De eso depende a qué fichas se
-          aplica tu respuesta: cuanto más general, a más alcanza.
-        </small>
+        {alcanceVigente ? (
+          <small
+            className={`contestar__alcance-ficha${muyGeneral ? ' contestar__alcance-ficha--general' : ''}`}
+            role="status"
+          >
+            {alcanceVigente.fichas === 0 ? (
+              <>
+                «{alcanceVigente.termino_ficha}» no aparece en ninguna ficha: tu
+                respuesta no se aplicaría a nada.
+              </>
+            ) : (
+              <>
+                «{alcanceVigente.termino_ficha}» aparece en{' '}
+                <strong>
+                  {alcanceVigente.fichas} de {alcanceVigente.de_un_total} fichas
+                </strong>
+                . Tu respuesta valdrá en todas las que tengan una posición que diga
+                «{exige}».
+                {muyGeneral &&
+                  ' Es un dato muy general: elige el que hace que ESTA mercancía cumpla o no esa condición.'}
+                {alcanceVigente.ejemplos.length > 0 && (
+                  <> Por ejemplo: {alcanceVigente.ejemplos.slice(0, 3).join(' · ')}.</>
+                )}
+              </>
+            )}
+          </small>
+        ) : (
+          <small>
+            Elige el dato que estás comparando. De eso depende a qué fichas se
+            aplica tu respuesta: cuanto más general, a más alcanza.
+          </small>
+        )}
       </div>
 
       <label className="contestar__campo">

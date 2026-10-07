@@ -68,10 +68,13 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, Final, Literal
 
 import sqlalchemy as sa
+from core.rgi_engine import ClassificationContext, ProductFact
+from core.rgi_engine.rules import la_ficha_dice
 from database.models import (
     ClassificationDecision,
     NomenclatureSynonym,
     Product,
+    ProductDna,
     TariffHeading,
 )
 from database.repositories import save_classification
@@ -591,6 +594,88 @@ class VocabularioRetirado(BaseModel):
 def _esta_retirada(fila: NomenclatureSynonym) -> bool:
     """¿Se retiró? Una vigencia que acaba antes de empezar no rige nunca."""
     return fila.valid_to is not None and fila.valid_to < fila.valid_from
+
+
+#: Cuántas fichas se enseñan como ejemplo. Bastan para que el número se
+#: entienda —«acero» en un cable, una olla y un tubo— sin convertir el aviso en
+#: una lista que nadie lee.
+EJEMPLOS_DE_ALCANCE: Final = 5
+
+
+class AlcanceVocabulario(BaseModel):
+    """A cuántas fichas alcanzaría una respuesta, ANTES de guardarla."""
+
+    termino_ficha: str
+    """El término tal como se guardaría: sin la etiqueta del campo."""
+    fichas: int
+    """Cuántas fichas vigentes dicen ese término, con la regla del motor."""
+    de_un_total: int
+    ejemplos: list[str] = Field(default_factory=list)
+    """`SKU · descripción` de algunas, para que el número no sea abstracto."""
+
+
+@router.get(
+    "/vocabulario/alcance",
+    summary="A cuántas fichas alcanzaría una respuesta de vocabulario",
+)
+def alcance_vocabulario(
+    session: SessionDep,
+    termino_ficha: Annotated[str, Query(min_length=2, max_length=120)],
+) -> AlcanceVocabulario:
+    """Cuántas fichas dicen el término que se está eligiendo.
+
+    POR QUÉ HACÍA FALTA (César, 6-oct)
+
+    César contestó una pregunta sobre un cable eligiendo «acero» como dato de
+    la ficha, y el sistema guardó «nada de acero es galvanizado». Quería decir
+    «este cable no lo es»; el dato que debió elegir era «sin recubrimiento».
+    La pantalla le decía «tu respuesta vale para todas las fichas que digan lo
+    mismo», pero no CUÁNTAS eran — y con «acero» eran casi todo el corpus.
+
+    Una respuesta se aplica a cada ficha que diga su término comercial (y en
+    cada posición cuyo texto diga la cláusula). Este número es el primer
+    factor, que es el que elige quien contesta: cuanto más general el dato, a
+    más alcanza.
+
+    LA MISMA REGLA QUE EL MOTOR, NO UNA PARECIDA
+
+    Se pregunta con `la_ficha_dice`, la función con la que el motor decide si
+    una respuesta firmada se aplica a una ficha. La ficha se arma como en
+    `core.classification.orchestrator.classify_product`: el resumen más los
+    VALORES de los hechos. Una copia de la regla ya se desvió una vez.
+    """
+    termino = _solo_el_valor(termino_ficha)
+    productos = session.scalars(
+        sa.select(ProductDna.product_id).where(ProductDna.is_current.is_(True))
+    ).all()
+
+    alcanzadas: list[uuid.UUID] = []
+    for product_id in productos:
+        borrador = cargar_borrador(session, product_id)
+        if borrador is None:
+            continue
+        ficha = ClassificationContext(
+            description=borrador.summary or "",
+            operation_date=datetime.now(UTC).date(),
+            facts=tuple(ProductFact(**a.to_fact_fields()) for a in borrador.attributes),
+        )
+        if la_ficha_dice(termino, ficha):
+            alcanzadas.append(product_id)
+
+    ejemplos = [
+        f"{sku} · {nombre or ''}".strip(" ·")
+        for sku, nombre in session.execute(
+            sa.select(Product.sku, Product.commercial_name)
+            .where(Product.id.in_(alcanzadas[:EJEMPLOS_DE_ALCANCE]))
+            .order_by(Product.sku)
+        ).all()
+    ]
+    return AlcanceVocabulario(
+        termino_ficha=termino,
+        fichas=len(alcanzadas),
+        de_un_total=len(productos),
+        ejemplos=ejemplos,
+    )
 
 
 @router.post(

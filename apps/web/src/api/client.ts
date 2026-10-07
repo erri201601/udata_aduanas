@@ -40,6 +40,7 @@ export type Consulta = components['schemas']['Consulta']
 export type LineaEspejo = components['schemas']['LineaEspejo']
 export type RespuestaVocabulario = components['schemas']['RespuestaVocabulario']
 export type VocabularioGuardado = components['schemas']['VocabularioGuardado']
+export type AlcanceVocabulario = components['schemas']['AlcanceVocabulario']
 export type PrecisionClasificacion = components['schemas']['PrecisionClasificacion']
 export type DivergenciaRead = components['schemas']['DivergenciaRead']
 export type DocumentoVigilado = components['schemas']['DocumentoVigilado']
@@ -320,6 +321,22 @@ export async function revisarDecision(
  * Un clasificador tenía que mandar la respuesta por un chat y que alguien la
  * metiera a mano con `curl`.
  */
+/**
+ * A cuántas fichas alcanzaría una respuesta con ese término, ANTES de guardarla.
+ *
+ * Con «acero» eran 134 de 181: la respuesta de César sobre un cable se
+ * habría aplicado a casi todo el corpus (6-oct).
+ */
+export async function fetchAlcanceVocabulario(
+  terminoFicha: string,
+  signal?: AbortSignal,
+): Promise<AlcanceVocabulario> {
+  return pedir<AlcanceVocabulario>(
+    `/review/vocabulario/alcance?termino_ficha=${encodeURIComponent(terminoFicha)}`,
+    signal,
+  )
+}
+
 export async function responderVocabulario(
   peticion: RespuestaVocabulario,
   signal?: AbortSignal,
