@@ -368,3 +368,39 @@ def test_la_comparacion_de_hoy_va_por_ficha_no_por_la_decision_mas_reciente() ->
 
     assert h["coinciden"] == 1, "la vigente de su ficha dice lo mismo que la persona"
     assert h["discrepan"] == 0, "la más reciente de OTRA ficha no entra en la comparación"
+
+
+def test_manda_el_ultimo_veredicto_del_caso() -> None:
+    """Un veredicto que el clasificador sustituyó no discrepa de nadie (7-oct).
+
+    Contando todos, la pantalla decía «discrepan 2»: eran dos veredictos viejos
+    ya reemplazados por el propio César. Con el último de cada caso, cero.
+    """
+    primera = _decision(fraccion="73053199", minutos=0)
+    segunda = _decision(fraccion=None, pendiente=True, minutos=30)
+    hoy = _decision(fraccion="73051291", minutos=90)
+    viejo = _veredicto("73053199", primera)
+    viejo.created_at = AHORA + timedelta(minutes=10)
+    nuevo = _veredicto("73051291", segunda)
+    nuevo.created_at = AHORA + timedelta(minutes=40)
+
+    with _cliente([primera, segunda, hoy, viejo, nuevo]) as c:
+        h = c.get("/metrics/classification").json()["contra_el_motor_de_hoy"]
+
+    assert h["coinciden"] == 1
+    assert h["discrepan"] == 0, "el veredicto sustituido no cuenta"
+
+
+def test_un_falta_informacion_posterior_saca_el_caso_de_la_comparacion() -> None:
+    primera = _decision(fraccion="73121099", minutos=0)
+    hoy = _decision(fraccion="73121005", minutos=90)
+    viejo = _veredicto("73121099", primera)
+    viejo.created_at = AHORA + timedelta(minutes=10)
+    falta = _veredicto(None, primera)
+    falta.created_at = AHORA + timedelta(minutes=40)
+
+    with _cliente([primera, hoy, viejo, falta]) as c:
+        h = c.get("/metrics/classification").json()["contra_el_motor_de_hoy"]
+
+    assert h["coinciden"] == 0
+    assert h["discrepan"] == 0, "el clasificador retiró su fracción: no hay con qué discrepar"
