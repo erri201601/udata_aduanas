@@ -40,6 +40,7 @@ from decimal import Decimal
 
 import sqlalchemy as sa
 from database.models import ClassificationDecision
+from database.repositories.preguntas import pendientes as casos_pendientes
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
@@ -241,7 +242,15 @@ def precision(session: SessionDep) -> PrecisionClasificacion:
 
     hoy = _contra_el_motor_de_hoy(humanos, maquina)
 
-    pendientes = sum(1 for d in maquina if d.requires_human_review)
+    # LA BANDEJA, CONTADA CON LA DEFINICIÓN DE LA BANDEJA (ADR 0008)
+    #
+    # Contaba todas las decisiones del motor con la bandera, también las
+    # históricas: cada reclasificación dejaba una más. El 7-oct decía 4 610
+    # «esperando» con la bandeja vacía. El campo promete «la bandeja sin
+    # tocar», y la bandeja son casos, no filas.
+    pendientes = (
+        session.scalar(sa.select(sa.func.count()).select_from(casos_pendientes().subquery())) or 0
+    )
     # Decisiones DISTINTAS que necesitaron a una persona: las que esperan y las
     # ya revisadas. Por decisión y no por fila de veredicto, para que la tasa
     # no pueda pasar del 100 %.
