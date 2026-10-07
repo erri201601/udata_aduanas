@@ -43,6 +43,7 @@ from database.models import (
     ShadowReview,
 )
 from database.repositories.findings import de_la_ultima_revision
+from database.repositories.preguntas import pendientes as casos_pendientes
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
@@ -383,15 +384,20 @@ def tablero(session: SessionDep) -> Dashboard:
         resueltas=_contar(
             session, ClassificationDecision, vigente, ClassificationDecision.status == "RESOLVED"
         ),
-        # El mismo criterio que la bandeja: lo que sigue esperando es lo que
-        # NADIE ha dictaminado todavía. Con `status` a secas, un caso ya
-        # revisado seguiría contando como pendiente para siempre.
-        requieren_revision=_contar(
-            session,
-            ClassificationDecision,
-            vigente,
-            ClassificationDecision.requires_human_review.is_(True),
-        ),
+        # LA MISMA DEFINICIÓN QUE LA BANDEJA, NO UNA PARECIDA (ADR 0008)
+        #
+        # Esto contaba la vigente con la bandera, sin mirar el dictamen. El
+        # 7-oct, con la bandeja vacía —César había dictaminado los 57 casos—,
+        # el tablero seguía diciendo 33 «esperan a una persona»: casos ya
+        # dictaminados cuya decisión vigente conservaba la bandera. La primera
+        # pantalla de la demo contradecía a la bandeja.
+        #
+        # El comentario de arriba ya decía «el mismo criterio que la bandeja»;
+        # el código no lo hacía. Ahora no lo imita: la llama.
+        requieren_revision=session.scalar(
+            sa.select(sa.func.count()).select_from(casos_pendientes().subquery())
+        )
+        or 0,
         sin_informacion=_contar(
             session,
             ClassificationDecision,

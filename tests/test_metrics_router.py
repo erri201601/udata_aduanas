@@ -58,8 +58,18 @@ def _decision(
 
 
 class SesionFalsa:
-    def __init__(self, filas: list[ClassificationDecision]) -> None:
+    def __init__(self, filas: list[ClassificationDecision], *, pendientes: int = 0) -> None:
         self._filas = filas
+        self._pendientes = pendientes
+
+    def scalar(self, _sentencia: Any) -> int:
+        # El único `scalar` del router es el conteo de la bandeja, con la
+        # definición de `database.repositories.preguntas` (ADR 0008). Eso es
+        # SQL —`DISTINCT ON`, `NOT EXISTS`— y una sesión falsa no lo ejecuta:
+        # aquí se fija la cifra y se comprueba que el campo la informa. Que la
+        # cifra sea la de la bandeja lo prueba
+        # `tests/test_contadores_de_pendientes.py` contra Postgres.
+        return self._pendientes
 
     def scalars(self, sentencia: Any) -> Any:
         # El router pide primero los humanos y después los de máquina.
@@ -70,9 +80,9 @@ class SesionFalsa:
         return r
 
 
-def _cliente(filas: list[ClassificationDecision]) -> TestClient:
+def _cliente(filas: list[ClassificationDecision], *, pendientes: int = 0) -> TestClient:
     app = create_app()
-    app.dependency_overrides[get_session] = lambda: SesionFalsa(filas)
+    app.dependency_overrides[get_session] = lambda: SesionFalsa(filas, pendientes=pendientes)
     return TestClient(app)
 
 
@@ -87,21 +97,26 @@ def test_sin_revisiones_la_precision_es_desconocida_no_cero() -> None:
     """
     filas = [_decision(fraccion="84713001", pendiente=True) for _ in range(7)]
 
-    with _cliente(filas) as c:
+    # Siete decisiones de la MISMA ficha son UN caso en la bandeja (ADR 0008).
+    with _cliente(filas, pendientes=1) as c:
         m = c.get("/metrics/classification").json()
 
     assert m["fraction_accuracy"]["porcentaje"] is None
     assert m["hs_accuracy"]["porcentaje"] is None
     assert m["revisadas"] == 0
-    assert m["pendientes_de_revision"] == 7
+    assert m["pendientes_de_revision"] == 1
 
 
 def test_declara_cuantas_esperan_para_explicar_el_vacio() -> None:
-    """La cifra que dice POR QUÉ las demás están vacías."""
+    """La cifra que dice POR QUÉ las demás están vacías: los casos de la bandeja.
+
+    Antes contaba filas con la bandera —siete decisiones de una misma ficha
+    eran «7 esperando»— y el 7-oct decía 4 610 con la bandeja vacía.
+    """
     filas = [_decision(fraccion=None, pendiente=True) for _ in range(7)]
 
-    with _cliente(filas) as c:
-        assert c.get("/metrics/classification").json()["pendientes_de_revision"] == 7
+    with _cliente(filas, pendientes=1) as c:
+        assert c.get("/metrics/classification").json()["pendientes_de_revision"] == 1
 
 
 def test_sin_decisiones_tampoco_inventa_una_tasa() -> None:
