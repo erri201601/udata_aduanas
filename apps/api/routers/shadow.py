@@ -41,6 +41,7 @@ from typing import TYPE_CHECKING, Final
 import sqlalchemy as sa
 from core.audit import total_por_partida
 from core.shadow import comprobaciones_posibles
+from core.shadow.compare import COMPROBACION_DE_FRACCION
 from core.shadow.divergences import DivergenceType
 from database.models import Pedimento, PedimentoItem, RiskFinding, ShadowReview
 from fastapi import APIRouter, HTTPException, status
@@ -121,11 +122,23 @@ class LineaEspejo(BaseModel):
 
     # ── lo esperado ─────────────────────────────────────────────────────────
     expected_fraction_code: str | None = None
-    """Sólo consta cuando hubo divergencia de fracción.
+    """La fracción que el Espejo esperaba, cuando consta.
 
-    `None` en una partida conforme NO significa «no se esperaba nada»: la
-    expectativa coincidió y no dejó rastro. Repetir aquí lo declarado sería
-    fabricar una confirmación que el motor nunca emitió.
+    Consta si hubo divergencia de fracción, o si la revisión REGISTRÓ que la
+    fracción se comprobó y no hubo divergencia: entonces la esperada era la
+    declarada (`fraccion_coincide`).
+
+    `None` sin ese registro NO significa «no se esperaba nada», y no se rellena
+    con lo declarado: eso sería fabricar una confirmación que nadie emitió.
+    """
+
+    fraccion_coincide: bool = False
+    """La fracción se comprobó y coincidió con la declarada (7-oct).
+
+    Sin esto la caja «Esperado por el Espejo» decía «no se construyó una
+    expectativa» en 11 de las 12 partidas del 600015, justo encima de la
+    etiqueta verde «fracción arancelaria» de lo comprobado. Las dos cosas no
+    podían ser verdad a la vez, y la que mentía era la caja.
     """
 
     # ── el veredicto ────────────────────────────────────────────────────────
@@ -390,6 +403,15 @@ def espejo(pedimento_id: uuid.UUID, session: SessionDep) -> PedimentoEspejo:
             (d.expected_value for d in divergencias if d.finding_type == _TIPO_FRACCION),
             None,
         )
+        # Se comprobó y no difiere: la esperada ERA la declarada. Se apoya en
+        # la comprobación que quedó guardada, no en suponerlo.
+        coincide = (
+            esperada is None
+            and COMPROBACION_DE_FRACCION in comprobadas
+            and partida.declared_fraction_code is not None
+        )
+        if coincide:
+            esperada = partida.declared_fraction_code
 
         lineas.append(
             LineaEspejo(
@@ -402,6 +424,7 @@ def espejo(pedimento_id: uuid.UUID, session: SessionDep) -> PedimentoEspejo:
                 customs_value=partida.customs_value,
                 customs_value_currency=partida.customs_value_currency,
                 expected_fraction_code=esperada,
+                fraccion_coincide=coincide,
                 estado=_estado(
                     divergencias,
                     huecos,

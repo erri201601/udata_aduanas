@@ -381,8 +381,13 @@ def _depende_de_clasificar(divergencia: Divergence, expected: ExpectedItem) -> b
 #: verificar» (algo faltó). Una partida con siete comprobaciones buenas y una
 #: desconocida salía igual que una donde no se comprobó nada — y eso hacía
 #: parecer que el sistema no verificaba nada, cuando verificaba casi todo.
+#: El nombre con que se registra que la fracción SE COMPROBÓ. Público porque
+#: la pantalla del Espejo lo lee para decir «coincide con lo declarado» (7-oct):
+#: una copia escrita a mano del texto se desviaría en silencio.
+COMPROBACION_DE_FRACCION: Final = "fracción arancelaria"
+
 _COMPROBACIONES: Final[tuple[tuple[str, str], ...]] = (
-    ("fracción arancelaria", "fraction_code"),
+    (COMPROBACION_DE_FRACCION, "fraction_code"),
     ("NICO", "nico"),
     ("tipo de cambio", "exchange_rate"),
     ("cuota compensatoria", "compensatory_duty_applies"),
