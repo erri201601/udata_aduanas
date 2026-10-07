@@ -298,8 +298,27 @@ def _contra_el_motor_de_hoy(
         if previa is None or d.created_at > previa.created_at:
             vigente[d.product_dna_id] = d
 
-    salida = ContraElMotorDeHoy()
+    # MANDA EL ÚLTIMO VEREDICTO DEL CASO (#213, 7-oct)
+    #
+    # Se recorrían TODOS los veredictos, también los que el clasificador
+    # sustituyó después. El 7-oct decía «discrepan 2» y eran dos veredictos
+    # viejos ya reemplazados por el propio César —el 73053199 de una tubería
+    # HFW que retiró ese día por 73051291—; con el último de cada caso, cero.
+    # Es la misma regla que las mediciones y la bandeja: el dictamen es el
+    # último, llegue o no a una fracción. Si el último es un FALTA_INFORMACION,
+    # el caso no se compara.
+    ultimo: dict[object, ClassificationDecision] = {}
+    sueltos: list[ClassificationDecision] = []
     for veredicto in humanos:
+        if veredicto.product_dna_id is None:
+            sueltos.append(veredicto)
+            continue
+        previo = ultimo.get(veredicto.product_dna_id)
+        if previo is None or veredicto.created_at > previo.created_at:
+            ultimo[veredicto.product_dna_id] = veredicto
+
+    salida = ContraElMotorDeHoy()
+    for veredicto in (*ultimo.values(), *sueltos):
         if veredicto.fraction_code is None:
             continue
         actual = (
