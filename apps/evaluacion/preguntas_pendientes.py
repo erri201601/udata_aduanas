@@ -77,9 +77,11 @@ def main(argv: list[str] | None = None) -> int:
     motor = sa.create_engine(url_de_postgres(args.target))
     sesion = SesionSql(motor)
     try:
-        casos = sesion.scalars(pendientes()).all()
-        ids = {c.product_id for c in casos if c.product_id is not None}
-        skus = skus_de(sesion, ids)
+        # Se saca lo que hace falta ANTES de cerrar. El `rollback()` de abajo
+        # expira los objetos, y leer `rgi_trace` de una decisión expirada y sin
+        # sesión revienta con `DetachedInstanceError` (revisión del #214).
+        casos = [(c.id, c.product_id, preguntas_de(c)) for c in sesion.scalars(pendientes()).all()]
+        skus = skus_de(sesion, {pid for _, pid, _ in casos if pid is not None})
     finally:
         sesion.rollback()
         sesion.close()
@@ -90,12 +92,12 @@ def main(argv: list[str] | None = None) -> int:
     por_clausula: dict[tuple[str, str], set[str]] = defaultdict(set)
     fichas: dict[tuple[str, str], set[str]] = defaultdict(set)
     con_pregunta: set[str] = set()
-    for caso in casos:
-        for q in preguntas_de(caso):
+    for caso_id, product_id, preguntas in casos:
+        for q in preguntas:
             clave = (str(q["codigo"]), str(q["exige"]))
-            sku = skus.get(caso.product_id) if caso.product_id else None
-            por_clausula[clave].add(sku or str(caso.id))
-            con_pregunta.add(str(caso.id))
+            sku = skus.get(product_id) if product_id else None
+            por_clausula[clave].add(sku or str(caso_id))
+            con_pregunta.add(str(caso_id))
             if q.get("mercancia"):
                 fichas[clave].add(str(q["mercancia"]))
 

@@ -200,8 +200,24 @@ def test_el_script_corre_de_principio_a_fin(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Con su propia conexión, como en la terminal. `pg_session` sólo está
-    para que la configuración apunte a la base de los tests de integración."""
+    para que la configuración apunte a la base de los tests de integración.
+
+    SIN CASOS NO PRUEBA NADA, Y LO DICE
+
+    El script abre su conexión y no ve las filas sin confirmar de
+    `pg_session`. En el CI la base está migrada y vacía: salía «0 casos», el
+    bucle que leía las trazas no se ejecutaba y el test pasaba en verde con el
+    script roto (`DetachedInstanceError` al leer una decisión tras cerrar la
+    sesión, revisión del #214). Contra la base compartida fallaba, que es lo
+    correcto. Sin casos que recorrer se salta con el motivo, no pasa en vacío.
+    """
+    import re
+
     from apps.evaluacion.preguntas_pendientes import main
 
     assert main([]) == 0
-    assert "casos pendientes" in capsys.readouterr().out
+    salida = capsys.readouterr().out
+    cuantos = re.search(r"^(\d+) casos pendientes", salida, re.MULTILINE)
+    assert cuantos is not None, salida
+    if int(cuantos.group(1)) == 0:
+        pytest.skip("la base no tiene casos pendientes visibles desde otra conexión")
