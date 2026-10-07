@@ -82,7 +82,11 @@ def compare_item(declared: DeclaredItem, expected: ExpectedItem) -> list[Diverge
                 declared.fraction_code,
                 expected.fraction_code,
                 (
-                    f"La mercancía corresponde a {expected.fraction_code} según las RGI, "
+                    f"Un clasificador dictaminó {expected.fraction_code} para esta mercancía "
+                    f"({expected.fraction_source}), y se declaró {declared.fraction_code}. "
+                    "Cambia el arancel aplicable."
+                    if expected.fraction_source
+                    else f"La mercancía corresponde a {expected.fraction_code} según las RGI, "
                     f"y se declaró {declared.fraction_code}. Cambia el arancel aplicable."
                 ),
             )
@@ -101,7 +105,12 @@ def compare_item(declared: DeclaredItem, expected: ExpectedItem) -> list[Diverge
             "nico_code",
             declared.nico_code,
             expected.nico_code,
-            f"El NICO esperado para {expected.fraction_code} es {expected.nico_code}.",
+            (
+                f"Un clasificador dictaminó el NICO {expected.nico_code} para esta mercancía "
+                f"({expected.nico_source}), y se declaró {declared.nico_code}."
+                if expected.nico_source
+                else f"El NICO esperado para {expected.fraction_code} es {expected.nico_code}."
+            ),
         )
 
     # Lo único que el catálogo puede afirmar solo: que el NICO declarado NO
