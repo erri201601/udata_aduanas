@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 import sqlalchemy as sa
-from database.models import PedimentoItem
+from database.models import Client, Invoice, InvoiceItem, PedimentoItem, Supplier
 from database.models.regulatory import ExchangeRate
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
@@ -123,3 +123,58 @@ def test_sin_tasa_cargada_para_esa_fecha_es_needs_validation(pg_session: Session
 
     assert valor is None
     assert moneda is None
+
+
+def test_no_se_confunde_con_la_divisa_de_la_factura(pg_session: Session) -> None:
+    """Investigado a propósito (Erick, 7-oct) y NO es el mismo bug que
+    `_tipo_de_cambio_esperado`: `price_paid`/`incrementables` son montos ya
+    en MXN en esta misma fila (Art. 65 Ley Aduanera) -- aunque la factura
+    ligada esté en otra divisa, esta función no debe tocarla ni mezclarla
+    con su propia suma. Si alguna vez se "unifica" con
+    `_divisa_de_la_factura`, este test debe seguir pasando."""
+    from apps.api.routers.pedimentos import _valor_esperado
+
+    cliente = Client(legal_name="Cliente de prueba", data_origin="SYNTHETIC")
+    proveedor = Supplier(legal_name="Proveedor de prueba", country="BR", data_origin="SYNTHETIC")
+    pg_session.add_all([cliente, proveedor])
+    pg_session.flush()
+    factura = Invoice(
+        client_id=cliente.id,
+        supplier_id=proveedor.id,
+        invoice_number=f"INV-{uuid.uuid4().hex[:8]}",
+        invoice_date=date(2099, 5, 1),
+        currency="USD",
+        total_amount=Decimal("57.00"),
+        total_amount_currency="USD",
+        data_origin="SYNTHETIC",
+    )
+    pg_session.add(factura)
+    pg_session.flush()
+    partida_factura = InvoiceItem(
+        invoice_id=factura.id,
+        line_number=1,
+        description="Tubo de acero",
+        quantity=Decimal("10"),
+        unit_price=Decimal("5.70"),
+        unit_price_currency="USD",
+        line_total=Decimal("57.00"),
+        line_total_currency="USD",
+        data_origin="SYNTHETIC",
+    )
+    pg_session.add(partida_factura)
+    pg_session.flush()
+
+    partida = _partida(
+        price_paid=Decimal("1000.00"),
+        incrementables=Decimal("50.00"),
+        price_paid_currency="MXN",
+        incrementables_currency="MXN",
+        invoice_item_id=partida_factura.id,
+    )
+
+    valor, moneda = _valor_esperado(pg_session, partida, date(2099, 5, 1))
+
+    # La suma propia de la partida, sin ningún FIX de por medio -- NO
+    # 57.00 * algo, que sería mezclar la factura con esta cuenta.
+    assert moneda == "MXN"
+    assert valor == Decimal("1050.00")

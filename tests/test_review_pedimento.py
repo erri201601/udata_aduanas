@@ -167,14 +167,23 @@ class _SinCuotasCompensatorias:
 
 class _SesionConProveedor:
     """Sólo responde la consulta del país del proveedor (y, para que
-    `_cuota_compensatoria_esperada` no truene, una lista vacía de cuotas)."""
+    `_cuota_compensatoria_esperada`/`_tipo_de_cambio_esperado` no truenen,
+    una lista vacía de cuotas y "sin factura ligada" para la divisa)."""
 
     def __init__(self, pais: str | None) -> None:
         self.pais = pais
         self.consultas: list[str] = []
 
     def scalar(self, sentencia: object) -> object:
-        self.consultas.append(str(sentencia))
+        texto = str(sentencia)
+        self.consultas.append(texto)
+        # `_divisa_de_la_factura`/`_proveedor_legal_name` usan `.scalar()`
+        # igual que `_pais_del_proveedor` -- sin distinguir la consulta,
+        # un país ("CN") se devolvería como si fuera una divisa o una
+        # razón social. Ninguno de estos tests verifica tipo de cambio o
+        # cuota compensatoria, así que basta con responder sólo la del país.
+        if "suppliers.country" not in texto:
+            return None
         return self.pais
 
     def scalars(self, sentencia: object) -> _SinCuotasCompensatorias:

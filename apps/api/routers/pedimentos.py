@@ -81,6 +81,7 @@ from database.models import (
 from database.repositories import save_review
 from database.repositories.compensatory_duties import cuotas_vigentes, normalizar_nombre
 from database.repositories.exchange import tasa_vigente
+from database.repositories.invoices import divisa_de_la_factura
 from database.repositories.tariff import TariffCatalogRepository
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
@@ -293,8 +294,8 @@ def _valor_esperado(
     session: SessionDep, partida: PedimentoItem, fecha: date
 ) -> tuple[Decimal | None, str | None]:
     """Valor en aduana según la propia partida: precio pagado + incrementables,
-    convertido a MXN con el FIX vigente en `fecha` si la factura viene en
-    otra divisa.
+    convertido a MXN con el FIX vigente en `fecha` si la PARTIDA declaró su
+    precio pagado en otra divisa.
 
     `None` si falta cualquiera de los dos, si vienen en divisas distintas
     (sumar importes de monedas distintas daría una cifra falsa), o si la
@@ -307,6 +308,22 @@ def _valor_esperado(
     USD contra MXN y reportaba "divisa distinta" en cada partida real del
     corpus (invoices 100% USD, pedimentos 100% MXN, verificado contra la
     base compartida) — nunca llegaba a comparar el monto.
+
+    NO COMPARTE EL BUG DE `_tipo_de_cambio_esperado` (Erick, 7-oct),
+    AUNQUE USA LA MISMA LÍNEA — investigado a propósito, no asumido:
+    esta función suma `price_paid`/`incrementables`, que son NÚMEROS ya
+    denominados en MXN en esta misma fila (Art. 65 Ley Aduanera: un
+    pedimento imprime los tres montos en pesos). `price_paid_currency`
+    aquí es correcto como ancla de conversión — dice en qué divisa están
+    ESOS DOS NÚMEROS, no en qué divisa se facturó. Si se cambiara a
+    `Invoice.currency` (USD) sin cambiar también de dónde sale `valor`,
+    se multiplicaría un monto YA EN PESOS por el FIX otra vez — una
+    doble conversión, un bug nuevo y peor. La pregunta que SÍ responde
+    `_tipo_de_cambio_esperado`/`EXCHANGE_RATE_MISMATCH` (¿el tipo de
+    cambio declarado es el FIX oficial?) es una pregunta DISTINTA de la
+    que responde ésta (¿la aritmética propia del pedimento cuadra?), y
+    mezclarlas sería hacer que un solo comparador intente cubrir dos
+    fallas distintas.
     """
     if partida.price_paid is None or partida.incrementables is None:
         return None, None
@@ -329,17 +346,33 @@ def _tipo_de_cambio_esperado(
 ) -> Decimal | None:
     """El FIX que debería haberse usado para convertir esta partida.
 
-    Misma divisa que resuelve `_valor_esperado` (factura, no la del
-    pedimento): si la partida no trae una divisa distinta de MXN no hay
-    tipo de cambio que comparar, y se devuelve `None` — no "coincide".
+    La divisa es la de la FACTURA (`database.repositories.invoices.divisa_de_la_factura`), no la del
+    pedimento — `pedimento.exchange_rate` existe precisamente para
+    convertir el monto de la factura a MXN, así que la pregunta "¿usaron
+    el FIX correcto?" sólo tiene sentido contra la divisa en la que esa
+    factura se emitió. `partida.price_paid_currency` NO sirve para esto:
+    es la divisa en la que la PARTIDA imprime su propio precio pagado
+    (siempre MXN, por Ley Aduanera) — usarla aquí hacía que esta función
+    devolviera `None` siempre, en el 100% de las 181 partidas reales del
+    corpus, y el `0` se leía como "coincide" cuando en realidad nunca se
+    había comparado nada (bug real, Erick, 7-oct: encontrado al medir
+    contra la base compartida — 15 pedimentos con tipo de cambio
+    declarado entre 18.20 y 18.98 contra un FIX real entre 16.96 y
+    17.33, 5.8%-11.9% de diferencia, nunca detectados).
 
-    `fecha` es `pedimento.operation_date`, igual que `_valor_esperado`: NO
-    está verificado contra una fuente almacenada que diga si la fecha
-    correcta es ésa, la del día de pago, o alguna otra regla de la Ley
-    Aduanera/CFF (ver `DivergenceType.EXCHANGE_RATE_MISMATCH`). Se usa la
-    misma por continuidad, no porque esté confirmada.
+    `None` si la partida no tiene factura ligada, si la factura ya es en
+    MXN (nada que comparar), o si no hay FIX cargado para `fecha` — las
+    tres son "no se pudo comprobar", nunca "coincide".
+
+    `fecha` es `pedimento.operation_date`: NO está verificado contra una
+    fuente almacenada que diga si la fecha correcta es ésa, la del día
+    de pago, o alguna otra regla de la Ley Aduanera/CFF (ver
+    `DivergenceType.EXCHANGE_RATE_MISMATCH`). Se usa ésta por
+    continuidad, no porque esté confirmada — y, verificado aparte: entre
+    el 16-feb y el 15-sep de 2026 ningún FIX real llega a 18.20, así que
+    esta ambigüedad de fecha no cambia el resultado para el corpus actual.
     """
-    moneda = partida.price_paid_currency or partida.customs_value_currency
+    moneda = divisa_de_la_factura(session, partida)
     if moneda is None or moneda == "MXN":
         return None
     return tasa_vigente(session, on_date=fecha, currency=moneda)
