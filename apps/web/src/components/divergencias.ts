@@ -51,6 +51,10 @@ export const DIVERGENCIAS: Record<string, Divergencia> = {
     etiqueta: 'Tipo de cambio',
     explica: 'El tipo de cambio declarado no es el FIX vigente para la fecha de operación.',
   },
+  COMPENSATORY_DUTY_MISMATCH: {
+    etiqueta: 'Cuota compensatoria',
+    explica: 'La mercancía y el origen tienen una cuota compensatoria conocida que no cuadra.',
+  },
   IGI_RATE_MISMATCH: {
     etiqueta: 'IGI',
     explica: 'El IGI declarado no corresponde a la tarifa de la fracción declarada.',

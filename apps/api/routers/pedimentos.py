@@ -79,6 +79,7 @@ from database.models import (
     Supplier,
 )
 from database.repositories import save_review
+from database.repositories.compensatory_duties import cuotas_vigentes, normalizar_nombre
 from database.repositories.exchange import tasa_vigente
 from database.repositories.tariff import TariffCatalogRepository
 from fastapi import APIRouter, HTTPException, status
@@ -100,6 +101,7 @@ _COMPROBABLE_SIN_CLASIFICAR: Final = (
     "valid_nico_codes",
     "customs_value",
     "exchange_rate",
+    "compensatory_duty_applies",
 )
 
 
@@ -248,6 +250,7 @@ def _declarada(partida: PedimentoItem, *, exchange_rate: Decimal | None) -> Decl
         igi_amount=partida.igi_amount,
         vat_amount=partida.vat_amount,
         exchange_rate=exchange_rate,
+        cc_amount=partida.cc_amount,
     )
 
 
@@ -262,6 +265,23 @@ def _pais_del_proveedor(session: SessionDep, partida: PedimentoItem) -> str | No
         return None
     return session.scalar(
         sa.select(Supplier.country)
+        .select_from(InvoiceItem)
+        .join(Invoice, Invoice.id == InvoiceItem.invoice_id)
+        .join(Supplier, Supplier.id == Invoice.supplier_id)
+        .where(InvoiceItem.id == partida.invoice_item_id)
+    )
+
+
+def _proveedor_legal_name(session: SessionDep, partida: PedimentoItem) -> str | None:
+    """Razón social del proveedor de la factura de esta partida.
+
+    Mismo camino que `_pais_del_proveedor` (`partida → invoice_item →
+    invoice → supplier`) pero el dato es `legal_name`, no `country` — lo
+    que exige el cruce exacto contra `CompensatoryDuty.exporter_name`."""
+    if partida.invoice_item_id is None:
+        return None
+    return session.scalar(
+        sa.select(Supplier.legal_name)
         .select_from(InvoiceItem)
         .join(Invoice, Invoice.id == InvoiceItem.invoice_id)
         .join(Supplier, Supplier.id == Invoice.supplier_id)
@@ -325,6 +345,68 @@ def _tipo_de_cambio_esperado(
     return tasa_vigente(session, on_date=fecha, currency=moneda)
 
 
+#: Clave del Apéndice 7 (Anexo 22) por unidad en la que una resolución fija
+#: su cuota. Sólo "KG" existe hoy (cable de acero, ADR 0009) -- se amplía
+#: cuando haga falta, nunca se adivina una clave que no se haya verificado
+#: contra `regulatory.units_of_measure`.
+_CLAVE_APENDICE_7_POR_UNIDAD_DE_CUOTA: Final = {"KG": "1"}
+
+
+def _cuota_compensatoria_esperada(
+    session: SessionDep, partida: PedimentoItem, fecha: date
+) -> tuple[bool | None, Decimal | None]:
+    """¿Aplica una cuota compensatoria conocida a esta partida, y por cuánto?
+
+    `(None, None)` cuando no hay ninguna fila de `CompensatoryDuty` vigente
+    para este origen/fracción — "no se sabe", nunca "no aplica" (sólo una
+    combinación está verificada hoy: ver `ingestion.se.cuotas_compensatorias`).
+
+    `(True, monto)` cuando sí hay una fila vigente. `monto` es `None`
+    cuando la unidad declarada de la partida no es la de la cuota (p. ej.
+    la resolución fija la tasa "por kilogramo" y la partida declara en
+    metro lineal — caso real, cable de acero del corpus) — no se inventa
+    un factor de conversión; el hallazgo se emite igual, sin monto exacto.
+
+    EXPORTADOR: coincidencia exacta normalizada contra
+    `operational.suppliers.legal_name`, nunca aproximada (decisión de
+    Persona 1, 6-oct). Si hay una fila con exportador nombrado que
+    coincide, se usa ésa; si no, la residual (`exporter_name IS NULL`,
+    "las demás"); si ninguna de las dos existe, `(None, None)` — no hay
+    con qué afirmar.
+    """
+    if partida.country_of_origin is None or not partida.declared_fraction_code:
+        return None, None
+    filas = cuotas_vigentes(
+        session,
+        on_date=fecha,
+        origin_country=partida.country_of_origin,
+        fraction_code=partida.declared_fraction_code,
+    )
+    if not filas:
+        return None, None
+
+    proveedor = _proveedor_legal_name(session, partida)
+    proveedor_normalizado = normalizar_nombre(proveedor) if proveedor else None
+    fila = next(
+        (
+            f
+            for f in filas
+            if f.exporter_name is not None
+            and proveedor_normalizado == normalizar_nombre(f.exporter_name)
+        ),
+        None,
+    )
+    if fila is None:
+        fila = next((f for f in filas if f.exporter_name is None), None)
+    if fila is None:
+        return None, None
+
+    clave_unidad = _CLAVE_APENDICE_7_POR_UNIDAD_DE_CUOTA.get(fila.rate_unit)
+    if clave_unidad is None or partida.commercial_unit != clave_unidad:
+        return True, None
+    return True, (fila.rate * partida.quantity).quantize(_CENTAVOS)
+
+
 def _dta(valor: Decimal, peticion: ReviewRequest) -> Decimal | None:
     """El DTA de la partida con las tasas de la operación. `None` si no se pasaron.
 
@@ -373,6 +455,7 @@ def _espejo_documental(
     pais = _pais_del_proveedor(session, partida)
     valor, moneda = _valor_esperado(session, partida, fecha)
     tipo_de_cambio = _tipo_de_cambio_esperado(session, partida, fecha)
+    aplica_cuota, monto_cuota = _cuota_compensatoria_esperada(session, partida, fecha)
     igi, iva = _fiscal_esperado(partida, fecha, catalogo, peticion)
     # `None` y `False` dicen cosas distintas: sin catálogo cargado no se puede
     # afirmar que una unidad no exista, y acusar ahí sería culpar al pedimento
@@ -396,6 +479,8 @@ def _espejo_documental(
         "customs_value": valor,
         "customs_value_currency": moneda,
         "exchange_rate": tipo_de_cambio,
+        "compensatory_duty_applies": aplica_cuota,
+        "compensatory_duty_amount": monto_cuota,
     }
 
 

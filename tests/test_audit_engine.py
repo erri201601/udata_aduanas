@@ -58,6 +58,10 @@ def comparacion(**kw: object):  # type: ignore[no-untyped-def]
         # se consultó, y entonces la partida no se podría afirmar limpia.
         "missing_technical_fields": (),
         "valid_nico_codes": ("00",),
+        # Explícito, sólo para el fixture: en producción el router nunca
+        # construye `False` -- pero sin esto ningún test podría afirmar
+        # "pedimento limpio" (ver docstring del campo en core/shadow/types.py).
+        "compensatory_duty_applies": False,
     }
     dec.update(kw.get("declarado", {}))  # type: ignore[arg-type]
     esp.update(kw.get("esperado", {}))  # type: ignore[arg-type]

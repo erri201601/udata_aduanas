@@ -72,6 +72,7 @@ from database.models import (
     ShadowReview,
     SyntheticScenario,
 )
+from database.repositories.compensatory_duties import cuotas_vigentes
 from database.repositories.findings import de_la_ultima_revision
 from database.repositories.tariff import TariffCatalogRepository
 
@@ -268,6 +269,51 @@ def _fracciones_que_un_dictamen_contradice(
     return contradichas
 
 
+#: El hallazgo del comparador de cuotas compensatorias (ADR 0009). No sale de
+#: `DETECTOR_POR_ERROR` porque el corpus nunca lo modela como evento posible
+#: (ningún pedimento sintético declara `cc_amount`) -- no hay "WRONG_X" del
+#: que traducir.
+DETECTOR_DE_CUOTA_COMPENSATORIA: Final = "COMPENSATORY_DUTY_MISMATCH"
+
+
+def _cuotas_compensatorias_ciertas(
+    session: Session,
+    partidas: Mapping[uuid.UUID, PedimentoItem],
+    fechas: Mapping[uuid.UUID, date],
+) -> set[tuple[str, str]]:
+    """Pares (partida, COMPENSATORY_DUTY_MISMATCH) que no se cuentan como
+    falso positivo.
+
+    Mismo criterio que `_fichas_recortadas_a_proposito`/
+    `_fracciones_que_un_dictamen_contradice`: el corpus sintético nunca
+    siembra una cuota compensatoria como evento posible (no existe
+    "WRONG_COMPENSATORY_DUTY" en el generador), así que las 10 partidas de
+    cable de acero de China que SÍ tienen una cuota real vigente (ADR 0009,
+    `regulatory.compensatory_duties`) y venían limpias contarían como 10
+    falsos positivos -- igual que pasó con FRACTION_MISMATCH en el #200,
+    por la misma razón: un hallazgo cierto no es un error del motor.
+
+    Se lee de `CompensatoryDuty` VIGENTE, no de una lista de partidas
+    escrita a mano: si se carga otra cuota real, esto la sigue sin que
+    nadie lo actualice.
+    """
+    ciertas: set[tuple[str, str]] = set()
+    for pid, partida in partidas.items():
+        if partida.country_of_origin is None or not partida.declared_fraction_code:
+            continue
+        fecha = fechas.get(partida.pedimento_id)
+        if fecha is None:
+            continue
+        if cuotas_vigentes(
+            session,
+            on_date=fecha,
+            origin_country=partida.country_of_origin,
+            fraction_code=partida.declared_fraction_code,
+        ):
+            ciertas.add((str(pid), DETECTOR_DE_CUOTA_COMPENSATORIA))
+    return ciertas
+
+
 def consulta_de_hallazgos() -> sa.Select[Any]:
     """Los hallazgos que representan al motor de HOY.
 
@@ -368,7 +414,13 @@ def recolectar(
         if e.error_type == "WRONG_FRACTION" and e.pedimento_item_id is not None
     }
     contradichas = _fracciones_que_un_dictamen_contradice(session, partidas, sembradas_de_fraccion)
-    return eventos, hallazgos, [str(i) for i in partidas], recortadas | contradichas
+    cuotas_ciertas = _cuotas_compensatorias_ciertas(session, partidas, fechas)
+    return (
+        eventos,
+        hallazgos,
+        [str(i) for i in partidas],
+        recortadas | contradichas | cuotas_ciertas,
+    )
 
 
 def medir(session: Session, *, escenario: uuid.UUID | None = None) -> Reporte:
@@ -415,8 +467,8 @@ def informe(r: Reporte) -> str:
         f"FALSOS POSITIVOS  {a.fp} sobre {r.partidas_limpias} partidas limpias "
         f"({r.tasa_falsos_positivos} %)",
         f"  de ellos, revisión de origen: {r.falsos_positivos_de_revision}",
-        f"  ciertos y no contados (ficha recortada, o declaración que un dictamen "
-        f"contradice): "
+        f"  ciertos y no contados (ficha recortada, declaración que un dictamen "
+        f"contradice, o cuota compensatoria real sobre partida limpia): "
         f"{r.condiciones_sembradas_no_contadas}",
         f"  hallazgos fuera de su anomalía: {r.hallazgos_fuera_de_su_anomalia}",
         "",

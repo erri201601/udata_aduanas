@@ -59,6 +59,10 @@ def esperado(**kw: object) -> ExpectedItem:
         # no se consultó, y la partida no podría declararse limpia.
         "missing_technical_fields": (),
         "sku": "LAP-14-8GB",
+        # Explícito, sólo para el fixture: en producción el router nunca
+        # construye `False` (ver docstring del campo) -- pero el TIPO sí lo
+        # admite, y sin esto ningún test podría afirmar "pedimento limpio".
+        "compensatory_duty_applies": False,
     }
     base.update(kw)
     return ExpectedItem(**base)  # type: ignore[arg-type]
@@ -183,6 +187,66 @@ def test_sin_fix_cargado_el_tipo_de_cambio_no_se_acusa() -> None:
     )
 
     assert not any(x.kind is DivergenceType.EXCHANGE_RATE_MISMATCH for x in r.divergences)
+
+
+# ── Cuota compensatoria (ADR 0009) ────────────────────────────────────────
+
+
+def test_cuota_compensatoria_no_declarada_con_monto_conocido() -> None:
+    r = compare(
+        [declarado(cc_amount=None)],
+        [esperado(compensatory_duty_applies=True, compensatory_duty_amount=Decimal("500.00"))],
+    )
+
+    d = next(x for x in r.divergences if x.kind is DivergenceType.COMPENSATORY_DUTY_MISMATCH)
+    assert d.severity == "CRITICAL"
+    assert d.declared_value is None
+    assert d.expected_value == "500.00"
+
+
+def test_cuota_compensatoria_no_declarada_sin_monto_calculable_tambien_es_hallazgo() -> None:
+    """La unidad declarada no es la de la cuota (p. ej. metro lineal contra
+    "por kilogramo") -- no se inventa un factor de conversión, pero el
+    hallazgo se emite igual: SÍ se sabe que la cuota aplica."""
+    r = compare(
+        [declarado(cc_amount=None)],
+        [esperado(compensatory_duty_applies=True, compensatory_duty_amount=None)],
+    )
+
+    d = next(x for x in r.divergences if x.kind is DivergenceType.COMPENSATORY_DUTY_MISMATCH)
+    assert d.expected_value is None
+    assert "no se pudo calcular" in d.reasoning
+
+
+def test_cuota_compensatoria_declarada_pero_no_cuadra() -> None:
+    r = compare(
+        [declarado(cc_amount=Decimal("100.00"))],
+        [esperado(compensatory_duty_applies=True, compensatory_duty_amount=Decimal("500.00"))],
+    )
+
+    d = next(x for x in r.divergences if x.kind is DivergenceType.COMPENSATORY_DUTY_MISMATCH)
+    assert d.declared_value == "100.00"
+    assert d.expected_value == "500.00"
+
+
+def test_cuota_compensatoria_declarada_y_cuadra_no_es_hallazgo() -> None:
+    r = compare(
+        [declarado(cc_amount=Decimal("500.00"))],
+        [esperado(compensatory_duty_applies=True, compensatory_duty_amount=Decimal("500.00"))],
+    )
+
+    assert not any(x.kind is DivergenceType.COMPENSATORY_DUTY_MISMATCH for x in r.divergences)
+
+
+def test_sin_cuota_conocida_no_se_acusa() -> None:
+    """`compensatory_duty_applies is None` es «no se sabe», no «no aplica» —
+    no se emite un hallazgo sobre una combinación sin verificar."""
+    r = compare(
+        [declarado(cc_amount=None)],
+        [esperado(compensatory_duty_applies=None)],
+    )
+
+    assert not any(x.kind is DivergenceType.COMPENSATORY_DUTY_MISMATCH for x in r.divergences)
 
 
 def test_un_sku_clasificado_distinto_antes_es_hallazgo() -> None:
