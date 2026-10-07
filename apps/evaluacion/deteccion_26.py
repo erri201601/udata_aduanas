@@ -62,6 +62,7 @@ from core.evaluation.deteccion import (
     Reporte,
     evaluar,
 )
+from core.shadow import VALUE_TOLERANCE
 from database.models import (
     ClassificationDecision,
     GroundTruthRecord,
@@ -73,7 +74,9 @@ from database.models import (
     SyntheticScenario,
 )
 from database.repositories.compensatory_duties import cuotas_vigentes
+from database.repositories.exchange import tasa_vigente
 from database.repositories.findings import de_la_ultima_revision
+from database.repositories.invoices import divisa_de_la_factura
 from database.repositories.tariff import TariffCatalogRepository
 
 from apps.evaluacion.hs_accuracy import SesionSoloLectura
@@ -82,6 +85,7 @@ from apps.evaluacion.procedencia import linea_de_procedencia, procedencia
 if TYPE_CHECKING:
     from collections.abc import Mapping
     from datetime import date
+    from decimal import Decimal
 
     from sqlalchemy.orm import Session
 
@@ -314,6 +318,54 @@ def _cuotas_compensatorias_ciertas(
     return ciertas
 
 
+#: El hallazgo del comparador de tipo de cambio. No sale de
+#: `DETECTOR_POR_ERROR` porque el corpus nunca lo modela como evento
+#: posible -- no existe "WRONG_EXCHANGE_RATE" en el generador.
+DETECTOR_DE_TIPO_DE_CAMBIO: Final = "EXCHANGE_RATE_MISMATCH"
+
+
+def _tipos_de_cambio_ciertos(
+    session: Session,
+    partidas: Mapping[uuid.UUID, PedimentoItem],
+    fechas: Mapping[uuid.UUID, date],
+    tasas_declaradas: Mapping[uuid.UUID, Decimal | None],
+) -> set[tuple[str, str]]:
+    """Pares (partida, EXCHANGE_RATE_MISMATCH) que no se cuentan como falso
+    positivo.
+
+    Mismo criterio que `_cuotas_compensatorias_ciertas`: el corpus
+    sintético nunca siembra un tipo de cambio incorrecto como evento
+    posible. El generador (`ingestion.sintetico.load`) deriva el monto en
+    pesos de la partida dividiendo por `Pedimento.exchange_rate` y
+    multiplicando de vuelta -- así que 15 pedimentos con un tipo de
+    cambio declarado que no es el FIX oficial (hasta 11.9% de diferencia,
+    hallazgo de Erick, 7-oct, corregido también el bug de
+    `_tipo_de_cambio_esperado` que impedía verlo) quedaban limpios en el
+    ground truth, pero SON un hallazgo cierto contra la fuente oficial.
+
+    Misma tolerancia que el comparador real
+    (`core.shadow.compare.VALUE_TOLERANCE`, 1%) para no declarar "cierto"
+    lo que el propio Espejo trataría como ruido de redondeo.
+    """
+    ciertas: set[tuple[str, str]] = set()
+    for pid, partida in partidas.items():
+        declarada = tasas_declaradas.get(partida.pedimento_id)
+        if declarada is None:
+            continue
+        fecha = fechas.get(partida.pedimento_id)
+        if fecha is None:
+            continue
+        moneda = divisa_de_la_factura(session, partida)
+        if moneda is None or moneda == "MXN":
+            continue
+        fix = tasa_vigente(session, on_date=fecha, currency=moneda)
+        if fix is None:
+            continue
+        if abs(declarada - fix) / fix > VALUE_TOLERANCE:
+            ciertas.add((str(pid), DETECTOR_DE_TIPO_DE_CAMBIO))
+    return ciertas
+
+
 def consulta_de_hallazgos() -> sa.Select[Any]:
     """Los hallazgos que representan al motor de HOY.
 
@@ -345,7 +397,7 @@ def recolectar(
     más importa, estropeado por un artefacto de la consulta.
     """
     consulta_partidas = sa.select(PedimentoItem)
-    consulta_pedimentos = sa.select(Pedimento.id, Pedimento.operation_date)
+    consulta_pedimentos = sa.select(Pedimento.id, Pedimento.operation_date, Pedimento.exchange_rate)
     if escenario is not None:
         del_escenario = sa.select(Pedimento.id).where(Pedimento.synthetic_scenario_id == escenario)
         consulta_partidas = consulta_partidas.where(PedimentoItem.pedimento_id.in_(del_escenario))
@@ -354,8 +406,10 @@ def recolectar(
         )
 
     partidas = {fila.id: fila for fila in session.scalars(consulta_partidas).all()}
-    fechas: dict[uuid.UUID, date] = {
-        fila.id: fila.operation_date for fila in session.execute(consulta_pedimentos).all()
+    pedimentos_filas = session.execute(consulta_pedimentos).all()
+    fechas: dict[uuid.UUID, date] = {fila.id: fila.operation_date for fila in pedimentos_filas}
+    tasas_declaradas: dict[uuid.UUID, Decimal | None] = {
+        fila.id: fila.exchange_rate for fila in pedimentos_filas
     }
 
     sin_clasificar = _lineas_sin_clasificacion(session)
@@ -415,11 +469,12 @@ def recolectar(
     }
     contradichas = _fracciones_que_un_dictamen_contradice(session, partidas, sembradas_de_fraccion)
     cuotas_ciertas = _cuotas_compensatorias_ciertas(session, partidas, fechas)
+    tipos_de_cambio_ciertos = _tipos_de_cambio_ciertos(session, partidas, fechas, tasas_declaradas)
     return (
         eventos,
         hallazgos,
         [str(i) for i in partidas],
-        recortadas | contradichas | cuotas_ciertas,
+        recortadas | contradichas | cuotas_ciertas | tipos_de_cambio_ciertos,
     )
 
 
@@ -468,7 +523,8 @@ def informe(r: Reporte) -> str:
         f"({r.tasa_falsos_positivos} %)",
         f"  de ellos, revisión de origen: {r.falsos_positivos_de_revision}",
         f"  ciertos y no contados (ficha recortada, declaración que un dictamen "
-        f"contradice, o cuota compensatoria real sobre partida limpia): "
+        f"contradice, cuota compensatoria o tipo de cambio reales sobre partida "
+        f"limpia): "
         f"{r.condiciones_sembradas_no_contadas}",
         f"  hallazgos fuera de su anomalía: {r.hallazgos_fuera_de_su_anomalia}",
         "",
