@@ -156,7 +156,38 @@ function esDeCalculo(tipo: string): boolean {
   return tipo === 'IGI_RATE_MISMATCH' || tipo === 'VAT_MISMATCH'
 }
 
-function Partida({ linea, posibles }: { linea: LineaEspejo; posibles: string[] }) {
+type Divergencia = LineaEspejo['divergencias'][number]
+
+const claveDe = (d: Divergencia) => `${d.finding_type}|${d.declared_value}|${d.expected_value}`
+
+/** Lo que difiere IGUAL en todas las partidas y no tiene monto: es del documento.
+ *
+ * El tipo de cambio se declara una vez por pedimento. Cuando está mal, salía
+ * como CRÍTICO doce veces, una por partida, con el mismo texto — y en la demo
+ * escondía lo que sí distingue a cada partida. Se enseña una vez arriba y cada
+ * partida lo remite. Sólo lo que no tiene monto: con monto, cada partida es
+ * una cifra distinta y juntarlas cambiaría lo que se presenta. */
+function delDocumento(lineas: LineaEspejo[]): Divergencia[] {
+  if (lineas.length < 2) return []
+  const [primera, ...resto] = lineas
+  return primera.divergencias.filter(
+    (d) =>
+      !d.impact_amount &&
+      resto.every((l) => l.divergencias.some((x) => !x.impact_amount && claveDe(x) === claveDe(d))),
+  )
+}
+
+function Partida({
+  linea,
+  posibles,
+  delPedimento,
+}: {
+  linea: LineaEspejo
+  posibles: string[]
+  delPedimento: Set<string>
+}) {
+  const propias = linea.divergencias.filter((d) => !delPedimento.has(claveDe(d)))
+  const remitidas = linea.divergencias.length - propias.length
   return (
     <li className={`espejo-linea espejo-linea--${linea.estado.toLowerCase()}`}>
       <header className="espejo-linea__cabecera">
@@ -179,11 +210,17 @@ function Partida({ linea, posibles }: { linea: LineaEspejo; posibles: string[] }
 
       <Comparacion linea={linea} />
 
-      {linea.divergencias.length > 0 && (
+      {remitidas > 0 && (
+        <p className="espejo-linea__remite">
+          Y lo que difiere en todo el pedimento, arriba.
+        </p>
+      )}
+
+      {propias.length > 0 && (
         <div className="espejo-linea__bloque">
           <h5>Lo que difiere</h5>
           <ul className="divergencias">
-            {linea.divergencias.map((d) => {
+            {propias.map((d) => {
               const monto = formatearMonto(d.impact_amount, d.impact_amount_currency)
               return (
                 <li key={d.finding_id}>
@@ -331,6 +368,8 @@ export function PedimentoShadow() {
     datos?.lineas.reduce((suma, l) => suma + (l.comprobado?.length ?? 0), 0) ?? 0
   const posiblesTotales =
     (datos?.comprobaciones_posibles?.length ?? 0) * (datos?.partidas ?? 0)
+
+  const documento = datos?.revision ? delDocumento(datos.lineas) : []
 
   return (
     <section className="pantalla">
@@ -496,12 +535,48 @@ export function PedimentoShadow() {
             )}
           </p>
 
+          {documento.length > 0 && (
+            <div className="espejo-documento" role="note">
+              <h5>Del pedimento entero</h5>
+              <p className="espejo-documento__pie">
+                Igual en las {datos.lineas.length} partidas: es un dato del documento, no de
+                cada mercancía.
+              </p>
+              <ul className="divergencias">
+                {documento.map((d) => (
+                  <li key={claveDe(d)}>
+                    <div className="divergencia__titulo">
+                      <span className={`sev sev--${d.severity.toLowerCase()}`}>
+                        {SEVERIDADES[d.severity as Severity]?.etiqueta ?? d.severity}
+                      </span>
+                      <span className="divergencia__tipo" title={detalleDe(d.finding_type)}>
+                        {etiquetaDe(d.finding_type)}
+                      </span>
+                      {d.field && <span className="divergencia__campo">{d.field}</span>}
+                    </div>
+                    <p className="divergencia__valores">
+                      <span>
+                        declarado <code>{d.declared_value ?? '—'}</code>
+                      </span>
+                      <span aria-hidden="true">→</span>
+                      <span>
+                        esperado <code>{d.expected_value ?? '—'}</code>
+                      </span>
+                    </p>
+                    {d.rationale && <p className="divergencia__razon">{d.rationale}</p>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <ul className="espejo-lineas">
             {datos.lineas.map((linea) => (
               <Partida
                 key={linea.line_number}
                 linea={linea}
                 posibles={datos.comprobaciones_posibles ?? []}
+                delPedimento={new Set(documento.map(claveDe))}
               />
             ))}
           </ul>

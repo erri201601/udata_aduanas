@@ -193,7 +193,8 @@ export function Classification({ decisionInicial = null }: Props = {}) {
           <select value={activa ?? ''} onChange={(e) => setElegida(e.target.value)}>
             {decisiones.map((d) => (
               <option key={d.id} value={d.id}>
-                {d.fraction_code ?? d.status} — {d.operation_date}
+                {d.sku ?? 'sin SKU'} · {d.fraction_code ?? d.status} ·{' '}
+                {(d.producto ?? '').slice(0, 60)}
               </option>
             ))}
           </select>

@@ -179,6 +179,16 @@ export interface paths {
         /**
          * Lista las decisiones de clasificación
          * @description Decisiones, de la más reciente a la más antigua.
+         *
+         *     CON `vigentes=true`, UNA POR CASO (7-oct)
+         *
+         *     Sin filtro, el listado devuelve todas las filas: cada reclasificación del
+         *     corpus, los veredictos humanos y las pruebas. Son más de 6 400, y las
+         *     primeras por fecha de operación eran intentos fallidos de una laptop de
+         *     prueba del 30-sep, así que la pantalla de Classification abría en un
+         *     «Sin fracción». Con `vigentes=true` devuelve la decisión vigente de cada
+         *     caso —la misma definición que la bandeja— con las resueltas primero, que
+         *     son las que se pueden explicar de punta a punta.
          */
         get: operations["listar_decisiones_classifications_get"];
         put?: never;
@@ -843,107 +853,6 @@ export interface components {
             /** Rejected Reason */
             rejected_reason?: string | null;
         };
-        /** ClassificationDecisionRead */
-        ClassificationDecisionRead: {
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            updated_at: string;
-            /** Synthetic Scenario Id */
-            synthetic_scenario_id?: string | null;
-            /** Seed */
-            seed?: number | null;
-            /** Model Provider */
-            model_provider?: string | null;
-            /** Model Name */
-            model_name?: string | null;
-            /** Prompt Id */
-            prompt_id?: string | null;
-            /** Prompt Version */
-            prompt_version?: string | null;
-            /** Input Tokens */
-            input_tokens?: number | null;
-            /** Output Tokens */
-            output_tokens?: number | null;
-            /** Latency Ms */
-            latency_ms?: number | null;
-            /** Attempts */
-            attempts?: number | null;
-            /** Finish Reason */
-            finish_reason?: string | null;
-            /** Confidence */
-            confidence?: string | null;
-            /**
-             * Requires Human Review
-             * @default true
-             */
-            requires_human_review: boolean;
-            data_origin: components["schemas"]["DataOrigin"];
-            /** Source Id */
-            source_id?: string | null;
-            /** Product Id */
-            product_id?: string | null;
-            /** Product Dna Id */
-            product_dna_id?: string | null;
-            /** Reviews Decision Id */
-            reviews_decision_id?: string | null;
-            trade_flow: components["schemas"]["TradeFlow"];
-            /**
-             * Operation Date
-             * Format: date
-             */
-            operation_date: string;
-            status: components["schemas"]["ClassificationStatus"];
-            /** Chapter */
-            chapter?: string | null;
-            /** Heading */
-            heading?: string | null;
-            /** Subheading */
-            subheading?: string | null;
-            /** Fraction Code */
-            fraction_code?: string | null;
-            /** Nico Code */
-            nico_code?: string | null;
-            /** Tariff Fraction Id */
-            tariff_fraction_id?: string | null;
-            /** Nico Id */
-            nico_id?: string | null;
-            /** Reasoning */
-            reasoning?: string | null;
-            /** Rgi Path */
-            rgi_path?: string[];
-            /** Rgi Trace */
-            rgi_trace?: {
-                [key: string]: unknown;
-            }[] | null;
-            /** Legal Rule Ids */
-            legal_rule_ids?: string[];
-            /** Engine Version */
-            engine_version?: string | null;
-            /** Evidence Id */
-            evidence_id?: string | null;
-            /** Input Snapshot */
-            input_snapshot?: {
-                [key: string]: unknown;
-            };
-            /** Missing Information */
-            missing_information?: string[];
-            /** Estimated Impact Amount */
-            estimated_impact_amount?: string | null;
-            /** Estimated Impact Amount Currency */
-            estimated_impact_amount_currency?: string | null;
-        };
         /**
          * ClassificationDetail
          * @description Una decisión con todo lo necesario para defenderla.
@@ -1202,6 +1111,118 @@ export interface components {
          * @enum {string}
          */
         DataOrigin: "OFFICIAL" | "PUBLIC" | "LICENSED" | "SYNTHETIC" | "HUMAN_VALIDATED";
+        /**
+         * DecisionEnLista
+         * @description Una decisión del listado, con el producto al que pertenece.
+         *
+         *     Sin el SKU, el selector de la pantalla decía «INSUFFICIENT_INFORMATION —
+         *     2026-09-30» cuarenta veces seguidas y no había forma de saber de qué
+         *     mercancía era cada una.
+         */
+        DecisionEnLista: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Synthetic Scenario Id */
+            synthetic_scenario_id?: string | null;
+            /** Seed */
+            seed?: number | null;
+            /** Model Provider */
+            model_provider?: string | null;
+            /** Model Name */
+            model_name?: string | null;
+            /** Prompt Id */
+            prompt_id?: string | null;
+            /** Prompt Version */
+            prompt_version?: string | null;
+            /** Input Tokens */
+            input_tokens?: number | null;
+            /** Output Tokens */
+            output_tokens?: number | null;
+            /** Latency Ms */
+            latency_ms?: number | null;
+            /** Attempts */
+            attempts?: number | null;
+            /** Finish Reason */
+            finish_reason?: string | null;
+            /** Confidence */
+            confidence?: string | null;
+            /**
+             * Requires Human Review
+             * @default true
+             */
+            requires_human_review: boolean;
+            data_origin: components["schemas"]["DataOrigin"];
+            /** Source Id */
+            source_id?: string | null;
+            /** Product Id */
+            product_id?: string | null;
+            /** Product Dna Id */
+            product_dna_id?: string | null;
+            /** Reviews Decision Id */
+            reviews_decision_id?: string | null;
+            trade_flow: components["schemas"]["TradeFlow"];
+            /**
+             * Operation Date
+             * Format: date
+             */
+            operation_date: string;
+            status: components["schemas"]["ClassificationStatus"];
+            /** Chapter */
+            chapter?: string | null;
+            /** Heading */
+            heading?: string | null;
+            /** Subheading */
+            subheading?: string | null;
+            /** Fraction Code */
+            fraction_code?: string | null;
+            /** Nico Code */
+            nico_code?: string | null;
+            /** Tariff Fraction Id */
+            tariff_fraction_id?: string | null;
+            /** Nico Id */
+            nico_id?: string | null;
+            /** Reasoning */
+            reasoning?: string | null;
+            /** Rgi Path */
+            rgi_path?: string[];
+            /** Rgi Trace */
+            rgi_trace?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** Legal Rule Ids */
+            legal_rule_ids?: string[];
+            /** Engine Version */
+            engine_version?: string | null;
+            /** Evidence Id */
+            evidence_id?: string | null;
+            /** Input Snapshot */
+            input_snapshot?: {
+                [key: string]: unknown;
+            };
+            /** Missing Information */
+            missing_information?: string[];
+            /** Estimated Impact Amount */
+            estimated_impact_amount?: string | null;
+            /** Estimated Impact Amount Currency */
+            estimated_impact_amount_currency?: string | null;
+            /** Sku */
+            sku?: string | null;
+            /** Producto */
+            producto?: string | null;
+        };
         /**
          * DictamenRead
          * @description Lo que una persona decidió sobre una decisión del motor.
@@ -2940,6 +2961,8 @@ export interface operations {
         parameters: {
             query?: {
                 product_id?: string | null;
+                /** @description Sólo la decisión vigente de cada caso (ADR 0008), primero las resueltas */
+                vigentes?: boolean;
                 limit?: number;
                 offset?: number;
             };
@@ -2955,7 +2978,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ClassificationDecisionRead"][];
+                    "application/json": components["schemas"]["DecisionEnLista"][];
                 };
             };
             /** @description Validation Error */
