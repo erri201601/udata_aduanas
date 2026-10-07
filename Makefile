@@ -3,7 +3,7 @@
 SHELL := /bin/bash
 VENV  := .venv/bin
 
-.PHONY: help venv install up down logs ps api test lint fmt migrate revision reset-db health smoke service-status service-restart service-logs backup backup-list backup-timer merge
+.PHONY: help venv install up down logs ps api test lint fmt migrate revision reset-db health smoke service-status service-restart service-logs backup backup-list backup-timer merge antes-de-la-demo
 
 help: ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -68,6 +68,9 @@ revision: ## Genera una migración: make revision M="descripcion"
 
 smoke: ## Verifica el stack completo (extensiones, buckets, auth, exposición)
 	./infrastructure/scripts/smoke_test.sh
+
+antes-de-la-demo: ## Comprueba cada cifra del guion de la demo contra el sistema vivo (sólo lee)
+	$(VENV)/python -m apps.evaluacion.antes_de_la_demo
 
 health: ## Consulta los health checks
 	@curl -s http://localhost:8080/health | python3 -m json.tool
