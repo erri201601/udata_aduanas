@@ -66,6 +66,20 @@ class ExpectedItem(BaseModel):
     line_number: int
     fraction_code: str | None = None
     nico_code: str | None = None
+    fraction_source: str | None = None
+    """Quién sostiene la fracción esperada. `None` = el motor, por las RGI.
+
+    Con texto —«el dictamen de César del 2026-10-07»— la sostiene un
+    clasificador, y el hallazgo tiene que decirlo: no es lo mismo «según las
+    RGI» que «según el criterio firmado de una persona». Las dos acusan con
+    fundamento; quien lea el hallazgo tiene que saber cuál.
+    """
+    nico_source: str | None = None
+    """Quién sostiene el NICO esperado. `None` = el catálogo o el motor.
+
+    Con texto, un clasificador lo firmó en su dictamen. Igual que con la
+    fracción, el hallazgo lo dice.
+    """
     country_of_origin: str | None = None
     origin_source: str | None = None
     """De dónde sale el país esperado. `None` = de una fuente firme.

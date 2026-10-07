@@ -226,3 +226,40 @@ def test_la_deteccion_tampoco_se_apoya_en_un_dictamen_retirado(
     _veredicto(pg_session, item, None, HOY)
 
     assert _fracciones_que_un_dictamen_contradice(pg_session, partidas, set()) == set()
+
+
+@pytest.mark.integration
+def test_un_nico_que_el_dictamen_contradice_tampoco_es_falso_positivo(
+    pg_session: Session,  # noqa: F811
+) -> None:
+    """Misma fracción, otro NICO firmado: es cierto, y el corpus no lo sembró.
+
+    Desde que el Espejo espera el dictamen, nueve tuberías HFW con NICO 01
+    declarado y 02 dictaminado salían como falsos positivos (7-oct).
+    """
+    from apps.evaluacion.deteccion_26 import DETECTOR_DE_NICO
+
+    item = _un_caso_sin_veredictos(pg_session)
+    if not item.declared_nico_code:
+        pytest.skip("la partida elegida no declara NICO")
+    _veredicto(pg_session, item, item.declared_fraction_code, HOY)
+    ultimo = pg_session.scalars(
+        sa.select(ClassificationDecision)
+        .where(
+            ClassificationDecision.product_id == item.product_id,
+            ClassificationDecision.data_origin == "HUMAN_VALIDATED",
+        )
+        .order_by(ClassificationDecision.created_at.desc())
+    ).first()
+    assert ultimo is not None
+    ultimo.nico_code = "98" if item.declared_nico_code != "98" else "97"
+    pg_session.flush()
+    partidas = {item.id: item}
+
+    assert (str(item.id), DETECTOR_DE_NICO) in _fracciones_que_un_dictamen_contradice(
+        pg_session, partidas, set(), set()
+    )
+    # Si el corpus sembró ese NICO, el hallazgo es un acierto, no un «cierto».
+    assert (str(item.id), DETECTOR_DE_NICO) not in _fracciones_que_un_dictamen_contradice(
+        pg_session, partidas, set(), {item.id}
+    )

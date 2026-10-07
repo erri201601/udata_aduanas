@@ -60,6 +60,7 @@ cuesta. Inventar un cero daría una cifra plausible y falsa.
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import date
 from decimal import Decimal
@@ -82,13 +83,14 @@ from database.repositories import save_review
 from database.repositories.compensatory_duties import cuotas_vigentes, normalizar_nombre
 from database.repositories.exchange import tasa_vigente
 from database.repositories.invoices import divisa_de_la_factura
+from database.repositories.preguntas import dictamen_de
 from database.repositories.tariff import TariffCatalogRepository
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from apps.api.clasificacion import clasificar_borrador
 from apps.api.db import SessionDep
-from apps.api.dna import cargar_borrador
+from apps.api.dna import cargar_borrador, version_vigente
 
 router = APIRouter(prefix="/pedimentos", tags=["pedimentos"])
 
@@ -651,33 +653,91 @@ def _construir_espejo(
         trade_flow="IMPORT",
     ).outcome
 
+    # EL DICTAMEN DE UN CLASIFICADOR MANDA SOBRE EL MOTOR (7-oct)
+    #
+    # El Espejo sólo esperaba lo que el motor sabía clasificar. Donde el motor
+    # se abstiene —cuatro de cada diez partidas del corpus— no comparaba
+    # fracción, aunque un clasificador hubiera dictaminado esa misma mercancía.
+    # En el pedimento 600015 una olla de presión de aluminio se declaraba como
+    # fregadero (73241001) y pasaba sin señalar, con el dictamen de César
+    # —76151002— en la base.
+    #
+    # Es el mismo orden de precedencia que la medición (#197): el dictamen de
+    # la ficha, si lo hay, sobre lo que diga la máquina. Y el hallazgo dice de
+    # quién es la expectativa (`fraction_source`).
+    codigo: str | None
+    nico_firmado: str | None
+    fuente: str | None
+    dictamen = _dictamen_de_la_ficha(session, partida.product_id, fecha, catalogo)
+    if dictamen is not None:
+        codigo, nico_firmado, fuente = dictamen
+    else:
+        codigo, nico_firmado, fuente = outcome.code, None, None
+
     return ExpectedItem(
         line_number=partida.line_number,
-        fraction_code=outcome.code,
+        fraction_code=codigo,
         # El NICO de la fracción ESPERADA, no de la declarada. Sin esto el
         # Espejo no tenía expectativa de NICO en ninguna partida y las 180 del
         # corpus arrastraban el mismo hueco: «saber si es el que corresponde
         # exige la ficha técnica». Para las fracciones de un solo NICO eso no
         # era cierto — no hacía falta ninguna ficha, sólo mirar el catálogo.
-        nico_code=_nico_esperado(catalogo, fecha, outcome.code),
+        # Si el clasificador firmó un NICO, manda el suyo.
+        nico_code=nico_firmado or _nico_esperado(catalogo, fecha, codigo),
+        fraction_source=fuente,
+        nico_source=fuente if nico_firmado else None,
         # `is_resolved` sale del contrato de evidencia, no de que el motor haya
         # llegado a un código: una clasificación que no se sostiene no puede
-        # usarse para acusar a nadie.
-        is_resolved=outcome.code is not None,
-        confidence=outcome.trace.confidence,
+        # usarse para acusar a nadie. Un dictamen firmado sí se sostiene.
+        is_resolved=codigo is not None,
+        confidence=outcome.trace.confidence if fuente is None else None,
         # Lo que el extractor declaró que le faltó. Aquí sí es `()` cuando la
         # ficha está completa: se consultó y no falta nada.
         missing_technical_fields=borrador.missing_information,
         # Desde el 4-oct el Anexo 2.4.1 está cargado: ya se puede decir qué NOM
         # exige una fracción. Las acotadas van aparte, a la vista de una
         # persona — ver `_nom_exigidas`.
-        required_nom_codes=_nom_exigidas(session, fecha, outcome.code)[0],
+        required_nom_codes=_nom_exigidas(session, fecha, codigo)[0],
         # Los identificadores siguen en `None`: el Apéndice 8 cargado es el
         # CATÁLOGO de códigos, y saber cuáles existen no dice cuáles exige una
         # operación. Decir «no exige ninguno» sería afirmar sin fuente.
         required_identifiers=None,
         **documental,
     )
+
+
+#: «Revisión humana de César: corrige. …» → «César». El veredicto no tiene una
+#: columna de revisor: el nombre vive al principio del razonamiento.
+_QUIEN_DICTAMINO = re.compile(r"^Revisión humana de ([^:]{1,64}):")
+
+
+def _dictamen_de_la_ficha(
+    session: SessionDep,
+    product_id: uuid.UUID,
+    fecha: date,
+    catalogo: TariffCatalogRepository,
+) -> tuple[str, str | None, str] | None:
+    """La fracción que un clasificador dictaminó para la ficha vigente, si la hay.
+
+    `(fracción, NICO o None, de quién y cuándo)`, o `None` si no hay dictamen,
+    si el último es un FALTA_INFORMACION —no dice qué es la mercancía—, o si
+    la fracción no existe en la tarifa vigente el día de la operación: un
+    dictamen no convierte en fracción un código que la TIGIE no tiene ese día.
+    """
+    ficha = version_vigente(session, product_id)
+    if ficha is None:
+        return None
+    veredicto = dictamen_de(session, ficha.id)
+    if veredicto is None or not veredicto.fraction_code:
+        return None
+    if not catalogo.fraccion_existe(on_date=fecha, code=veredicto.fraction_code):
+        return None
+    quien = _QUIEN_DICTAMINO.match(veredicto.reasoning or "")
+    fuente = (
+        f"dictamen de {quien.group(1).strip() if quien else 'un clasificador'} "
+        f"del {veredicto.created_at.date().isoformat()}"
+    )
+    return veredicto.fraction_code, veredicto.nico_code, fuente
 
 
 def _valor(partida: PedimentoItem) -> Money | None:

@@ -730,3 +730,39 @@ def test_los_identificadores_no_se_atribuyen_al_apendice_8() -> None:
 
     assert any("reglas de la RGCE" in r for r in razones)
     assert not any("falta cargar el Apéndice 8" in r for r in razones)
+
+
+# ── Quién sostiene lo esperado (7-oct) ──────────────────────────────────────
+
+
+def test_una_fraccion_dictaminada_dice_que_la_dicto_un_clasificador() -> None:
+    """«Según las RGI» y «según el criterio firmado de una persona» no son lo mismo."""
+    fuente = "dictamen de César del 2026-10-07"
+    r = compare(
+        [declarado(fraction_code="73241001")],
+        [esperado(fraction_code="76151002", fraction_source=fuente)],
+    )
+
+    d = next(x for x in r.divergences if x.kind is DivergenceType.FRACTION_MISMATCH)
+    assert "Un clasificador dictaminó 76151002" in d.reasoning
+    assert fuente in d.reasoning
+    assert "según las RGI" not in d.reasoning
+
+
+def test_sin_fuente_la_fraccion_sigue_siendo_la_de_las_rgi() -> None:
+    r = compare([declarado(fraction_code="84713099")], [esperado()])
+
+    d = next(x for x in r.divergences if x.kind is DivergenceType.FRACTION_MISMATCH)
+    assert "según las RGI" in d.reasoning
+
+
+def test_un_nico_dictaminado_dice_quien_lo_firmo() -> None:
+    fuente = "dictamen de César del 2026-10-07"
+    r = compare(
+        [declarado(nico_code="01")],
+        [esperado(nico_code="02", nico_source=fuente)],
+    )
+
+    d = next(x for x in r.divergences if x.kind is DivergenceType.NICO_MISMATCH)
+    assert "Un clasificador dictaminó el NICO 02" in d.reasoning
+    assert fuente in d.reasoning
