@@ -1494,6 +1494,11 @@ export interface components {
                 [key: string]: number;
             };
             /**
+             * De Documento
+             * @default 0
+             */
+            de_documento: number;
+            /**
              * Accionables
              * @default 0
              */
