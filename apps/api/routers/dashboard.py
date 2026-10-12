@@ -92,6 +92,12 @@ class Auditoria(BaseModel):
     """Los únicos de los que se puede afirmar que están limpios."""
 
 
+#: Hallazgos que son del PEDIMENTO y el Espejo registra en cada partida: en el
+#: tablero cuentan una vez por pedimento. El tipo de cambio se declara una vez
+#: por documento.
+HALLAZGOS_DEL_DOCUMENTO: tuple[str, ...] = ("EXCHANGE_RATE_MISMATCH",)
+
+
 class Hallazgos(BaseModel):
     """Riesgo detectado, separando lo presentable de lo investigable."""
 
@@ -106,6 +112,10 @@ class Hallazgos(BaseModel):
     —y evita que quien mira el tablero crea que el alarmado es el sistema y no
     los pedimentos que audita.
     """
+
+    de_documento: int = 0
+    """Cuántos de `total` son del PEDIMENTO, no de una partida, contados uno
+    por pedimento. Hoy, el tipo de cambio: se declara una vez por documento."""
 
     accionables: int = 0
     """Con impacto cuantificado: se pueden llevar a un cliente."""
@@ -440,7 +450,34 @@ def tablero(session: SessionDep) -> Dashboard:
     # `database.repositories.findings` y se importa, en vez de reescribirse.
     vigentes = de_la_ultima_revision()
     con_monto = sa.and_(RiskFinding.impact_amount.isnot(None), RiskFinding.impact_amount != 0)
-    total_hallazgos = _contar(session, RiskFinding, vigentes)
+    # Las FILAS, para el censo de simulación de abajo: se compara fila contra
+    # fila, y cambiarlo por el conteo de pantalla haría desaparecer el aviso
+    # SYNTHETIC aunque todo siga siendo simulado.
+    filas_hallazgos = _contar(session, RiskFinding, vigentes)
+
+    # LO DEL DOCUMENTO CUENTA UNA VEZ POR PEDIMENTO (12-oct)
+    #
+    # El tipo de cambio se declara una vez por pedimento, pero el Espejo lo
+    # registra en cada partida. Con el corpus sintético —tipos de cambio
+    # inventados en los 15 pedimentos— el Panorama decía «301 hallazgos, 234
+    # CRÍTICOS», y unos 180 eran el mismo dato repetido partida por partida.
+    # Es la primera pantalla de la demo. El Espejo ya lo enseña una vez «del
+    # pedimento entero» (#224); el tablero cuenta igual.
+    de_partida = sa.and_(vigentes, RiskFinding.finding_type.notin_(HALLAZGOS_DEL_DOCUMENTO))
+    del_documento = (
+        sa.select(
+            RiskFinding.pedimento_id,
+            RiskFinding.finding_type,
+            RiskFinding.severity,
+            RiskFinding.declared_value,
+            RiskFinding.expected_value,
+        )
+        .where(vigentes, RiskFinding.finding_type.in_(HALLAZGOS_DEL_DOCUMENTO))
+        .distinct()
+        .subquery()
+    )
+    de_documento = session.scalar(sa.select(sa.func.count()).select_from(del_documento)) or 0
+    total_hallazgos = _contar(session, RiskFinding, de_partida) + de_documento
     accionables = _contar(session, RiskFinding, vigentes, con_monto)
     # Los sobrepagos no entran en la exposición, pero se dicen por número: un
     # hallazgo que desaparece de la pantalla sin explicación es peor que uno
@@ -463,15 +500,18 @@ def tablero(session: SessionDep) -> Dashboard:
         None if mezcla_hallazgos else session.scalar(sa.select(sa.func.sum(_por_partida().c.monto)))
     )
     moneda = next(iter(monedas_hallazgos)) if len(monedas_hallazgos) == 1 else None
-    reparto = {
-        fila.severity: fila.cuantos
-        for fila in session.execute(
-            sa.select(RiskFinding.severity, sa.func.count().label("cuantos"))
-            .where(vigentes)
-            .group_by(RiskFinding.severity)
-        )
-        if fila.severity
-    }
+    reparto: dict[str, int] = {}
+    for consulta in (
+        sa.select(RiskFinding.severity, sa.func.count().label("cuantos"))
+        .where(de_partida)
+        .group_by(RiskFinding.severity),
+        sa.select(del_documento.c.severity, sa.func.count().label("cuantos")).group_by(
+            del_documento.c.severity
+        ),
+    ):
+        for fila in session.execute(consulta):
+            if fila.severity:
+                reparto[fila.severity] = reparto.get(fila.severity, 0) + fila.cuantos
     peor = session.scalar(
         sa.select(RiskFinding.severity)
         .where(vigentes)
@@ -553,7 +593,7 @@ def tablero(session: SessionDep) -> Dashboard:
     contadas = (
         pedimentos
         + decisiones.total
-        + total_hallazgos
+        + filas_hallazgos
         + _contar(session, Product)
         + total_oportunidades
     )
@@ -568,6 +608,7 @@ def tablero(session: SessionDep) -> Dashboard:
         ),
         hallazgos=Hallazgos(
             total=total_hallazgos,
+            de_documento=de_documento,
             peor_severidad=peor,
             por_severidad=reparto,
             accionables=accionables,
