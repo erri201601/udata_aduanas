@@ -61,6 +61,7 @@ def _fila(**kw: object) -> ParsedCompensatoryDuty:
         "valid_from": date(2026, 1, 1),
         "valid_to": date(2030, 1, 1),
         "scope_note": "prueba",
+        "published_at": date(2026, 1, 15),
     }
     base.update(kw)
     return ParsedCompensatoryDuty(**base)  # type: ignore[arg-type]
@@ -81,6 +82,10 @@ def test_carga_las_filas_que_faltan(pg_session: Session) -> None:
     ).one()
     assert fila.rate == Decimal("1.23")
     assert fila.data_origin == "OFFICIAL"
+    # published_at es la fecha real de publicación en el DOF, distinta de
+    # valid_from (inicio de vigencia) -- confundirlas fue el bug original.
+    assert fila.published_at == date(2026, 1, 15)
+    assert fila.published_at != fila.valid_from
 
 
 def test_es_idempotente(pg_session: Session) -> None:

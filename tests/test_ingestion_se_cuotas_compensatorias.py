@@ -38,6 +38,9 @@ def test_monto_y_vigencia_verbatim_del_punto_214() -> None:
     assert fila.rate_unit == "KG"
     assert fila.valid_from == date(2024, 12, 17)
     assert fila.valid_to == date(2029, 12, 17)
+    # published_at es cuándo se publicó la resolución en el DOF (2026-04-09),
+    # no cuándo arranca el término de 5 años que ella misma declara.
+    assert fila.published_at == date(2026, 4, 9)
 
 
 def test_el_rate_es_decimal_valido() -> None:
