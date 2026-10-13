@@ -24,6 +24,8 @@ import type { LineaEspejo, PedimentoEspejo, PedimentoRead } from '../api/client'
 import { detalleDe, etiquetaDe } from '../components/divergencias'
 import { CalculoDelMonto } from '../components/CalculoDelMonto'
 import { comoCalculo } from '../components/calculo'
+import { comoFuentes } from '../components/fuente'
+import { FuentesDelHallazgo } from '../components/FuentesDelHallazgo'
 import { SyntheticBanner } from '../components/DataOriginBadge'
 import { SEVERIDADES, formatearMonto } from '../components/severity'
 import type { Severity } from '../api/client'
@@ -255,6 +257,7 @@ function Partida({
                     </span>
                   </p>
                   {d.rationale && <p className="divergencia__razon">{d.rationale}</p>}
+                  <FuentesDelHallazgo fuentes={comoFuentes(d.sources)} />
                   <p className="divergencia__monto">
                     {monto ? (
                       /* El mismo importe mide dos cosas distintas y presentarlas

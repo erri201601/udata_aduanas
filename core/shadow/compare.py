@@ -62,6 +62,7 @@ def compare_item(declared: DeclaredItem, expected: ExpectedItem) -> list[Diverge
                 confidence=expected.confidence,
                 reasoning=razon,
                 derivation=derivacion,
+                sources=expected.sources.get(field, ()),
                 source_ids=expected.source_ids,
             )
         )

@@ -1,0 +1,15 @@
+[Unit]
+Description=ADUANERO OS — vigilante del DOF (sumario del día → regulatory_events)
+Documentation=file:///home/udata/Documentos/udata_aduanas/ingestion/dof/watcher_cli.py
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/udata/Documentos/udata_aduanas
+# `--target local` es la base del equipo en este servidor (5433). Idempotente
+# por source_url: correr dos veces el mismo día no duplica eventos.
+ExecStart=/home/udata/Documentos/udata_aduanas/.venv/bin/python -m ingestion.dof.watcher_cli --target local
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aduanero-dof
+Nice=10

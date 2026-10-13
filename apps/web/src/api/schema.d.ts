@@ -108,6 +108,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/products/{product_id}/dna/from-text": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Extrae el Product DNA de una ficha técnica pegada como texto (§16)
+         * @description El texto también se guarda crudo: es el documento del que dirán venir los
+         *     atributos, y sin su hash nadie podría comprobar después qué se pegó.
+         */
+        post: operations["dna_desde_texto_products__product_id__dna_from_text_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/products/{product_id}/dna/from-pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Extrae el Product DNA de una ficha técnica en PDF (§16, §48)
+         * @description El primer eslabón del §48 dice «ficha técnica + imagen». Ésta es la ficha.
+         *
+         *     Se saca la capa de texto con `[p.N]` delante de cada página y se pasa por el
+         *     extractor de texto. Sin capa de texto —un escaneo— la respuesta es 422 «sin
+         *     texto extraíble»: no hay OCR, y no se guarda ninguna ficha. El crudo sí
+         *     queda guardado, porque se subió y consta.
+         */
+        post: operations["dna_desde_pdf_products__product_id__dna_from_pdf_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/products/{product_id}/dna/from-image": {
         parameters: {
             query?: never;
@@ -119,21 +165,7 @@ export interface paths {
         put?: never;
         /**
          * Extrae el Product DNA de una imagen (§16)
-         * @description Cierra el primer eslabón del §48: «usuario carga ficha técnica + imagen».
-         *
-         *     EL CRUDO SE GUARDA ANTES DE MIRARLO (§12, regla 7)
-         *
-         *     La imagen sube a MinIO con su `content_hash` ANTES de pasar por el modelo.
-         *     Si el orden fuera el otro, un fallo del proveedor dejaría atributos sin
-         *     documento del que dijeran venir, y esa es exactamente la situación que el
-         *     pipeline existe para que no ocurra: lo único irreversible es el crudo.
-         *
-         *     EL ORIGEN LO HEREDA DEL PRODUCTO
-         *
-         *     El DNA de un producto sintético es `SYNTHETIC` aunque la foto sea real y el
-         *     modelo real. Inventar un sexto valor para «lo que subió un usuario»
-         *     rompería los cinco cerrados del §9, y el dato que describe no cambia de
-         *     naturaleza por cómo se extrajo.
+         * @description La imagen del primer eslabón del §48: «ficha técnica + imagen».
          */
         post: operations["dna_desde_imagen_products__product_id__dna_from_image_post"];
         delete?: never;
@@ -261,9 +293,9 @@ export interface paths {
         put?: never;
         /**
          * Pregunta al corpus jurídico
-         * @description Recupera los pasajes vigentes que hablan de la pregunta.
+         * @description Recupera los pasajes vigentes y redacta sobre ellos, citándolos (§31).
          *
-         *     No redacta una respuesta: devuelve la norma. Ver el módulo para el porqué.
+         *     Ver el módulo y el ADR 0010 para qué se entrega y qué se descarta.
          */
         post: operations["consultar_copilot_consultas_post"];
         delete?: never;
@@ -763,6 +795,14 @@ export interface components {
              * @description Foto o ficha del producto
              */
             imagen: string;
+        };
+        /** Body_dna_desde_pdf_products__product_id__dna_from_pdf_post */
+        Body_dna_desde_pdf_products__product_id__dna_from_pdf_post: {
+            /**
+             * Pdf
+             * @description Ficha técnica o datasheet en PDF
+             */
+            pdf: string;
         };
         /**
          * CasoVigente
@@ -1281,6 +1321,10 @@ export interface components {
             impact_calculation?: {
                 [key: string]: unknown;
             } | null;
+            /** Sources */
+            sources?: {
+                [key: string]: unknown;
+            }[];
             /**
              * Is Simulation
              * @default false
@@ -1288,10 +1332,10 @@ export interface components {
             is_simulation: boolean;
         };
         /**
-         * DnaDesdeImagenResponse
-         * @description Lo que se extrajo de la imagen, y de dónde salió.
+         * DnaExtraido
+         * @description Lo que se extrajo, de dónde salió y si sustituyó a la ficha vigente.
          */
-        DnaDesdeImagenResponse: {
+        DnaExtraido: {
             /**
              * Product Dna Id
              * Format: uuid
@@ -1305,6 +1349,10 @@ export interface components {
             summary?: string | null;
             /** Missing Information */
             missing_information?: string[];
+            /** Vigente */
+            vigente: boolean;
+            /** Evidence Id */
+            evidence_id?: string | null;
             /** Minio Key */
             minio_key: string;
             /** Content Hash */
@@ -1480,6 +1528,34 @@ export interface components {
          * @enum {string}
          */
         FindingSeverity: "INFO" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+        /**
+         * Fuente
+         * @description Una fuente CITADA en `answer` (ADR 0010, punto 3).
+         *
+         *     Se construye desde las citas que el código validó, nunca desde lo que el
+         *     modelo diga que usó.
+         */
+        Fuente: {
+            /** N */
+            n: number;
+            /** Source Id */
+            source_id?: string | null;
+            /** Documento */
+            documento: string;
+            /** Articulo */
+            articulo?: string | null;
+            /**
+             * Valid From
+             * Format: date
+             */
+            valid_from: string;
+            /** Valid To */
+            valid_to?: string | null;
+            /** Url */
+            url?: string | null;
+            /** Content Hash */
+            content_hash?: string | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -1710,6 +1786,13 @@ export interface components {
          *     la condición que hacía que no aplicara.
          */
         Pasaje: {
+            /**
+             * N
+             * @default 0
+             */
+            n: number;
+            /** Source Id */
+            source_id?: string | null;
             /** Documento */
             documento: string;
             /** Articulo */
@@ -2165,6 +2248,8 @@ export interface components {
             confidence?: string | null;
             /** Evidence Reference */
             evidence_reference?: string | null;
+            /** Locator */
+            locator?: string | null;
         };
         /**
          * ProductDnaDetail
@@ -2322,6 +2407,31 @@ export interface components {
              * Format: date
              */
             fecha: string;
+            /**
+             * Answer
+             * @default
+             */
+            answer: string;
+            /**
+             * Confidence
+             * @default 0.00
+             */
+            confidence: string;
+            /** Sources */
+            sources?: components["schemas"]["Fuente"][];
+            /** Evidence */
+            evidence?: components["schemas"]["Pasaje"][];
+            /** Missing Information */
+            missing_information?: string[];
+            /**
+             * Requires Human Review
+             * @default true
+             */
+            requires_human_review: boolean;
+            /** Prompt Id */
+            prompt_id?: string | null;
+            /** Prompt Version */
+            prompt_version?: string | null;
             /** Pasajes */
             pasajes?: components["schemas"]["Pasaje"][];
             /**
@@ -2625,6 +2735,10 @@ export interface components {
             impact_calculation?: {
                 [key: string]: unknown;
             } | null;
+            /** Sources */
+            sources?: {
+                [key: string]: unknown;
+            }[];
             /**
              * Is Simulation
              * @default false
@@ -2707,6 +2821,16 @@ export interface components {
             latency_ms?: number | null;
             /** Detail */
             detail?: string | null;
+        };
+        /**
+         * TextoDeFicha
+         * @description Una ficha técnica pegada como texto.
+         */
+        TextoDeFicha: {
+            /** Texto */
+            texto: string;
+            /** Nombre */
+            nombre?: string | null;
         };
         /**
          * TradeFlow
@@ -2916,6 +3040,76 @@ export interface operations {
             };
         };
     };
+    dna_desde_texto_products__product_id__dna_from_text_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                product_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TextoDeFicha"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DnaExtraido"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dna_desde_pdf_products__product_id__dna_from_pdf_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                product_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_dna_desde_pdf_products__product_id__dna_from_pdf_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DnaExtraido"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     dna_desde_imagen_products__product_id__dna_from_image_post: {
         parameters: {
             query?: never;
@@ -2937,7 +3131,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DnaDesdeImagenResponse"];
+                    "application/json": components["schemas"]["DnaExtraido"];
                 };
             };
             /** @description Validation Error */

@@ -2,9 +2,10 @@
 
 LO QUE ESTOS TESTS PROTEGEN
 
-1. Que NO redacte la respuesta. Parafrasear la ley es como se producen las
-   citas inventadas; `redacta_respuesta` es una decisión, no una carencia, y
-   un test la fija para que nadie la «mejore» sin discutirlo.
+1. Que redacte SÓLO sobre los pasajes, citándolos (ADR 0010). Hasta el 13-oct
+   este punto decía lo contrario —que no redactara— y fue una decisión; el
+   ADR 0010 la cambió con una comprobación determinista de las citas. Los
+   tests del contrato están en `test_copilot_31.py`.
 2. Que declare con qué buscó. Presentar una búsqueda por término como si
    fuera semántica vendería una capacidad que no está puesta.
 3. Que sin fundamento lo diga con el mensaje literal, en vez de devolver
@@ -27,6 +28,8 @@ from apps.api.db import get_session
 from apps.api.main import create_app
 from fastapi.testclient import TestClient
 from rag.types import LegalChunk
+
+from tests.test_copilot_31 import ProveedorFalso
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -93,6 +96,7 @@ def _cliente(
     embedder: Any = None,
     sesion: SesionFalsa | None = None,
     expansor: Any = None,
+    proveedor: Any = None,
     **cobertura: int,
 ) -> Iterator[TestClient]:
     """Cliente con el almacén en memoria en lugar del de Postgres.
@@ -118,6 +122,12 @@ def _cliente(
         patch("apps.api.routers.copilot.embedder_opcional", lambda: embedder),
         # Sin grafo salvo que el test lo pida: ninguno sale a Neo4j.
         patch("apps.api.routers.copilot.expansor_opcional", lambda: expansor),
+        # Un modelo de prueba que cita [1]: ningún test de este fichero puede
+        # salir a la red, tenga quien lo corra la llave que tenga en su shell.
+        patch(
+            "apps.api.routers.copilot.get_default_provider",
+            lambda: proveedor or ProveedorFalso(),
+        ),
         TestClient(app) as cliente,
     ):
         yield cliente
@@ -151,18 +161,79 @@ def test_el_copilot_responde(cliente: TestClient) -> None:
     assert _preguntar(cliente, "valor en aduana")["fecha"] == "2024-03-15"
 
 
-def test_nunca_redacta_la_respuesta(cliente: TestClient) -> None:
-    """EL TEST QUE IMPORTA.
-
-    Parafrasear la ley es como se producen las citas inventadas. Que devuelva
-    pasajes y no prosa es una decisión de diseño, no una limitación temporal.
-    """
+def test_redacta_citando_y_conserva_los_pasajes(cliente: TestClient) -> None:
+    """La redacción va ENCIMA de los pasajes, no en su lugar (ADR 0010)."""
     d = _preguntar(cliente, "obligaciones del importador en el valor en aduana")
 
-    assert d["redacta_respuesta"] is False
-    assert "respuesta" not in d or not isinstance(d.get("respuesta"), str)
-    assert d["pasajes"], "debería devolver pasajes"
+    assert d["redacta_respuesta"] is True
+    assert "[1]" in d["answer"]
+    assert d["evidence"] == d["pasajes"], "pasajes es el alias de evidence"
+    assert [p["n"] for p in d["evidence"]] == list(range(1, len(d["evidence"]) + 1))
     assert all("texto" in p and "cita" in p for p in d["pasajes"])
+    assert d["prompt_id"] == "copilot.answer"
+    assert d["prompt_version"] == "0.1"
+
+
+def test_sources_sale_de_las_citas_y_trae_la_procedencia(cliente: TestClient) -> None:
+    d = _preguntar(cliente, "obligaciones del importador en el valor en aduana")
+
+    [fuente] = d["sources"]
+    citado = d["evidence"][0]
+    assert fuente["n"] == 1
+    assert fuente["documento"] == citado["documento"]
+    assert fuente["articulo"] == citado["articulo"]
+    assert fuente["content_hash"] == citado["content_hash"]
+    assert fuente["valid_from"] == citado["valid_from"]
+
+
+def test_una_cita_inventada_llega_como_sin_evidencia() -> None:
+    with _cliente(
+        [_chunk(article="58", text="obligaciones del importador y el valor en aduana")],
+        proveedor=ProveedorFalso("Inventado [4]."),
+    ) as c:
+        d = _preguntar(c, "obligaciones del importador")
+
+    assert d["answer"] == "No tengo evidencia suficiente en la base cargada."
+    assert d["sources"] == []
+    assert d["requires_human_review"] is True
+    assert d["redacta_respuesta"] is False
+    assert d["pasajes"], "los pasajes siguen ahí para quien quiera leerlos"
+
+
+def test_sin_modelo_se_devuelven_los_pasajes_y_se_dice(cliente: TestClient) -> None:
+    from core.llm.errors import ProviderNotConfiguredError
+
+    def sin_llave() -> Any:
+        raise ProviderNotConfiguredError("sin llave", provider="anthropic")
+
+    with (
+        _cliente(
+            [_chunk(article="58", text="obligaciones del importador y el valor en aduana")],
+            proveedor=None,
+        ) as c,
+        patch("apps.api.routers.copilot.get_default_provider", sin_llave),
+    ):
+        d = _preguntar(c, "obligaciones del importador")
+
+    assert d["answer"].startswith("Sin redacción")
+    assert d["redacta_respuesta"] is False
+    assert d["confidence"] == "0.00"
+    assert d["requires_human_review"] is True
+    assert "redacción:" in d["degradado_por"]
+    assert d["pasajes"]
+
+
+def test_un_pasaje_que_no_fundamenta_no_se_entrega_al_modelo() -> None:
+    """Un chunk SYNTHETIC se enseña, pero no se redacta sobre él (punto 2)."""
+    proveedor = ProveedorFalso()
+    with _cliente(
+        [_chunk(article="58", text="obligaciones del importador", data_origin="SYNTHETIC")],
+        proveedor=proveedor,
+    ) as c:
+        d = _preguntar(c, "obligaciones del importador")
+
+    assert proveedor.llamadas == 0
+    assert d["answer"] == "No tengo evidencia suficiente en la base cargada."
 
 
 def test_declara_que_la_busqueda_no_es_semantica(cliente: TestClient) -> None:
