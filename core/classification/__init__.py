@@ -58,8 +58,10 @@ from __future__ import annotations
 
 from core.classification.orchestrator import (
     FUNDAMENTAN_CLASIFICACION,
+    NicoCatalog,
     classify_product,
     fundamenta_clasificacion,
+    nico_de,
     with_money_impact,
 )
 from core.classification.result import ClassificationOutcome
@@ -67,7 +69,9 @@ from core.classification.result import ClassificationOutcome
 __all__ = [
     "FUNDAMENTAN_CLASIFICACION",
     "ClassificationOutcome",
+    "NicoCatalog",
     "classify_product",
     "fundamenta_clasificacion",
+    "nico_de",
     "with_money_impact",
 ]

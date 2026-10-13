@@ -13,8 +13,9 @@ export type ProductRead = components['schemas']['ProductRead']
 export type ProductDnaDetail = components['schemas']['ProductDnaDetail']
 export type ProductAttributeRead = components['schemas']['ProductAttributeRead']
 export type AttributeStatus = ProductAttributeRead['status']
-export type ClassificationDecisionRead = components['schemas']['ClassificationDecisionRead']
+export type DecisionEnLista = components['schemas']['DecisionEnLista']
 export type ClassificationDetail = components['schemas']['ClassificationDetail']
+export type CasoVigente = components['schemas']['CasoVigente']
 export type ClassificationCandidateRead = components['schemas']['ClassificationCandidateRead']
 export type EvidenceRecordRead = components['schemas']['EvidenceRecordRead']
 export type EvidenceKind = NonNullable<EvidenceRecordRead['evidence_kind']>
@@ -33,12 +34,15 @@ export type ServiceCheck = components['schemas']['ServiceCheck']
 export type ServiceStatus = ServiceCheck['status']
 export type Sentinel = components['schemas']['Sentinel']
 export type PedimentoEspejo = components['schemas']['PedimentoEspejo']
+export type ReviewRequest = components['schemas']['ReviewRequest']
+export type ReviewResponse = components['schemas']['ReviewResponse']
 export type RespuestaCopilot = components['schemas']['Respuesta']
 export type Pasaje = components['schemas']['Pasaje']
 export type Consulta = components['schemas']['Consulta']
 export type LineaEspejo = components['schemas']['LineaEspejo']
 export type RespuestaVocabulario = components['schemas']['RespuestaVocabulario']
 export type VocabularioGuardado = components['schemas']['VocabularioGuardado']
+export type AlcanceVocabulario = components['schemas']['AlcanceVocabulario']
 export type PrecisionClasificacion = components['schemas']['PrecisionClasificacion']
 export type DivergenciaRead = components['schemas']['DivergenciaRead']
 export type DocumentoVigilado = components['schemas']['DocumentoVigilado']
@@ -163,8 +167,10 @@ async function pedir<T>(ruta: string, signal?: AbortSignal): Promise<T> {
 /** Decisiones de clasificación, de la más reciente a la más antigua. */
 export async function fetchClassifications(
   signal?: AbortSignal,
-): Promise<ClassificationDecisionRead[]> {
-  return pedir<ClassificationDecisionRead[]>('/classifications', signal)
+): Promise<DecisionEnLista[]> {
+  // Una por caso y las resueltas primero: sin el filtro llegaban todas las
+  // filas —más de 6 400— y la pantalla abría en una prueba fallida (7-oct).
+  return pedir<DecisionEnLista[]>('/classifications?vigentes=true&limit=200', signal)
 }
 
 /** La precisión del §39, medida contra los veredictos humanos. */
@@ -180,6 +186,29 @@ export async function fetchClassification(
   signal?: AbortSignal,
 ): Promise<ClassificationDetail> {
   return pedir<ClassificationDetail>(`/classifications/${decisionId}`, signal)
+}
+
+/**
+ * La decisión VIGENTE del caso al que pertenece esa decisión, y su dictamen.
+ *
+ * Se pide justo antes de enviar un veredicto desde la pantalla que explica una
+ * decisión: el veredicto va al caso de hoy, no a la fila que se pintó (ADR
+ * 0008). Un 409 significa que la ficha cambió y es otro caso; su mensaje se
+ * conserva porque es lo que hay que enseñar.
+ */
+export async function fetchCasoVigente(
+  decisionId: string,
+  signal?: AbortSignal,
+): Promise<CasoVigente> {
+  const respuesta = await fetch(`${API_BASE_URL}/classifications/${decisionId}/vigente`, {
+    signal,
+    headers: { Accept: 'application/json' },
+  })
+  if (!respuesta.ok) {
+    const detalle = await respuesta.json().catch(() => null)
+    throw new ApiError(detalle?.detail ?? `La API respondió ${respuesta.status}`, respuesta.status)
+  }
+  return (await respuesta.json()) as CasoVigente
 }
 
 
@@ -296,6 +325,22 @@ export async function revisarDecision(
  * Un clasificador tenía que mandar la respuesta por un chat y que alguien la
  * metiera a mano con `curl`.
  */
+/**
+ * A cuántas fichas alcanzaría una respuesta con ese término, ANTES de guardarla.
+ *
+ * Con «acero» eran 134 de 181: la respuesta de César sobre un cable se
+ * habría aplicado a casi todo el corpus (6-oct).
+ */
+export async function fetchAlcanceVocabulario(
+  terminoFicha: string,
+  signal?: AbortSignal,
+): Promise<AlcanceVocabulario> {
+  return pedir<AlcanceVocabulario>(
+    `/review/vocabulario/alcance?termino_ficha=${encodeURIComponent(terminoFicha)}`,
+    signal,
+  )
+}
+
 export async function responderVocabulario(
   peticion: RespuestaVocabulario,
   signal?: AbortSignal,
@@ -346,6 +391,39 @@ export async function fetchEspejo(
   signal?: AbortSignal,
 ): Promise<PedimentoEspejo> {
   return pedir<PedimentoEspejo>(`/pedimentos/${pedimentoId}/shadow`, signal)
+}
+
+/**
+ * Las tasas con las que se audita el corpus: IVA general y DTA de 8 al millar.
+ *
+ * Sin tasas el Espejo no puede calcular el IVA esperado y devuelve `None` en
+ * vez de suponer un número: los hallazgos de IVA desaparecen. Son las mismas
+ * con las que se midió siempre la detección del §26, y la pantalla las enseña
+ * junto al botón para que nadie crea que salen de la nada.
+ */
+export const TASAS_DEL_CORPUS: ReviewRequest = { iva_rate: '0.16', dta_rate: '0.008' }
+
+/**
+ * Audita el pedimento: construye lo que debería declararse SIN mirar lo
+ * declarado, compara y guarda los hallazgos. Tarda ~15 s en uno de 12
+ * partidas: reclasifica cada una.
+ */
+export async function revisarPedimento(
+  pedimentoId: string,
+  tasas: ReviewRequest = TASAS_DEL_CORPUS,
+  signal?: AbortSignal,
+): Promise<ReviewResponse> {
+  const respuesta = await fetch(`${API_BASE_URL}/pedimentos/${pedimentoId}/review`, {
+    method: 'POST',
+    signal,
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(tasas),
+  })
+  if (!respuesta.ok) {
+    const detalle = await respuesta.json().catch(() => null)
+    throw new ApiError(detalle?.detail ?? `La API respondió ${respuesta.status}`, respuesta.status)
+  }
+  return (await respuesta.json()) as ReviewResponse
 }
 
 /** Estado del corpus antes de preguntar: con qué se va a buscar. */

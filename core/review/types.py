@@ -7,7 +7,7 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict
 
 from core.audit import Finding
-from core.opportunity import OpportunityReport
+from core.opportunity import OpcionDePrograma, OpportunityReport
 from core.shadow import DeclaredItem, ExpectedItem, ShadowComparison
 from core.taxation import Money, TaxRates
 
@@ -36,6 +36,21 @@ class LineInput(BaseModel):
     expected_rates: TaxRates | None = None
     """Tasas de la fracción ESPERADA. La diferencia contra las declaradas es
     justamente el dinero."""
+
+    applied_rates: TaxRates | None = None
+    """Tasas de la fracción declarada, aunque no haya esperada.
+
+    `declared_rates` va en `None` cuando falta la esperada, porque el Audit
+    Engine no puede cuantificar con una sola. Un programa sí: compara su tasa
+    con la que se aplicó, sin necesidad de espejo. `None` aquí = se usa
+    `declared_rates`."""
+
+    programs: tuple[OpcionDePrograma, ...] | None = None
+    """Tasas de PROSEC y Regla 8ª vigentes para esta partida (ADR 0011).
+
+    `None` = no se consultaron —los catálogos no están cargados—, y entonces
+    que no salga ninguna oportunidad de programa no significa nada. `()` = se
+    consultaron y no hay ninguna."""
 
     is_simulation: bool = True
 

@@ -37,6 +37,10 @@ class ParsedCompensatoryDuty:
     valid_from: date
     valid_to: date | None
     scope_note: str | None
+    #: Fecha real de publicación en el DOF de la resolución (distinta de
+    #: `valid_from`, que es cuándo empieza a correr la vigencia que la
+    #: propia resolución declara — aquí, el inicio del término de 5 años).
+    published_at: date
 
 
 #: `dof.gob.mx/nota_detalle.php?codigo=5784426&fecha=09/04/2026` — verificado
@@ -60,6 +64,11 @@ CABLE_ACERO_CHINA_SOURCE_DOCUMENT = (
 #: norma misma declara.
 _VALID_FROM = date(2024, 12, 17)
 _VALID_TO = date(2029, 12, 17)
+
+#: DOF 2026-04-09 (ver `CABLE_ACERO_CHINA_SOURCE_URL`/`_SOURCE_DOCUMENT`
+#: arriba) — la fecha en que la resolución se publicó, no el inicio de su
+#: vigencia. No son la misma fecha: confundirlas fue el bug.
+_PUBLISHED_AT = date(2026, 4, 9)
 
 #: Punto 213, verbatim: "...que ingresan a través de las fracciones
 #: arancelarias de la TIGIE 7312.10.01, 7312.10.05, 7312.10.07 y
@@ -97,6 +106,7 @@ def cable_de_acero_china() -> list[ParsedCompensatoryDuty]:
             valid_from=_VALID_FROM,
             valid_to=_VALID_TO,
             scope_note=_NOTA_ALCANCE,
+            published_at=_PUBLISHED_AT,
         )
         for fraccion in _FRACCIONES
     ]

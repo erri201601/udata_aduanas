@@ -33,6 +33,11 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { BANDEJA_MAXIMO, fetchPendientes, revisarDecision } from '../api/client'
+import {
+  type CamposVeredicto,
+  FormularioVeredicto,
+  type Veredicto,
+} from '../components/FormularioVeredicto'
 import type { PendienteRead } from '../api/client'
 import { ContestarPregunta } from '../components/ContestarPregunta'
 import { SyntheticBanner } from '../components/DataOriginBadge'
@@ -75,15 +80,7 @@ export function HumanReview() {
   const [enCurso, setEnCurso] = useState<string | null>(null)
   const [hechas, setHechas] = useState<Record<string, string>>({})
 
-  // Estado del formulario de la fila abierta.
-  const [abierta, setAbierta] = useState<string | null>(null)
-  /** Qué formulario está abierto. Corregir pide fracción; «falta información»
-   *  pide el dato que falta, y son preguntas distintas. */
-  const [modo, setModo] = useState<'CORRIGE' | 'FALTA_INFORMACION'>('CORRIGE')
   const [revisor, setRevisor] = useState('')
-  const [fraccion, setFraccion] = useState('')
-  const [nico, setNico] = useState('')
-  const [nota, setNota] = useState('')
 
   /* LA BANDEJA TENÍA QUE VOLVER A PEDIRSE Y NO SE PEDÍA NUNCA
    *
@@ -119,33 +116,23 @@ export function HumanReview() {
 
   async function enviar(
     id: string,
-    veredicto: 'CONFIRMA' | 'CORRIGE' | 'FALTA_INFORMACION',
-  ) {
+    veredicto: Veredicto,
+    campos: CamposVeredicto,
+  ): Promise<boolean> {
     setEnCurso(id)
     setError(null)
 
     try {
-      await revisarDecision(id, {
-        veredicto,
-        reviewer: revisor,
-        fraction_code: veredicto === 'CORRIGE' ? fraccion : null,
-        // Sólo con fracción: un NICO suelto no identifica nada, y el endpoint
-        // lo rechaza. Mandarlo igual daría un 422 que no se entendería desde
-        // aquí.
-        nico_code: veredicto === 'CORRIGE' && nico ? nico : null,
-        nota: nota || null,
-      })
+      await revisarDecision(id, { veredicto, reviewer: revisor, ...campos })
       setHechas((h) => ({ ...h, [id]: veredicto }))
-      setAbierta(null)
-      setFraccion('')
-      setNico('')
-      setNota('')
       // La fila desaparece sola por `hechas`, pero la lista puede haber
       // cambiado por debajo —otro veredicto, un recálculo— y pedirla nueva
       // cuesta una petición.
       void cargar()
+      return true
     } catch (causa: unknown) {
       setError(causa instanceof Error ? causa.message : 'No se pudo registrar')
+      return false
     } finally {
       setEnCurso(null)
     }
@@ -282,116 +269,11 @@ export function HumanReview() {
                 {p.confidence != null && ` · confianza ${p.confidence}`}
               </p>
 
-              {abierta === p.id && modo === 'CORRIGE' ? (
-                <div className="revision-fila__forma">
-                  <label>
-                    <span>Fracción correcta</span>
-                    <input
-                      value={fraccion}
-                      onChange={(e) => setFraccion(e.target.value)}
-                      placeholder="84713001"
-                      maxLength={8}
-                    />
-                  </label>
-                  {/* Campo propio, no los dos últimos dígitos de la fracción:
-                      son dos decisiones distintas y juntarlas en una caja
-                      invita a escribir 7312100502. Opcional — se deja vacío
-                      cuando sólo se determina la fracción. */}
-                  <label>
-                    <span>NICO (opcional)</span>
-                    <input
-                      value={nico}
-                      onChange={(e) => setNico(e.target.value)}
-                      placeholder="02"
-                      maxLength={2}
-                    />
-                  </label>
-                  <label className="ancho">
-                    <span>Por qué</span>
-                    <input
-                      value={nota}
-                      onChange={(e) => setNota(e.target.value)}
-                      placeholder="Qué vio el motor que no era"
-                    />
-                  </label>
-                  <div className="revision-fila__acciones">
-                    <button
-                      className="boton"
-                      onClick={() => enviar(p.id, 'CORRIGE')}
-                      disabled={!revisor || !fraccion || enCurso === p.id}
-                    >
-                      {enCurso === p.id ? 'Guardando…' : 'Guardar corrección'}
-                    </button>
-                    <button className="boton boton--plano" onClick={() => setAbierta(null)}>
-                      Cancelar
-                    </button>
-                  </div>
-                </div>
-              ) : abierta === p.id ? (
-                <div className="revision-fila__forma">
-                  {/* Sin campo de fracción a propósito: lo que se está
-                      declarando es que no se puede determinar. */}
-                  <label className="ancho">
-                    <span>Qué dato falta</span>
-                    <input
-                      value={nota}
-                      onChange={(e) => setNota(e.target.value)}
-                      placeholder="El diámetro exterior: sin él no se separan 730511 y 730519"
-                    />
-                  </label>
-                  <div className="revision-fila__acciones">
-                    <button
-                      className="boton"
-                      onClick={() => enviar(p.id, 'FALTA_INFORMACION')}
-                      disabled={!revisor || !nota.trim() || enCurso === p.id}
-                    >
-                      {enCurso === p.id ? 'Guardando…' : 'Guardar: hay que pedir el dato'}
-                    </button>
-                    <button className="boton boton--plano" onClick={() => setAbierta(null)}>
-                      Cancelar
-                    </button>
-                  </div>
-                  <p className="revision-fila__aviso">
-                    El caso sale de la bandeja y queda pidiendo este dato. No vuelve a
-                    aparecer para que nadie repita la misma conclusión.
-                  </p>
-                </div>
-              ) : (
-                /* Confirmar y corregir cuestan lo mismo: un clic cada uno. Si
-                   aceptar fuera más barato, la bandeja se vaciaría sin leer. */
-                <div className="revision-fila__acciones">
-                  <button
-                    className="boton boton--plano"
-                    onClick={() => enviar(p.id, 'CONFIRMA')}
-                    disabled={!revisor || enCurso === p.id}
-                  >
-                    Es correcta
-                  </button>
-                  <button
-                    className="boton boton--plano"
-                    onClick={() => {
-                      setModo('CORRIGE')
-                      setAbierta(p.id)
-                    }}
-                    disabled={!revisor}
-                  >
-                    Corregir
-                  </button>
-                  {/* La tercera salida. Cuesta lo mismo que las otras dos: si
-                      fuera más barata se convertiría en la vía de escape de
-                      los casos difíciles. */}
-                  <button
-                    className="boton boton--plano"
-                    onClick={() => {
-                      setModo('FALTA_INFORMACION')
-                      setAbierta(p.id)
-                    }}
-                    disabled={!revisor}
-                  >
-                    Falta información
-                  </button>
-                </div>
-              )}
+              <FormularioVeredicto
+                revisor={revisor}
+                ocupado={enCurso === p.id}
+                onEnviar={(veredicto, campos) => enviar(p.id, veredicto, campos)}
+              />
             </li>
           ))}
         </ul>

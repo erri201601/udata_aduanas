@@ -179,6 +179,16 @@ export interface paths {
         /**
          * Lista las decisiones de clasificación
          * @description Decisiones, de la más reciente a la más antigua.
+         *
+         *     CON `vigentes=true`, UNA POR CASO (7-oct)
+         *
+         *     Sin filtro, el listado devuelve todas las filas: cada reclasificación del
+         *     corpus, los veredictos humanos y las pruebas. Son más de 6 400, y las
+         *     primeras por fecha de operación eran intentos fallidos de una laptop de
+         *     prueba del 30-sep, así que la pantalla de Classification abría en un
+         *     «Sin fracción». Con `vigentes=true` devuelve la decisión vigente de cada
+         *     caso —la misma definición que la bandeja— con las resueltas primero, que
+         *     son las que se pueden explicar de punta a punta.
          */
         get: operations["listar_decisiones_classifications_get"];
         put?: never;
@@ -198,6 +208,40 @@ export interface paths {
         };
         /** Una decisión con su traza y evidencias */
         get: operations["obtener_decision_classifications__decision_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/classifications/{decision_id}/vigente": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * La decisión vigente del caso de esa decisión, y su dictamen
+         * @description A qué decisión va un veredicto dado desde la pantalla que explica otra.
+         *
+         *     EL VEREDICTO VA AL CASO DE HOY, NO A LA FILA QUE SE PINTÓ (ADR 0008)
+         *
+         *     El 6-oct un clasificador dio un veredicto desde una pestaña abierta de
+         *     antes, y quedó colgado de una decisión de la víspera. Antes de enviar, la
+         *     pantalla pide esto y manda el veredicto a `decision.id`.
+         *
+         *     Mismo caso, misma mercancía: si el motor volvió a clasificar la MISMA
+         *     ficha, lo que la persona dice sobre la mercancía sigue valiendo. Si la
+         *     ficha cambió de versión, es otro caso con otros hechos, y mandar ahí el
+         *     veredicto firmaría algo que la persona no vio: 409.
+         *
+         *     Una decisión sin ficha no tiene caso al que agruparla: es su propia
+         *     vigente.
+         */
+        get: operations["caso_vigente_classifications__decision_id__vigente_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -418,6 +462,13 @@ export interface paths {
          *
          *     Las decisiones sin ficha pasan una a una: sin `product_dna_id` no hay por
          *     qué agruparlas, y descartarlas sería perder casos en silencio.
+         *
+         *     UN CASO DICTAMINADO NO VUELVE POR RECLASIFICARLO (ADR 0008, 6-oct)
+         *
+         *     Medido contra la base compartida: 33 de los 90 casos de la bandeja ya
+         *     tenían veredicto de César. El corpus se reclasificó después, la decisión
+         *     nueva quedó como la más reciente y ningún veredicto apuntaba a ELLA. El
+         *     dictamen es sobre el caso —la ficha—, no sobre una fila concreta del motor.
          */
         get: operations["pendientes_review_get"];
         put?: never;
@@ -465,6 +516,95 @@ export interface paths {
          *     agente aduanal puede defender y algo que no.
          */
         post: operations["responder_vocabulario_review_vocabulario_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/review/vocabulario/alcance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A cuántas fichas alcanzaría una respuesta de vocabulario
+         * @description Cuántas fichas dicen el término que se está eligiendo.
+         *
+         *     POR QUÉ HACÍA FALTA (César, 6-oct)
+         *
+         *     César contestó una pregunta sobre un cable eligiendo «acero» como dato de
+         *     la ficha, y el sistema guardó «nada de acero es galvanizado». Quería decir
+         *     «este cable no lo es»; el dato que debió elegir era «sin recubrimiento».
+         *     La pantalla le decía «tu respuesta vale para todas las fichas que digan lo
+         *     mismo», pero no CUÁNTAS eran — y con «acero» eran casi todo el corpus.
+         *
+         *     Una respuesta se aplica a cada ficha que diga su término comercial (y en
+         *     cada posición cuyo texto diga la cláusula). Este número es el primer
+         *     factor, que es el que elige quien contesta: cuanto más general el dato, a
+         *     más alcanza.
+         *
+         *     LA MISMA REGLA QUE EL MOTOR, NO UNA PARECIDA
+         *
+         *     Se pregunta con `la_ficha_dice`, la función con la que el motor decide si
+         *     una respuesta firmada se aplica a una ficha. La ficha se arma como en
+         *     `core.classification.orchestrator.classify_product`: el resumen más los
+         *     VALORES de los hechos. Una copia de la regla ya se desvió una vez.
+         */
+        get: operations["alcance_vocabulario_review_vocabulario_alcance_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/review/vocabulario/{respuesta_id}/retirar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retira una respuesta de vocabulario que resultó equivocada, sin borrarla
+         * @description Una respuesta firmada que resultó equivocada deja de aplicarse y se queda.
+         *
+         *     EL CASO (César, 6-oct)
+         *
+         *     Contestó a «¿el cable cumple "Galvanizados"?» eligiendo el valor «acero»
+         *     de la ficha. El sistema guardó «nada de acero es galvanizado», que él
+         *     mismo llamó una generalización falsa: un cable puede ser de acero
+         *     galvanizado, sin recubrimiento o con otro tratamiento. Pidió cerrarla
+         *     como «respuesta incorrecta de alcance», no borrarla.
+         *
+         *     NO SE CIERRA CON FECHA DE HOY, Y ESO ES LO QUE IMPORTA AQUÍ
+         *
+         *     La vigencia de una respuesta de vocabulario sigue a la del texto de la
+         *     tarifa que describe, no al día en que se contestó (ver
+         *     `_desde_cuando_rige_la_tarifa`): ésta rige desde 2022. Cerrarla con
+         *     `valid_to = hoy` la dejaría aplicándose a toda operación anterior a hoy
+         *     —el corpus entero va de marzo a agosto de 2026—. Parecería cerrada y
+         *     seguiría actuando.
+         *
+         *     Una respuesta equivocada no caducó: nunca fue cierta. Así que `valid_to`
+         *     se pone el día ANTERIOR a `valid_from`, y el filtro de vigencia
+         *     —`valid_from <= fecha <= valid_to`— no la deja pasar para ninguna fecha.
+         *     La fila se conserva entera, con el motivo añadido a su nota.
+         *
+         *     LO QUE NO HACE
+         *
+         *     No vuelve a clasificar: lo que cambia se ve en la siguiente
+         *     reclasificación. Y como la pareja sigue en la tabla, el UNIQUE impide
+         *     volver a contestar exactamente la misma con la misma fecha de inicio; si
+         *     algún día hace falta, se discute antes de relajarlo.
+         */
+        post: operations["retirar_vocabulario_review_vocabulario__respuesta_id__retirar_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -571,6 +711,20 @@ export interface components {
             porcentaje?: string | null;
         };
         /**
+         * AlcanceVocabulario
+         * @description A cuántas fichas alcanzaría una respuesta, ANTES de guardarla.
+         */
+        AlcanceVocabulario: {
+            /** Termino Ficha */
+            termino_ficha: string;
+            /** Fichas */
+            fichas: number;
+            /** De Un Total */
+            de_un_total: number;
+            /** Ejemplos */
+            ejemplos?: string[];
+        };
+        /**
          * AttributeStatus
          * @description §16 maestro — estado de un atributo de Product DNA.
          * @enum {string}
@@ -609,6 +763,14 @@ export interface components {
              * @description Foto o ficha del producto
              */
             imagen: string;
+        };
+        /**
+         * CasoVigente
+         * @description Lo que necesita la pantalla justo antes de enviar un veredicto.
+         */
+        CasoVigente: {
+            decision: components["schemas"]["ClassificationDetail"];
+            dictamen_del_caso?: components["schemas"]["DictamenRead"] | null;
         };
         /**
          * Clasificaciones
@@ -690,107 +852,6 @@ export interface components {
             is_selected: boolean;
             /** Rejected Reason */
             rejected_reason?: string | null;
-        };
-        /** ClassificationDecisionRead */
-        ClassificationDecisionRead: {
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            updated_at: string;
-            /** Synthetic Scenario Id */
-            synthetic_scenario_id?: string | null;
-            /** Seed */
-            seed?: number | null;
-            /** Model Provider */
-            model_provider?: string | null;
-            /** Model Name */
-            model_name?: string | null;
-            /** Prompt Id */
-            prompt_id?: string | null;
-            /** Prompt Version */
-            prompt_version?: string | null;
-            /** Input Tokens */
-            input_tokens?: number | null;
-            /** Output Tokens */
-            output_tokens?: number | null;
-            /** Latency Ms */
-            latency_ms?: number | null;
-            /** Attempts */
-            attempts?: number | null;
-            /** Finish Reason */
-            finish_reason?: string | null;
-            /** Confidence */
-            confidence?: string | null;
-            /**
-             * Requires Human Review
-             * @default true
-             */
-            requires_human_review: boolean;
-            data_origin: components["schemas"]["DataOrigin"];
-            /** Source Id */
-            source_id?: string | null;
-            /** Product Id */
-            product_id?: string | null;
-            /** Product Dna Id */
-            product_dna_id?: string | null;
-            /** Reviews Decision Id */
-            reviews_decision_id?: string | null;
-            trade_flow: components["schemas"]["TradeFlow"];
-            /**
-             * Operation Date
-             * Format: date
-             */
-            operation_date: string;
-            status: components["schemas"]["ClassificationStatus"];
-            /** Chapter */
-            chapter?: string | null;
-            /** Heading */
-            heading?: string | null;
-            /** Subheading */
-            subheading?: string | null;
-            /** Fraction Code */
-            fraction_code?: string | null;
-            /** Nico Code */
-            nico_code?: string | null;
-            /** Tariff Fraction Id */
-            tariff_fraction_id?: string | null;
-            /** Nico Id */
-            nico_id?: string | null;
-            /** Reasoning */
-            reasoning?: string | null;
-            /** Rgi Path */
-            rgi_path?: string[];
-            /** Rgi Trace */
-            rgi_trace?: {
-                [key: string]: unknown;
-            }[] | null;
-            /** Legal Rule Ids */
-            legal_rule_ids?: string[];
-            /** Engine Version */
-            engine_version?: string | null;
-            /** Evidence Id */
-            evidence_id?: string | null;
-            /** Input Snapshot */
-            input_snapshot?: {
-                [key: string]: unknown;
-            };
-            /** Missing Information */
-            missing_information?: string[];
-            /** Estimated Impact Amount */
-            estimated_impact_amount?: string | null;
-            /** Estimated Impact Amount Currency */
-            estimated_impact_amount_currency?: string | null;
         };
         /**
          * ClassificationDetail
@@ -948,6 +1009,10 @@ export interface components {
             status: string;
             /** Fraction Code */
             fraction_code?: string | null;
+            /** Nico Code */
+            nico_code?: string | null;
+            /** Nico Motivo */
+            nico_motivo?: string | null;
             /** Confidence */
             confidence?: string | null;
             /** Requires Human Review */
@@ -1051,6 +1116,118 @@ export interface components {
          */
         DataOrigin: "OFFICIAL" | "PUBLIC" | "LICENSED" | "SYNTHETIC" | "HUMAN_VALIDATED";
         /**
+         * DecisionEnLista
+         * @description Una decisión del listado, con el producto al que pertenece.
+         *
+         *     Sin el SKU, el selector de la pantalla decía «INSUFFICIENT_INFORMATION —
+         *     2026-09-30» cuarenta veces seguidas y no había forma de saber de qué
+         *     mercancía era cada una.
+         */
+        DecisionEnLista: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Synthetic Scenario Id */
+            synthetic_scenario_id?: string | null;
+            /** Seed */
+            seed?: number | null;
+            /** Model Provider */
+            model_provider?: string | null;
+            /** Model Name */
+            model_name?: string | null;
+            /** Prompt Id */
+            prompt_id?: string | null;
+            /** Prompt Version */
+            prompt_version?: string | null;
+            /** Input Tokens */
+            input_tokens?: number | null;
+            /** Output Tokens */
+            output_tokens?: number | null;
+            /** Latency Ms */
+            latency_ms?: number | null;
+            /** Attempts */
+            attempts?: number | null;
+            /** Finish Reason */
+            finish_reason?: string | null;
+            /** Confidence */
+            confidence?: string | null;
+            /**
+             * Requires Human Review
+             * @default true
+             */
+            requires_human_review: boolean;
+            data_origin: components["schemas"]["DataOrigin"];
+            /** Source Id */
+            source_id?: string | null;
+            /** Product Id */
+            product_id?: string | null;
+            /** Product Dna Id */
+            product_dna_id?: string | null;
+            /** Reviews Decision Id */
+            reviews_decision_id?: string | null;
+            trade_flow: components["schemas"]["TradeFlow"];
+            /**
+             * Operation Date
+             * Format: date
+             */
+            operation_date: string;
+            status: components["schemas"]["ClassificationStatus"];
+            /** Chapter */
+            chapter?: string | null;
+            /** Heading */
+            heading?: string | null;
+            /** Subheading */
+            subheading?: string | null;
+            /** Fraction Code */
+            fraction_code?: string | null;
+            /** Nico Code */
+            nico_code?: string | null;
+            /** Tariff Fraction Id */
+            tariff_fraction_id?: string | null;
+            /** Nico Id */
+            nico_id?: string | null;
+            /** Reasoning */
+            reasoning?: string | null;
+            /** Rgi Path */
+            rgi_path?: string[];
+            /** Rgi Trace */
+            rgi_trace?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** Legal Rule Ids */
+            legal_rule_ids?: string[];
+            /** Engine Version */
+            engine_version?: string | null;
+            /** Evidence Id */
+            evidence_id?: string | null;
+            /** Input Snapshot */
+            input_snapshot?: {
+                [key: string]: unknown;
+            };
+            /** Missing Information */
+            missing_information?: string[];
+            /** Estimated Impact Amount */
+            estimated_impact_amount?: string | null;
+            /** Estimated Impact Amount Currency */
+            estimated_impact_amount_currency?: string | null;
+            /** Sku */
+            sku?: string | null;
+            /** Producto */
+            producto?: string | null;
+        };
+        /**
          * DictamenRead
          * @description Lo que una persona decidió sobre una decisión del motor.
          */
@@ -1100,6 +1277,10 @@ export interface components {
             impact_amount_currency?: string | null;
             /** Impact Scope */
             impact_scope?: string | null;
+            /** Impact Calculation */
+            impact_calculation?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Is Simulation
              * @default false
@@ -1321,6 +1502,11 @@ export interface components {
                 [key: string]: number;
             };
             /**
+             * De Documento
+             * @default 0
+             */
+            de_documento: number;
+            /**
              * Accionables
              * @default 0
              */
@@ -1399,6 +1585,11 @@ export interface components {
             customs_value_currency?: string | null;
             /** Expected Fraction Code */
             expected_fraction_code?: string | null;
+            /**
+             * Fraccion Coincide
+             * @default false
+             */
+            fraccion_coincide: boolean;
             /** Estado */
             estado: string;
             /**
@@ -2194,6 +2385,16 @@ export interface components {
             nota?: string | null;
         };
         /**
+         * RetiroVocabulario
+         * @description Quién retira una respuesta y por qué. Las dos cosas son obligatorias.
+         */
+        RetiroVocabulario: {
+            /** Reviewer */
+            reviewer: string;
+            /** Motivo */
+            motivo: string;
+        };
+        /**
          * ReviewRequest
          * @description Las tasas de la operación. Todas opcionales; sin ellas no hay monto.
          */
@@ -2413,6 +2614,10 @@ export interface components {
             impact_amount_currency?: string | null;
             /** Impact Scope */
             impact_scope?: string | null;
+            /** Impact Calculation */
+            impact_calculation?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Is Simulation
              * @default false
@@ -2536,6 +2741,30 @@ export interface components {
              * @default 0
              */
             de_un_total: number;
+        };
+        /** VocabularioRetirado */
+        VocabularioRetirado: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Commercial Term */
+            commercial_term: string;
+            /** Nomenclature Term */
+            nomenclature_term: string;
+            /** Kind */
+            kind: string;
+            /**
+             * Valid From
+             * Format: date
+             */
+            valid_from: string;
+            /**
+             * Valid To
+             * Format: date
+             */
+            valid_to: string;
         };
     };
     responses: never;
@@ -2754,6 +2983,8 @@ export interface operations {
         parameters: {
             query?: {
                 product_id?: string | null;
+                /** @description Sólo la decisión vigente de cada caso (ADR 0008), primero las resueltas */
+                vigentes?: boolean;
                 limit?: number;
                 offset?: number;
             };
@@ -2769,7 +3000,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ClassificationDecisionRead"][];
+                    "application/json": components["schemas"]["DecisionEnLista"][];
                 };
             };
             /** @description Validation Error */
@@ -2802,6 +3033,44 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ClassificationDetail"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    caso_vigente_classifications__decision_id__vigente_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                decision_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CasoVigente"];
+                };
+            };
+            /** @description La ficha de esa decisión ya no es la vigente */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -3130,6 +3399,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VocabularioGuardado"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    alcance_vocabulario_review_vocabulario_alcance_get: {
+        parameters: {
+            query: {
+                termino_ficha: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlcanceVocabulario"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retirar_vocabulario_review_vocabulario__respuesta_id__retirar_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                respuesta_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetiroVocabulario"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VocabularioRetirado"];
                 };
             };
             /** @description Validation Error */

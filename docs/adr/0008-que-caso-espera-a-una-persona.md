@@ -97,3 +97,10 @@ para cada hueco, en `tests/test_pendientes_integracion.py`:
 
   Unificarlos con esta definición es la siguiente tarea natural; no se hace
   aquí porque el encargo nombraba tres consumidores.
+
+  **Unificados el 7-oct.** Con la bandeja vacía —César había dictaminado los
+  57 casos— el tablero decía **33** y la pantalla de precisión **4 610**. Los
+  dos cuentan ahora con `pendientes()`, y
+  `tests/test_contadores_de_pendientes.py` comprueba contra Postgres que los
+  tres números se mueven igual (con el código anterior: `[1, 2, 4]` donde debía
+  ser `[1, 1, 1]`).

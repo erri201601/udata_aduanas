@@ -474,14 +474,19 @@ def test_un_nico_que_no_existe_en_la_fraccion_es_hallazgo() -> None:
 
 
 def test_un_nico_que_sí_existe_no_se_acusa_y_se_declara_el_hueco() -> None:
-    """Que exista NO significa que sea el correcto: eso exige ficha técnica."""
+    """Que exista NO significa que sea el correcto: eso exige clasificar hasta el NICO.
+
+    Decía «exige la ficha técnica, que no está cargada» con la ficha cargada. El
+    motivo tiene que ser el real (7-oct).
+    """
     r = compare(
         [declarado(fraction_code="73051291", nico_code="99")],
         [esperado(fraction_code="73051291", nico_code=None, valid_nico_codes=("00", "99"))],
     )
 
     assert not [x for x in r.divergences if x.kind is DivergenceType.NICO_MISMATCH]
-    assert any("exige la ficha técnica" in m for m in r.unverifiable)
+    assert any("clasificación que llegue hasta el NICO" in m for m in r.unverifiable)
+    assert not any("no está cargada" in m for m in r.unverifiable)
 
 
 def test_si_la_fraccion_no_esta_vigente_no_se_acusa_al_nico() -> None:
@@ -699,3 +704,65 @@ def test_la_metrica_ya_no_cuenta_este_tipo_como_detector_inexistente() -> None:
 
     assert "MISSING_TECHNICAL_FIELD" not in SIN_DETECTOR
     assert DETECTOR_POR_ERROR["MISSING_TECHNICAL_FIELD"] == "MISSING_TECHNICAL_FIELD"
+
+
+# ── Los motivos tienen que ser los de hoy (7-oct) ──────────────────────────
+
+
+def test_sin_fraccion_esperada_las_nom_no_se_atribuyen_a_un_catalogo_que_falta() -> None:
+    """Decía «falta cargar la correlación fracción → NOM» con 456 cargadas."""
+    from core.shadow.compare import _lagunas
+    from core.shadow.types import ExpectedItem
+
+    sin_fraccion = ExpectedItem(line_number=1, fraction_code=None, required_nom_codes=None)
+    razones = _lagunas(sin_fraccion, None)
+
+    assert any("no llegó a una fracción esperada" in r for r in razones)
+    assert not any("falta cargar" in r for r in razones)
+
+
+def test_los_identificadores_no_se_atribuyen_al_apendice_8() -> None:
+    """El catálogo está cargado: lo que falta son las reglas que dicen cuáles exige."""
+    from core.shadow.compare import _lagunas
+    from core.shadow.types import ExpectedItem
+
+    razones = _lagunas(ExpectedItem(line_number=1, required_identifiers=None), None)
+
+    assert any("no hay reglas vigentes" in r for r in razones)
+    assert not any("falta cargar el Apéndice 8" in r for r in razones)
+
+
+# ── Quién sostiene lo esperado (7-oct) ──────────────────────────────────────
+
+
+def test_una_fraccion_dictaminada_dice_que_la_dicto_un_clasificador() -> None:
+    """«Según las RGI» y «según el criterio firmado de una persona» no son lo mismo."""
+    fuente = "dictamen de César del 2026-10-07"
+    r = compare(
+        [declarado(fraction_code="73241001")],
+        [esperado(fraction_code="76151002", fraction_source=fuente)],
+    )
+
+    d = next(x for x in r.divergences if x.kind is DivergenceType.FRACTION_MISMATCH)
+    assert "Un clasificador dictaminó 76151002" in d.reasoning
+    assert fuente in d.reasoning
+    assert "según las RGI" not in d.reasoning
+
+
+def test_sin_fuente_la_fraccion_sigue_siendo_la_de_las_rgi() -> None:
+    r = compare([declarado(fraction_code="84713099")], [esperado()])
+
+    d = next(x for x in r.divergences if x.kind is DivergenceType.FRACTION_MISMATCH)
+    assert "según las RGI" in d.reasoning
+
+
+def test_un_nico_dictaminado_dice_quien_lo_firmo() -> None:
+    fuente = "dictamen de César del 2026-10-07"
+    r = compare(
+        [declarado(nico_code="01")],
+        [esperado(nico_code="02", nico_source=fuente)],
+    )
+
+    d = next(x for x in r.divergences if x.kind is DivergenceType.NICO_MISMATCH)
+    assert "Un clasificador dictaminó el NICO 02" in d.reasoning
+    assert fuente in d.reasoning

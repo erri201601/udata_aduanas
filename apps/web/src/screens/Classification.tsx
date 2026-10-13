@@ -14,6 +14,7 @@
 import { useState } from 'react'
 
 import { ComoSeLeeUnCodigo } from '../components/ComoSeLeeUnCodigo'
+import { DarVeredicto } from '../components/DarVeredicto'
 import { ContestarPregunta } from '../components/ContestarPregunta'
 import { SyntheticBanner } from '../components/DataOriginBadge'
 import { QUE_ES_EL_ESTADO, QUE_PREGUNTA, comoLeerLaConfianza } from '../components/glosas'
@@ -152,6 +153,9 @@ export function Classification({ decisionInicial = null }: Props = {}) {
   const { decisiones, error: errorLista, cargando: cargandoLista } = useClassifications()
   const { precision } = usePrecisionClasificacion()
   const [elegida, setElegida] = useState<string | null>(null)
+  // Aquí y no en `DarVeredicto`: ése se monta de nuevo con cada decisión, y
+  // quien revisa no tiene que volver a escribir su nombre en cada una.
+  const [revisor, setRevisor] = useState('')
   const activa = elegida ?? decisionInicial ?? decisiones[0]?.id ?? null
   const { detalle, error, cargando } = useClassification(activa)
 
@@ -189,7 +193,8 @@ export function Classification({ decisionInicial = null }: Props = {}) {
           <select value={activa ?? ''} onChange={(e) => setElegida(e.target.value)}>
             {decisiones.map((d) => (
               <option key={d.id} value={d.id}>
-                {d.fraction_code ?? d.status} — {d.operation_date}
+                {d.sku ?? 'sin SKU'} · {d.fraction_code ?? d.status} ·{' '}
+                {(d.producto ?? '').slice(0, 60)}
               </option>
             ))}
           </select>
@@ -279,6 +284,17 @@ export function Classification({ decisionInicial = null }: Props = {}) {
                 </p>
               )}
             </div>
+          )}
+
+          {/* La decisión que se enseña puede no ser la vigente del caso:
+              `DarVeredicto` lo comprueba y manda el veredicto a la de hoy. */}
+          {activa && (
+            <DarVeredicto
+              key={activa}
+              decisionId={activa}
+              revisor={revisor}
+              onRevisor={setRevisor}
+            />
           )}
 
           {/* ── El razonamiento ─────────────────────────────────────────── */}

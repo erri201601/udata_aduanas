@@ -172,6 +172,12 @@ class SesionFalsa:
     #: `en_catalogo` debe salir `None` en vez de `False`.
     _hay_tarifa: bool = True
 
+    def execute(self, _sentencia: Any) -> Any:
+        # El listado pide cada decisión con el SKU y el nombre de su producto.
+        r = type("R", (), {})()
+        r.all = lambda: [(self._decision, "LAP-1", "Laptop")] if self._decision else []
+        return r
+
     def scalar(self, sentencia: Any) -> Any:
         # «¿hay tarifa?» no filtra por código; «¿existe ESTE código?» sí.
         if "tariff_fractions.code =" in str(sentencia):
@@ -217,6 +223,9 @@ def test_lista_decisiones(cliente: TestClient) -> None:
 
     assert r.status_code == 200
     assert r.json()[0]["fraction_code"] == "84713001"
+    # El producto viaja con la decisión: sin él, el selector no decía de qué
+    # mercancía era cada una (7-oct).
+    assert r.json()[0]["sku"] == "LAP-1"
 
 
 def test_el_limite_esta_acotado(cliente: TestClient) -> None:

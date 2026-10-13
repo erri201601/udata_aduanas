@@ -19,9 +19,11 @@
 
 import { useEffect, useState } from 'react'
 
-import { fetchEspejo, fetchPedimentos } from '../api/client'
+import { TASAS_DEL_CORPUS, fetchEspejo, fetchPedimentos, revisarPedimento } from '../api/client'
 import type { LineaEspejo, PedimentoEspejo, PedimentoRead } from '../api/client'
 import { detalleDe, etiquetaDe } from '../components/divergencias'
+import { CalculoDelMonto } from '../components/CalculoDelMonto'
+import { comoCalculo } from '../components/calculo'
 import { SyntheticBanner } from '../components/DataOriginBadge'
 import { SEVERIDADES, formatearMonto } from '../components/severity'
 import type { Severity } from '../api/client'
@@ -93,7 +95,16 @@ function Comparacion({ linea }: { linea: LineaEspejo }) {
             <div>
               <dt>Fracción</dt>
               <dd>
-                <code className="cara__divergente">{linea.expected_fraction_code}</code>
+                {/* Coincidir también es un resultado, y se dice: callarlo hacía
+                    que la caja negara una comprobación que sí se hizo. */}
+                {linea.fraccion_coincide ? (
+                  <>
+                    <code className="cara__coincide">{linea.expected_fraction_code}</code>{' '}
+                    <span className="cara__nota">coincide con lo declarado</span>
+                  </>
+                ) : (
+                  <code className="cara__divergente">{linea.expected_fraction_code}</code>
+                )}
               </dd>
             </div>
           </dl>
@@ -156,7 +167,38 @@ function esDeCalculo(tipo: string): boolean {
   return tipo === 'IGI_RATE_MISMATCH' || tipo === 'VAT_MISMATCH'
 }
 
-function Partida({ linea, posibles }: { linea: LineaEspejo; posibles: string[] }) {
+type Divergencia = LineaEspejo['divergencias'][number]
+
+const claveDe = (d: Divergencia) => `${d.finding_type}|${d.declared_value}|${d.expected_value}`
+
+/** Lo que difiere IGUAL en todas las partidas y no tiene monto: es del documento.
+ *
+ * El tipo de cambio se declara una vez por pedimento. Cuando está mal, salía
+ * como CRÍTICO doce veces, una por partida, con el mismo texto — y en la demo
+ * escondía lo que sí distingue a cada partida. Se enseña una vez arriba y cada
+ * partida lo remite. Sólo lo que no tiene monto: con monto, cada partida es
+ * una cifra distinta y juntarlas cambiaría lo que se presenta. */
+function delDocumento(lineas: LineaEspejo[]): Divergencia[] {
+  if (lineas.length < 2) return []
+  const [primera, ...resto] = lineas
+  return primera.divergencias.filter(
+    (d) =>
+      !d.impact_amount &&
+      resto.every((l) => l.divergencias.some((x) => !x.impact_amount && claveDe(x) === claveDe(d))),
+  )
+}
+
+function Partida({
+  linea,
+  posibles,
+  delPedimento,
+}: {
+  linea: LineaEspejo
+  posibles: string[]
+  delPedimento: Set<string>
+}) {
+  const propias = linea.divergencias.filter((d) => !delPedimento.has(claveDe(d)))
+  const remitidas = linea.divergencias.length - propias.length
   return (
     <li className={`espejo-linea espejo-linea--${linea.estado.toLowerCase()}`}>
       <header className="espejo-linea__cabecera">
@@ -179,12 +221,19 @@ function Partida({ linea, posibles }: { linea: LineaEspejo; posibles: string[] }
 
       <Comparacion linea={linea} />
 
-      {linea.divergencias.length > 0 && (
+      {remitidas > 0 && (
+        <p className="espejo-linea__remite">
+          Y lo que difiere en todo el pedimento, arriba.
+        </p>
+      )}
+
+      {propias.length > 0 && (
         <div className="espejo-linea__bloque">
           <h5>Lo que difiere</h5>
           <ul className="divergencias">
-            {linea.divergencias.map((d) => {
+            {propias.map((d) => {
               const monto = formatearMonto(d.impact_amount, d.impact_amount_currency)
+              const calculo = monto ? comoCalculo(d.impact_calculation) : null
               return (
                 <li key={d.finding_id}>
                   <div className="divergencia__titulo">
@@ -219,8 +268,9 @@ function Partida({ linea, posibles }: { linea: LineaEspejo; posibles: string[] }
                         </>
                       ) : (
                         <>
-                          Se movería {monto} si esto se corrigiera. Depende de la expectativa
-                          del motor, así que no es una deuda cierta todavía.
+                          Se movería {monto} si esto se corrigiera. Depende de la fracción
+                          esperada —del motor o de un dictamen—, así que no es una deuda
+                          cierta todavía.
                         </>
                       )
                     ) : esDeCalculo(d.finding_type) ? (
@@ -238,6 +288,7 @@ function Partida({ linea, posibles }: { linea: LineaEspejo; posibles: string[] }
                       </em>
                     )}
                   </p>
+                  {calculo && <CalculoDelMonto calculo={calculo} />}
                 </li>
               )
             })}
@@ -266,6 +317,29 @@ export function PedimentoShadow() {
   const [elegido, setElegido] = useState<string | null>(null)
   const [datos, setDatos] = useState<PedimentoEspejo | null>(null)
   const [error, setError] = useState<string | null>(null)
+  /* AUDITAR DESDE AQUÍ, NO DESDE UNA TERMINAL (7-oct)
+   *
+   * La pantalla sólo leía la última auditoría y decía «hay que lanzar POST
+   * /pedimentos/{id}/review». En la demo eso era abrir una terminal delante
+   * del cliente en el momento que más importa: el sistema construyendo lo que
+   * debería declararse sin mirar lo declarado. `version` vuelve a pedir el
+   * espejo cuando termina. */
+  const [revisando, setRevisando] = useState(false)
+  const [version, setVersion] = useState(0)
+
+  async function revisarAhora() {
+    if (!elegido) return
+    setRevisando(true)
+    setError(null)
+    try {
+      await revisarPedimento(elegido)
+      setVersion((v) => v + 1)
+    } catch (causa: unknown) {
+      setError(causa instanceof Error ? causa.message : 'No se pudo auditar el pedimento')
+    } finally {
+      setRevisando(false)
+    }
+  }
 
   useEffect(() => {
     const control = new AbortController()
@@ -294,7 +368,7 @@ export function PedimentoShadow() {
         setError(causa instanceof Error ? causa.message : 'No se pudo cargar el espejo')
       })
     return () => control.abort()
-  }, [elegido])
+  }, [elegido, version])
 
   /* «Ninguna se pudo comprobar» es que NINGUNA produjo veredicto, no que
      ninguna saliera conforme. Una partida DIVERGENTE sí se comprobó: se
@@ -332,6 +406,17 @@ export function PedimentoShadow() {
   const posiblesTotales =
     (datos?.comprobaciones_posibles?.length ?? 0) * (datos?.partidas ?? 0)
 
+  const documento = datos?.revision ? delDocumento(datos.lineas) : []
+  const delPedimento = new Set(documento.map(claveDe))
+  /* Las partidas que sólo difieren por lo del documento. Sin este número el
+     cartel decía «ninguna coincidió» y se leía como doce mercancías mal
+     declaradas, cuando en nueve la única diferencia era el tipo de cambio del
+     pedimento (600015, 7-oct). */
+  const soloDelDocumento =
+    datos?.lineas.filter(
+      (l) => l.divergencias.length > 0 && l.divergencias.every((d) => delPedimento.has(claveDe(d))),
+    ).length ?? 0
+
   return (
     <section className="pantalla">
       <header className="pantalla__encabezado">
@@ -353,6 +438,18 @@ export function PedimentoShadow() {
             </select>
           </label>
         )}
+        {elegido && (
+          <div className="espejo__auditar">
+            <button className="boton" onClick={() => void revisarAhora()} disabled={revisando}>
+              {revisando ? 'Auditando…' : 'Revisar ahora'}
+            </button>
+            <small>
+              {revisando
+                ? 'Construyendo lo que debería declararse, partida por partida, sin mirar lo declarado. Unos 15 segundos.'
+                : `Con IVA ${Number(TASAS_DEL_CORPUS.iva_rate) * 100} % y DTA de ${Number(TASAS_DEL_CORPUS.dta_rate) * 1000} al millar.`}
+            </small>
+          </div>
+        )}
       </header>
 
       {datos?.is_simulation && <SyntheticBanner />}
@@ -369,7 +466,7 @@ export function PedimentoShadow() {
           <strong>Este pedimento nunca se ha auditado.</strong>
           <p>
             No hay corrida del espejo, así que no consta qué se revisó. No está limpio: está
-            sin tocar. Para auditarlo hay que lanzar <code>POST /pedimentos/{'{id}'}/review</code>.
+            sin tocar. Para auditarlo, «Revisar ahora».
           </p>
         </div>
       )}
@@ -399,10 +496,22 @@ export function PedimentoShadow() {
                 De las {comprobadas} partidas que se pudieron comprobar, ninguna coincidió con
                 lo esperado.
               </strong>
+              {soloDelDocumento > 0 && (
+                <p>
+                  <strong>
+                    En {soloDelDocumento} de ellas la única diferencia es lo que difiere en
+                    todo el pedimento
+                  </strong>{' '}
+                  ({documento.map((d) => etiquetaDe(d.finding_type).toLowerCase()).join(', ')}):
+                  un dato del documento, no de cada mercancía. Lo propio de cada partida está
+                  en las otras {comprobadas - soloDelDocumento}.
+                </p>
+              )}
               <p>
-                Las otras {datos.sin_verificar} no se pudieron comprobar, y no cuentan ni a
-                favor ni en contra. Cero conformes aquí es un resultado sobre el pedimento, no
-                una limitación del sistema.
+                {datos.sin_verificar > 0 &&
+                  `Las otras ${datos.sin_verificar} no se pudieron comprobar, y no cuentan ni a favor ni en contra. `}
+                Cero conformes aquí es un resultado sobre el pedimento, no una limitación del
+                sistema.
               </p>
             </div>
           )}
@@ -496,12 +605,48 @@ export function PedimentoShadow() {
             )}
           </p>
 
+          {documento.length > 0 && (
+            <div className="espejo-documento" role="note">
+              <h5>Del pedimento entero</h5>
+              <p className="espejo-documento__pie">
+                Igual en las {datos.lineas.length} partidas: es un dato del documento, no de
+                cada mercancía.
+              </p>
+              <ul className="divergencias">
+                {documento.map((d) => (
+                  <li key={claveDe(d)}>
+                    <div className="divergencia__titulo">
+                      <span className={`sev sev--${d.severity.toLowerCase()}`}>
+                        {SEVERIDADES[d.severity as Severity]?.etiqueta ?? d.severity}
+                      </span>
+                      <span className="divergencia__tipo" title={detalleDe(d.finding_type)}>
+                        {etiquetaDe(d.finding_type)}
+                      </span>
+                      {d.field && <span className="divergencia__campo">{d.field}</span>}
+                    </div>
+                    <p className="divergencia__valores">
+                      <span>
+                        declarado <code>{d.declared_value ?? '—'}</code>
+                      </span>
+                      <span aria-hidden="true">→</span>
+                      <span>
+                        esperado <code>{d.expected_value ?? '—'}</code>
+                      </span>
+                    </p>
+                    {d.rationale && <p className="divergencia__razon">{d.rationale}</p>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <ul className="espejo-lineas">
             {datos.lineas.map((linea) => (
               <Partida
                 key={linea.line_number}
                 linea={linea}
                 posibles={datos.comprobaciones_posibles ?? []}
+                delPedimento={delPedimento}
               />
             ))}
           </ul>

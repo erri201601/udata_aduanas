@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { fetchClassifications, fetchDossier } from '../api/client'
-import type { ClassificationDecisionRead, DossierRead } from '../api/client'
+import type { DecisionEnLista, DossierRead } from '../api/client'
 
 export interface EstadoDossier {
   dossier: DossierRead | null
-  decisiones: ClassificationDecisionRead[]
+  decisiones: DecisionEnLista[]
   error: string | null
   cargando: boolean
 }
@@ -58,11 +58,11 @@ export function useDossier(decisionId: string | null): {
 
 /** Las decisiones disponibles para auditar. */
 export function useDecisionesAuditables(): {
-  decisiones: ClassificationDecisionRead[]
+  decisiones: DecisionEnLista[]
   error: string | null
   cargando: boolean
 } {
-  const [decisiones, setDecisiones] = useState<ClassificationDecisionRead[]>([])
+  const [decisiones, setDecisiones] = useState<DecisionEnLista[]>([])
   const [error, setError] = useState<string | null>(null)
   const [cargando, setCargando] = useState(true)
 

@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict
 
 from core.evidence import Evidence
 from core.shadow import Divergence
+from core.taxation import MonetaryResult
 
 
 class Finding(BaseModel):
@@ -62,6 +63,10 @@ class Finding(BaseModel):
     la fracción—.
     """
 
+    calculation: MonetaryResult | None = None
+    """Cómo se llegó a `impact_amount` (§22): fórmula, entradas, versión,
+    supuestos y fuentes. `None` exactamente cuando no hay monto."""
+
     evidences: tuple[Evidence, ...] = ()
     assumptions: tuple[str, ...] = ()
     is_simulation: bool = True
@@ -102,6 +107,9 @@ class Finding(BaseModel):
                 "impact_amount": self.impact_amount,
                 "impact_amount_currency": self.impact_currency,
                 "impact_scope": self.impact_scope,
+                "impact_calculation": (
+                    self.calculation.model_dump(mode="json") if self.calculation else None
+                ),
                 "is_simulation": self.is_simulation,
             }
         )

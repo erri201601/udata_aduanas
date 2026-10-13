@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import date
 from decimal import Decimal
+from typing import Any
 
 from pydantic import Field
 
@@ -253,6 +254,8 @@ class RiskFindingBase(DataOriginFields, AIDecisionFields, SyntheticFields):
     No es descriptivo: es la instrucción de agregación, y viaja con la fila
     para que no haya tres copias del criterio en tres lectores.
     """
+    impact_calculation: dict[str, Any] | None = None
+    """Cómo se llegó a `impact_amount` (§22). `None` sin monto."""
     is_simulation: bool = False
     evidence_id: uuid.UUID | None = None
 
@@ -289,6 +292,8 @@ class OpportunityFindingBase(DataOriginFields, AIDecisionFields, SyntheticFields
     rationale: str | None = None
     estimated_saving_amount: Decimal | None = None
     estimated_saving_amount_currency: str | None = None
+    estimated_saving_calculation: dict[str, Any] | None = None
+    """Cómo se llegó al ahorro (§22). `None` sin monto."""
     # §23: un ahorro POTENTIAL ya se presenta como potencial. Esto dice algo
     # distinto y que faltaba — si sale de una operación inventada. Un ahorro
     # simulado sin esta marca es la regla 4 al revés: SYNTHETIC presentado

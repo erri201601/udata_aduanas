@@ -28,7 +28,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from core.audit import AuditReport, Finding, audit
-from core.opportunity import find_opportunities
+from core.opportunity import Opportunity, find_opportunities, from_programs
 from core.review.types import LineInput, PedimentoReview
 from core.shadow import ExpectedItem, ShadowComparison, compare
 
@@ -42,8 +42,13 @@ def review_pedimento(
     lines: Sequence[LineInput],
     *,
     sku_history: dict[str, str] | None = None,
+    client_sectors: frozenset[str] | None = None,
 ) -> PedimentoReview:
-    """Revisa un pedimento completo. No toca la base ni llama a ningún modelo."""
+    """Revisa un pedimento completo. No toca la base ni llama a ningún modelo.
+
+    `client_sectors` son los sectores PROSEC en que opera el importador; `None`
+    si no consta. Sin ellos PROSEC sale sin monto y la Regla 8ª no se evalúa.
+    """
     declaradas = [ln.declared for ln in lines]
     esperadas: list[ExpectedItem] = [ln.expected for ln in lines if ln.expected is not None]
 
@@ -106,10 +111,45 @@ def review_pedimento(
         is_simulation=es_simulacion,
     )
 
+    de_programas: list[Opportunity] = []
+    evaluados = any(ln.programs is not None for ln in lines)
+    for ln in lines:
+        if ln.programs is None:
+            continue
+        de_programas.extend(
+            from_programs(
+                line_number=ln.declared.line_number,
+                fraction_code=ln.declared.fraction_code,
+                opciones=ln.programs,
+                transaction_value=ln.transaction_value,
+                applied_rates=ln.applied_rates or ln.declared_rates,
+                client_sectors=client_sectors,
+                is_simulation=ln.is_simulation,
+            )
+        )
+
+    notas: list[str] = []
+    if evaluados and client_sectors is None:
+        notas.append(
+            "No consta en qué sectores PROSEC opera el importador: las oportunidades "
+            "PROSEC salen sin monto y la Regla 8ª no se evaluó."
+        )
+    sin_tasa = sum(
+        1 for ln in lines if ln.programs and (ln.applied_rates or ln.declared_rates) is None
+    )
+    if sin_tasa:
+        notas.append(
+            f"{sin_tasa} partida(s) sin arancel aplicado conocido: no se pudo saber si "
+            "un programa les ahorraba algo."
+        )
+
     oportunidades = find_opportunities(
         audit=consolidado if hallazgos else None,
+        extra=de_programas,
         currency=divisa,
         is_simulation=es_simulacion,
+        programs_evaluated=evaluados,
+        notes=notas,
     )
 
     return PedimentoReview(

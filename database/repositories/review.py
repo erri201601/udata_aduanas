@@ -99,6 +99,11 @@ def save_review(
                 # contribuciones que se deben las dos. El monto quedaría bien
                 # en la fila y mal en el total.
                 impact_scope=hallazgo.impact_scope,
+                # El cálculo entero, no sólo la cifra (§22): sin él, «4 822.95
+                # MXN» no se podía comprobar desde la fila.
+                impact_calculation=(
+                    hallazgo.calculation.model_dump(mode="json") if hallazgo.calculation else None
+                ),
                 is_simulation=hallazgo.is_simulation,
                 data_origin=data_origin,
             )
@@ -123,6 +128,11 @@ def save_review(
                     if oportunidad.estimated_saving is not None
                     else None,
                     estimated_saving_amount_currency=oportunidad.currency,
+                    estimated_saving_calculation=(
+                        oportunidad.calculation.model_dump(mode="json")
+                        if oportunidad.calculation
+                        else None
+                    ),
                     is_simulation=oportunidad.is_simulation,
                     data_origin=data_origin,
                 )

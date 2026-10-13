@@ -49,6 +49,7 @@ def compare_item(declared: DeclaredItem, expected: ExpectedItem) -> list[Diverge
         exp: str | None,
         razon: str,
         severidad: str | None = None,
+        derivacion: str | None = None,
     ) -> None:
         hallazgos.append(
             Divergence(
@@ -60,6 +61,7 @@ def compare_item(declared: DeclaredItem, expected: ExpectedItem) -> list[Diverge
                 severity=severidad or default_severity(kind),
                 confidence=expected.confidence,
                 reasoning=razon,
+                derivation=derivacion,
                 source_ids=expected.source_ids,
             )
         )
@@ -82,7 +84,11 @@ def compare_item(declared: DeclaredItem, expected: ExpectedItem) -> list[Diverge
                 declared.fraction_code,
                 expected.fraction_code,
                 (
-                    f"La mercancía corresponde a {expected.fraction_code} según las RGI, "
+                    f"Un clasificador dictaminó {expected.fraction_code} para esta mercancía "
+                    f"({expected.fraction_source}), y se declaró {declared.fraction_code}. "
+                    "Cambia el arancel aplicable."
+                    if expected.fraction_source
+                    else f"La mercancía corresponde a {expected.fraction_code} según las RGI, "
                     f"y se declaró {declared.fraction_code}. Cambia el arancel aplicable."
                 ),
             )
@@ -101,7 +107,12 @@ def compare_item(declared: DeclaredItem, expected: ExpectedItem) -> list[Diverge
             "nico_code",
             declared.nico_code,
             expected.nico_code,
-            f"El NICO esperado para {expected.fraction_code} es {expected.nico_code}.",
+            (
+                f"Un clasificador dictaminó el NICO {expected.nico_code} para esta mercancía "
+                f"({expected.nico_source}), y se declaró {declared.nico_code}."
+                if expected.nico_source
+                else f"El NICO esperado para {expected.fraction_code} es {expected.nico_code}."
+            ),
         )
 
     # Lo único que el catálogo puede afirmar solo: que el NICO declarado NO
@@ -144,6 +155,7 @@ def compare_item(declared: DeclaredItem, expected: ExpectedItem) -> list[Diverge
                 f"{declared.fraction_code}: sale {expected.igi_amount} y se declaró "
                 f"{declared.igi_amount}."
             ),
+            derivacion=expected.derivations.get("igi_amount"),
         )
 
     # ── IVA ──────────────────────────────────────────────────────────────────
@@ -164,6 +176,7 @@ def compare_item(declared: DeclaredItem, expected: ExpectedItem) -> list[Diverge
                 f"más DTA—: sale {expected.vat_amount} y se declaró {declared.vat_amount}. "
                 "Puede ser la base o el importe; desde el pedimento no se distingue."
             ),
+            derivacion=expected.derivations.get("vat_amount"),
         )
 
     # ── Unidad de medida ─────────────────────────────────────────────────────
@@ -252,6 +265,19 @@ def compare_item(declared: DeclaredItem, expected: ExpectedItem) -> list[Diverge
                 ", ".join(sorted(declared.identifiers)) or None,
                 ident,
                 f"Falta el identificador {ident} que exige la operación.",
+            )
+    # Los de nivel pedimento se declaran una vez por documento. Salen en cada
+    # partida con el mismo texto, como el tipo de cambio, y quien los presenta
+    # los cuenta una vez: el campo `document_identifiers` es lo que los
+    # distingue (`CAMPOS_DEL_DOCUMENTO` en el tablero).
+    for ident in expected.required_document_identifiers or ():
+        if ident not in declared.document_identifiers:
+            emitir(
+                DivergenceType.IDENTIFIER_MISMATCH,
+                CAMPO_IDENTIFICADORES_DEL_DOCUMENTO,
+                ", ".join(sorted(declared.document_identifiers)) or None,
+                ident,
+                f"Falta el identificador {ident} que la operación exige en el pedimento.",
             )
 
     # ── Tipo de cambio ───────────────────────────────────────────────────────
@@ -372,8 +398,17 @@ def _depende_de_clasificar(divergencia: Divergence, expected: ExpectedItem) -> b
 #: verificar» (algo faltó). Una partida con siete comprobaciones buenas y una
 #: desconocida salía igual que una donde no se comprobó nada — y eso hacía
 #: parecer que el sistema no verificaba nada, cuando verificaba casi todo.
+#: El nombre con que se registra que la fracción SE COMPROBÓ. Público porque
+#: la pantalla del Espejo lo lee para decir «coincide con lo declarado» (7-oct):
+#: una copia escrita a mano del texto se desviaría en silencio.
+COMPROBACION_DE_FRACCION: Final = "fracción arancelaria"
+
+#: El `field` de un identificador que falta en el PEDIMENTO y no en la partida.
+#: Es lo que permite contarlo una vez por documento (ADR 0012).
+CAMPO_IDENTIFICADORES_DEL_DOCUMENTO: Final = "document_identifiers"
+
 _COMPROBACIONES: Final[tuple[tuple[str, str], ...]] = (
-    ("fracción arancelaria", "fraction_code"),
+    (COMPROBACION_DE_FRACCION, "fraction_code"),
     ("NICO", "nico"),
     ("tipo de cambio", "exchange_rate"),
     ("cuota compensatoria", "compensatory_duty_applies"),
@@ -418,6 +453,12 @@ def comprobaciones_hechas(expected: ExpectedItem) -> tuple[str, ...]:
             # Con la expectativa firme o con el catálogo basta: el catálogo
             # solo ya permite afirmar que un NICO declarado NO existe.
             if expected.nico_code or expected.valid_nico_codes:
+                hechas.append(nombre)
+        elif campo == "required_identifiers":
+            if (
+                expected.required_identifiers is not None
+                or expected.required_document_identifiers is not None
+            ):
                 hechas.append(nombre)
         elif getattr(expected, campo) is not None:
             hechas.append(nombre)
@@ -464,9 +505,14 @@ def _lagunas(expected: ExpectedItem, declared: DeclaredItem | None = None) -> li
                 "no tiene NICO cargados, y eso es un hueco del catálogo, no del pedimento"
             )
         elif declared.nico_code in expected.valid_nico_codes:
+            # Antes decía «exige la ficha técnica, que no está cargada», y la
+            # ficha SÍ está cargada: lo que falta es una clasificación que
+            # llegue hasta el NICO. Un motivo falso en la pantalla de la demo
+            # contradice lo que se le cuenta al cliente (7-oct).
             razones.append(
                 f"el NICO {declared.nico_code} existe en la fracción declarada; saber si es "
-                "el que corresponde a la mercancía exige la ficha técnica, que no está cargada"
+                "el que corresponde a la mercancía exige una clasificación que llegue hasta "
+                "el NICO, y la de esta partida no llegó"
             )
 
     if expected.igi_amount is None:
@@ -494,16 +540,30 @@ def _lagunas(expected: ExpectedItem, declared: DeclaredItem | None = None) -> li
             "no se consultó la ficha técnica: sin producto ligado o sin Product DNA "
             "no se puede decir si el expediente alcanza"
         )
+    # LOS MOTIVOS TIENEN QUE SER LOS DE HOY (7-oct)
+    #
+    # Las dos razones de abajo se escribieron cuando el Anexo 2.4.1 y el
+    # Apéndice 8 no estaban cargados, y siguieron diciéndolo después de
+    # cargarlos: «falta cargar la correlación fracción → NOM» con 456
+    # correlaciones en la base. En la pantalla del Espejo eso contradice lo que
+    # se le cuenta al cliente. Un motivo es una afirmación, y tiene que ser
+    # verdad el día que se lee.
     if expected.required_nom_codes is None:
+        if expected.fraction_code is None:
+            razones.append(
+                "no se sabe qué NOM exige la partida: dependen de la fracción, y el "
+                "sistema no llegó a una fracción esperada"
+            )
+        else:
+            razones.append(
+                f"no se conoce qué NOM exige la fracción {expected.fraction_code}: no hay "
+                "correlación fracción → NOM (Anexo 2.4.1) vigente en la fecha de la operación"
+            )
+    if expected.required_identifiers is None and expected.required_document_identifiers is None:
         razones.append(
-            "no se conoce qué NOM exige la fracción "
-            f"{expected.fraction_code or 'esperada'}: falta cargar la correlación "
-            "fracción → NOM (Anexo 2.4.1 del Acuerdo de la SE)"
-        )
-    if expected.required_identifiers is None:
-        razones.append(
-            "no se conocen los identificadores que exige la operación: "
-            "falta cargar el Apéndice 8 del Anexo 22"
+            "no se conocen los identificadores que exige la operación: el catálogo del "
+            "Apéndice 8 está cargado, pero no hay reglas vigentes que digan cuáles exige "
+            "según la clave de pedimento, la fracción o el NICO (ADR 0012)"
         )
     return razones
 
