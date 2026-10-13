@@ -1,7 +1,7 @@
 """risk_findings.sources: las filas que sostienen el hallazgo
 
 Revision ID: 9df25bf19e27
-Revises: 8471a674f18d
+Revises: 5b0c9e2d4a17
 Create Date: 2026-10-13 21:41:52.344366+00:00
 
 """
@@ -15,7 +15,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "9df25bf19e27"
-down_revision: str | None = "8471a674f18d"
+down_revision: str | None = "5b0c9e2d4a17"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
