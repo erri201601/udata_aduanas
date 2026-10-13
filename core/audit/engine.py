@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING
 from core.audit.findings import AuditReport, Finding
 from core.audit.severity import adjust
 from core.shadow import DivergenceType
-from core.taxation import compute_divergence, compute_taxes
+from core.taxation import MonetaryResult, compute_divergence, compute_taxes
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -242,6 +242,7 @@ def _a_hallazgo(
     divisa: str | None = None
     direccion: str | None = None
     alcance: str | None = None
+    calculo: MonetaryResult | None = None
 
     if divergencia.kind in POR_CONTRIBUCION and not base_en_disputa:
         # Este monto NO sale del motor fiscal: sale de los dos importes que el
@@ -256,11 +257,30 @@ def _a_hallazgo(
             divisa = divisa_de_la_partida
             direccion = "OMISION" if monto > 0 else "SOBREPAGO" if monto < 0 else "SIN_DIFERENCIA"
             alcance = ALCANCE_CONTRIBUCION
+            campo = divergencia.field or "contribucion"
+            calculo = MonetaryResult(
+                formula=f"{campo}_esperado - {campo}_declarado",
+                inputs={
+                    f"{campo}_esperado": str(divergencia.expected_value),
+                    f"{campo}_declarado": str(divergencia.declared_value),
+                    **(
+                        {f"{campo}_esperado.derivacion": divergencia.derivation}
+                        if divergencia.derivation
+                        else {}
+                    ),
+                },
+                result=str(monto),
+                currency=divisa,
+                assumptions=tuple(supuestos),
+                source_ids=tuple(str(s) for s in divergencia.source_ids),
+                is_simulation=is_simulation,
+            )
     elif impacto is not None:
         monto = impacto.difference.amount
         divisa = impacto.difference.currency
         direccion = impacto.direction
         alcance = ALCANCE_LINEA
+        calculo = impacto.as_result(tuple(supuestos))
 
     severidad, motivo = adjust(divergencia.severity, amount=monto)
 
@@ -272,6 +292,7 @@ def _a_hallazgo(
         impact_currency=divisa,
         impact_direction=direccion,
         impact_scope=alcance,
+        calculation=calculo,
         evidences=tuple(evidences),
         assumptions=tuple(supuestos),
         is_simulation=is_simulation,

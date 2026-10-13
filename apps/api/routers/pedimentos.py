@@ -497,7 +497,7 @@ def _dta(valor: Decimal, peticion: ReviewRequest) -> Decimal | None:
 
 def _fiscal_esperado(
     partida: PedimentoItem, fecha: date, catalogo: TariffCatalogRepository, peticion: ReviewRequest
-) -> tuple[Decimal | None, Decimal | None]:
+) -> tuple[Decimal | None, Decimal | None, dict[str, str]]:
     """IGI e IVA que deberían haberse declarado. `None` cuando no se puede saber.
 
     El IGI sale de la tarifa de la fracción DECLARADA: no hace falta clasificar
@@ -507,18 +507,30 @@ def _fiscal_esperado(
     partida lo declara, en vez de compararse contra un número supuesto.
     """
     if partida.customs_value is None or not partida.declared_fraction_code:
-        return None, None
+        return None, None, {}
 
-    tasa = catalogo.igi_rate(on_date=fecha, fraction_code=partida.declared_fraction_code)
+    fraccion = partida.declared_fraction_code
+    tasa = catalogo.igi_rate(on_date=fecha, fraction_code=fraccion)
     if tasa is None:
-        return None, None
-    igi = (partida.customs_value * tasa).quantize(_CENTAVOS)
+        return None, None, {}
+    valor = partida.customs_value
+    igi = (valor * tasa).quantize(_CENTAVOS)
+    # Cómo sale cada importe, con sus entradas (§22): viaja hasta el hallazgo.
+    derivaciones = {
+        "igi_amount": f"valor_aduana({valor}) × tasa_IGI {fraccion} ({tasa}) = {igi}",
+    }
 
-    dta = _dta(partida.customs_value, peticion)
+    dta = _dta(valor, peticion)
     if dta is None or peticion.iva_rate is None:
-        return igi, None
-    base = partida.customs_value + igi + dta.quantize(_CENTAVOS)
-    return igi, (base * peticion.iva_rate).quantize(_CENTAVOS)
+        return igi, None, derivaciones
+    dta = dta.quantize(_CENTAVOS)
+    base = valor + igi + dta
+    iva = (base * peticion.iva_rate).quantize(_CENTAVOS)
+    derivaciones["vat_amount"] = (
+        f"(valor_aduana({valor}) + IGI({igi}) + DTA({dta})) × tasa_IVA ({peticion.iva_rate})"
+        f" = {iva}"
+    )
+    return igi, iva, derivaciones
 
 
 def _espejo_documental(
@@ -533,7 +545,7 @@ def _espejo_documental(
     valor, moneda = _valor_esperado(session, partida, fecha)
     tipo_de_cambio = _tipo_de_cambio_esperado(session, partida, fecha)
     aplica_cuota, monto_cuota = _cuota_compensatoria_esperada(session, partida, fecha)
-    igi, iva = _fiscal_esperado(partida, fecha, catalogo, peticion)
+    igi, iva, derivaciones = _fiscal_esperado(partida, fecha, catalogo, peticion)
     # `None` y `False` dicen cosas distintas: sin catálogo cargado no se puede
     # afirmar que una unidad no exista, y acusar ahí sería culpar al pedimento
     # de un hueco nuestro.
@@ -545,6 +557,7 @@ def _espejo_documental(
     return {
         "igi_amount": igi,
         "vat_amount": iva,
+        "derivations": derivaciones,
         "declared_unit_is_known": unidad_conocida,
         "country_of_origin": pais,
         "origin_source": ORIGEN_DEL_PROVEEDOR if pais else None,

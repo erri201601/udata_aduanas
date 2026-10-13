@@ -36,7 +36,7 @@ import re
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Any, Final
 
 import sqlalchemy as sa
 from core.audit import total_por_partida
@@ -103,6 +103,9 @@ class DivergenciaRead(BaseModel):
     Presentarlos con la misma etiqueta haría que un importe condicionado se
     leyera como una deuda cierta.
     """
+    impact_calculation: dict[str, Any] | None = None
+    """Cómo se llegó al importe (§22): fórmula, entradas, versión, supuestos,
+    fuentes. `None` sin importe, o en hallazgos anteriores al 13-oct."""
     is_simulation: bool = False
 
 
@@ -393,6 +396,7 @@ def espejo(pedimento_id: uuid.UUID, session: SessionDep) -> PedimentoEspejo:
                 impact_amount=h.impact_amount,
                 impact_amount_currency=h.impact_amount_currency,
                 impact_scope=h.impact_scope,
+                impact_calculation=h.impact_calculation,
                 is_simulation=h.is_simulation,
             )
             for h in propios

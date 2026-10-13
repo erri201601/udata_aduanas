@@ -1009,6 +1009,10 @@ export interface components {
             status: string;
             /** Fraction Code */
             fraction_code?: string | null;
+            /** Nico Code */
+            nico_code?: string | null;
+            /** Nico Motivo */
+            nico_motivo?: string | null;
             /** Confidence */
             confidence?: string | null;
             /** Requires Human Review */
@@ -1273,6 +1277,10 @@ export interface components {
             impact_amount_currency?: string | null;
             /** Impact Scope */
             impact_scope?: string | null;
+            /** Impact Calculation */
+            impact_calculation?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Is Simulation
              * @default false
@@ -2606,6 +2614,10 @@ export interface components {
             impact_amount_currency?: string | null;
             /** Impact Scope */
             impact_scope?: string | null;
+            /** Impact Calculation */
+            impact_calculation?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Is Simulation
              * @default false

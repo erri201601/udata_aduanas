@@ -1190,6 +1190,14 @@ code {
 
 .divergencia__razon { margin: 0.35rem 0; font-size: 0.82rem; line-height: 1.55; max-width: 72ch; }
 .divergencia__monto { margin: 0.35rem 0 0; font-size: 0.78rem; color: var(--tenue); }
+.calculo { margin: 0.35rem 0 0; font-size: 0.78rem; }
+.calculo summary { cursor: pointer; color: var(--tenue); }
+.calculo p { margin: 0.3rem 0; }
+.calculo__entradas { margin: 0.3rem 0; display: grid; gap: 0.15rem; }
+.calculo__entradas div { display: grid; grid-template-columns: minmax(10rem, max-content) 1fr; gap: 0.6rem; }
+.calculo__entradas dt { color: var(--tenue); }
+.calculo__entradas dd { margin: 0; overflow-wrap: anywhere; }
+.calculo__nota { color: var(--tenue); }
 
 .huecos > li {
   border-left: 2px solid var(--aviso);

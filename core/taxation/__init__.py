@@ -65,6 +65,7 @@ from core.taxation.calculation import (
     CALCULATION_VERSION,
     DivergenceImpact,
     LineItem,
+    MonetaryResult,
     TaxCalculation,
     empty_calculation,
 )
@@ -79,6 +80,7 @@ __all__ = [
     "CurrencyMismatchError",
     "DivergenceImpact",
     "LineItem",
+    "MonetaryResult",
     "Money",
     "TaxCalculation",
     "TaxRates",
