@@ -1,0 +1,15 @@
+[Unit]
+Description=ADUANERO OS — vigilante del DOF, dos veces al día
+
+[Timer]
+# `sumario.xml` sólo enseña la edición más reciente y no admite fecha: lo que
+# no se lee ese día no se recupera desde aquí. Dos pasadas cubren la edición
+# matutina y una vespertina o extraordinaria.
+OnCalendar=*-*-* 09:30
+OnCalendar=*-*-* 21:30
+# Si la máquina estaba apagada a esa hora, corre al encenderla.
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
