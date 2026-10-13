@@ -720,6 +720,91 @@ class CompensatoryDuty(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Reg
     columnas de arriba. Mismo criterio que `FractionNomRequirement.scope_note`."""
 
 
+class ProsecRate(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base):
+    """Tasa de un sector del Decreto PROSEC para una fracción (ADR 0011).
+
+    Mismo patrón que `FractionNomRequirement` y `CompensatoryDuty`: clave
+    natural + vigencia + procedencia, sin lógica en la tabla. Lo lee
+    `database/repositories/programas.py` para el Opportunity Finder (§23).
+
+    UNA FRACCIÓN PUEDE ESTAR EN VARIOS SECTORES, CON TASAS DISTINTAS
+
+    Por eso la clave natural es `(sector_code, fraction_code, valid_from)` y no
+    la fracción sola. Cuál de los sectores aplica depende del importador —en
+    qué sector está inscrito—, y eso no es un dato de esta tabla.
+
+    QUE ESTÉ AQUÍ NO DICE QUE EL IMPORTADOR PUEDA USARLO
+
+    Hace falta que esté inscrito en el programa de ese sector, con registro
+    vigente en la fecha de la operación. Por eso lo que sale de esta tabla es
+    siempre una oportunidad `POTENTIAL` con condiciones, nunca un ahorro.
+    """
+
+    __tablename__ = "prosec_rates"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "sector_code", "fraction_code", "valid_from", name="uq_prosec_rates_fila"
+        ),
+        sa.Index("ix_prosec_rates_vigencia", "fraction_code", "valid_from", "valid_to"),
+        {"schema": _SCHEMA},
+    )
+
+    sector_code: Mapped[str] = mapped_column(sa.String(8), nullable=False)
+    """El inciso del artículo 4 del Decreto PROSEC tal como lo escribe el
+    decreto («I», «XIX»…). Es el código que usan `regla_8a_fractions` y
+    `operational.clients.prosec_sector_codes`."""
+
+    sector_name: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    """«Industria Eléctrica», tal como lo nombra el decreto."""
+
+    fraction_code: Mapped[str] = mapped_column(sa.String(8), nullable=False)
+    """Ocho dígitos, sin puntos — como `tariff_fractions.code`."""
+
+    igi_rate: Mapped[Decimal] = mapped_column(sa.Numeric(9, 6), nullable=False)
+    """Arancel ad valorem del sector, como fracción (0.05, no 5) — misma
+    convención que `tariff_fractions.igi_rate`. «Ex.» (exento) es 0."""
+
+    is_partial: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.false())
+    """La fracción aparece acotada: el beneficio cubre sólo parte de ella.
+    `scope_note` dice cuál. Una fila parcial no se presenta sin la acotación."""
+
+    scope_note: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    """La acotación íntegra, tal como la escribe el decreto. `None` = toda la
+    fracción."""
+
+
+class Regla8aFraction(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base):
+    """La fracción del capítulo 98 que corresponde a cada sector para la Regla 8ª (ADR 0011).
+
+    La Regla 8ª de las complementarias de la LIGIE permite importar las
+    mercancías de un sector por una fracción 9802.00.xx. La TASA de esa
+    fracción ya está en `tariff_fractions` —la LIGIE la publica— y no se copia
+    aquí: dos copias de una tasa acaban diciendo cosas distintas. Esta tabla
+    sólo dice qué fracción 9802 corresponde a qué sector.
+    """
+
+    __tablename__ = "regla_8a_fractions"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "sector_code", "fraction_code", "valid_from", name="uq_regla_8a_fractions_fila"
+        ),
+        sa.Index("ix_regla_8a_fractions_vigencia", "sector_code", "valid_from", "valid_to"),
+        {"schema": _SCHEMA},
+    )
+
+    sector_code: Mapped[str] = mapped_column(sa.String(8), nullable=False)
+    """El mismo código de sector que `prosec_rates.sector_code`."""
+
+    sector_name: Mapped[str] = mapped_column(sa.Text, nullable=False)
+
+    fraction_code: Mapped[str] = mapped_column(sa.String(8), nullable=False)
+    """La fracción 9802.00.xx, ocho dígitos sin puntos."""
+
+    scope_note: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    """Exclusiones o acotaciones que la LIGIE o la autorización fijan para el
+    sector, íntegras. `None` = no se conocen, no «no hay»."""
+
+
 class RegulatoryEvent(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base):
     """Salida del DOF Regulatory Watcher: una publicación relevante y su alcance."""
 

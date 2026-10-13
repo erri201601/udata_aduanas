@@ -122,13 +122,19 @@ def find_opportunities(
     extra: Sequence[Opportunity] = (),
     currency: str | None = None,
     is_simulation: bool = True,
+    programs_evaluated: bool = False,
+    notes: Sequence[str] = (),
 ) -> OpportunityReport:
     """Reúne las oportunidades de una operación.
 
-    `extra` son las que el llamante ya cuantificó con `from_preferential_rate`,
-    porque requieren datos que el motor no tiene: qué sectores PROSEC aplican a
-    la fracción, qué tratados cubren el origen. Cuando esos catálogos existan
-    —hoy no están cargados— esto los consultará directamente.
+    `extra` son las que el llamante ya construyó con `from_programs` o
+    `from_preferential_rate`, porque requieren datos que el motor no tiene: qué
+    sectores PROSEC aplican a la fracción, qué tratados cubren el origen.
+
+    `programs_evaluated` dice si se consultaron los catálogos de PROSEC y
+    Regla 8ª (ADR 0011). Sin consultarlos, que no haya oportunidades de
+    programa no significa nada, y la nota lo dice. `notes` son las que el
+    llamante añade: por ejemplo, que no consta el sector del importador.
     """
     oportunidades: list[Opportunity] = []
     notas: list[str] = []
@@ -139,8 +145,14 @@ def find_opportunities(
         notas.append("Sin informe de auditoría: no se buscaron sobrepagos.")
 
     oportunidades.extend(extra)
+    notas.extend(notes)
 
-    if not any(o.kind is not OpportunityKind.OVERPAYMENT for o in oportunidades):
+    if programs_evaluated:
+        notas.append(
+            "Las preferencias arancelarias por tratado no se evaluaron: no están "
+            "cargadas. Que no aparezcan aquí NO significa que no existan."
+        )
+    elif not any(o.kind is not OpportunityKind.OVERPAYMENT for o in oportunidades):
         notas.append(
             "PROSEC, Regla 8ª y preferencias arancelarias no se evaluaron: sus "
             "catálogos no están cargados. Que no aparezcan aquí NO significa que "

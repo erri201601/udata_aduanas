@@ -64,11 +64,13 @@ from core.opportunity.engine import (
     from_preferential_rate,
 )
 from core.opportunity.kinds import CONDITIONS, SELF_QUANTIFIABLE, OpportunityKind
+from core.opportunity.programs import OpcionDePrograma, from_programs
 from core.opportunity.types import Opportunity, OpportunityReport, build
 
 __all__ = [
     "CONDITIONS",
     "SELF_QUANTIFIABLE",
+    "OpcionDePrograma",
     "Opportunity",
     "OpportunityKind",
     "OpportunityReport",
@@ -76,4 +78,5 @@ __all__ = [
     "find_opportunities",
     "from_audit",
     "from_preferential_rate",
+    "from_programs",
 ]

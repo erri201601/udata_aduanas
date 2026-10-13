@@ -39,8 +39,9 @@ def _business_tables() -> list[sa.Table]:
 # ── Estructura ──────────────────────────────────────────────────────────────
 
 
-def test_hay_36_entidades() -> None:
-    assert len(_tables()) == 36
+def test_hay_38_entidades() -> None:
+    # +2 el 13-oct: prosec_rates y regla_8a_fractions (ADR 0011).
+    assert len(_tables()) == 38
 
 
 def test_todas_las_tablas_en_los_tres_esquemas() -> None:

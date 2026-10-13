@@ -118,14 +118,26 @@ class OpportunityReport(BaseModel):
         como ahorro esperado sería lo que el §23 prohíbe, y a mayor escala:
         un total suena más firme que cada parte.
         """
+        # Por partida se toma el MAYOR, no la suma: PROSEC, Regla 8ª y un
+        # sobrepago sobre la misma partida son caminos distintos al mismo
+        # dinero —se paga el IGI una vez—, y sumarlos prometería cobrarlo dos
+        # veces. Las oportunidades sin partida se suman tal cual.
+        #
         # La condición se escribe entera y no `if o.is_quantified` porque una
         # property no estrecha el Optional para el verificador de tipos, y sumar
         # una lista que puede contener None es justo el error que evita.
-        montos = [
-            o.estimated_saving
-            for o in self.opportunities
-            if o.estimated_saving is not None and o.estimated_saving != 0
-        ]
+        por_partida: dict[int, Decimal] = {}
+        sueltas: list[Decimal] = []
+        for o in self.opportunities:
+            if o.estimated_saving is None or o.estimated_saving == 0:
+                continue
+            if o.line_number is None:
+                sueltas.append(o.estimated_saving)
+            else:
+                previo = por_partida.get(o.line_number)
+                if previo is None or abs(o.estimated_saving) > abs(previo):
+                    por_partida[o.line_number] = o.estimated_saving
+        montos = [*por_partida.values(), *sueltas]
         return sum(montos, Decimal("0")) if montos else None
 
     @property
