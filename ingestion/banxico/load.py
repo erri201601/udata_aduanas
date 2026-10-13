@@ -78,6 +78,31 @@ def _close_previous_rate_versions(session: Session, *, currency: str, new_valid_
         session.flush()
 
 
+def _valid_to_para(session: Session, *, currency: str, new_valid_from: date) -> date | None:
+    """`valid_to` de la fila que se va a insertar en `new_valid_from`.
+
+    Bug real encontrado el 13-oct-2026: un backfill que carga una fecha
+    MÁS VIEJA que la que ya es la más reciente (dos corridas, 6 y 7-oct,
+    que no cubrieron el mismo rango) insertaba la fila vieja con
+    `valid_to=NULL` -- "la más reciente" -- aunque ya existiera una fila
+    posterior. `_close_previous_rate_versions` sólo mira hacia ATRÁS
+    (cierra lo que ya estaba abierto); a la fila que se inserta ahora
+    nadie le decía si YA nació cerrada porque algo más nuevo existe.
+
+    `None` si `new_valid_from` sigue siendo la fecha más reciente de
+    `currency` -- el caso normal, creciendo hacia adelante.
+    """
+    siguiente = (
+        session.query(ExchangeRate)
+        .filter(ExchangeRate.currency == currency, ExchangeRate.valid_from > new_valid_from)
+        .order_by(ExchangeRate.valid_from.asc())
+        .first()
+    )
+    if siguiente is None:
+        return None
+    return siguiente.valid_from - timedelta(days=1)
+
+
 def load_exchange_rates(
     session: Session,
     *,
@@ -115,6 +140,9 @@ def load_exchange_rates(
                 data_origin="OFFICIAL",
                 source_id=source.id,
                 valid_from=parsed.rate_date,
+                valid_to=_valid_to_para(
+                    session, currency=parsed.currency, new_valid_from=parsed.rate_date
+                ),
                 published_at=parsed.rate_date,
                 source_url=DOF_INDICADORES_URL,
                 source_document="Tipo de cambio FIX (Banxico SF43718), vía DOF",
@@ -126,3 +154,31 @@ def load_exchange_rates(
 
     session.flush()
     return insertadas
+
+
+def cerrar_vigencias_huerfanas(session: Session) -> int:
+    """Repara filas YA cargadas con el bug del 13-oct-2026: `valid_to=NULL`
+    aunque exista una fila posterior de la misma `currency` -- backfills
+    anteriores a este fix pudieron dejarlas así (ver `_valid_to_para`).
+
+    No es un `--reset`: no toca ninguna fila cuyo `valid_to` ya sea
+    correcto, y no inventa ninguna fecha que no sea el `valid_from - 1
+    día` de la fila que de verdad la sucede. Devuelve cuántas se
+    corrigieron.
+    """
+    corregidas = 0
+    for moneda in session.query(ExchangeRate.currency).distinct():
+        (currency,) = moneda
+        abiertas = (
+            session.query(ExchangeRate)
+            .filter(ExchangeRate.currency == currency, ExchangeRate.valid_to.is_(None))
+            .all()
+        )
+        for fila in abiertas:
+            correcto = _valid_to_para(session, currency=currency, new_valid_from=fila.valid_from)
+            if correcto is not None:
+                fila.valid_to = correcto
+                corregidas += 1
+    if corregidas:
+        session.flush()
+    return corregidas
