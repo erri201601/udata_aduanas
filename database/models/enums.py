@@ -89,6 +89,14 @@ LEGAL_DOCUMENT_KIND: Final = (
 )
 
 # Naturaleza de un evento del DOF Regulatory Watcher.
+#: De qué depende que un identificador del Apéndice 8 sea obligatorio (ADR 0012).
+#: Sólo lo que el Canonical Model ya sabe de una operación: su clave de
+#: pedimento, la fracción o la fracción con su NICO.
+IDENTIFIER_CONDITION: Final = ("PEDIMENTO_KEY", "FRACTION", "NICO")
+
+#: Dónde se declara un identificador: en el pedimento (G) o en la partida (P).
+IDENTIFIER_LEVEL: Final = ("G", "P")
+
 REGULATORY_EVENT_KIND: Final = (
     "PUBLICATION",
     "AMENDMENT",

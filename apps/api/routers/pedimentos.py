@@ -83,6 +83,7 @@ from database.models import (
 from database.repositories import save_review
 from database.repositories.compensatory_duties import cuotas_vigentes, normalizar_nombre
 from database.repositories.exchange import tasa_vigente
+from database.repositories.identificadores import cargar_reglas
 from database.repositories.invoices import divisa_de_la_factura
 from database.repositories.preguntas import dictamen_de
 from database.repositories.programas import cargar_programas
@@ -194,6 +195,9 @@ def revisar(
     # PROSEC y Regla 8ª (ADR 0011). `None` = los catálogos no están cargados, y
     # el informe lo dice en vez de callar.
     programas = cargar_programas(session, on_date=fecha, catalogo=catalogo)
+    # Identificadores exigidos (ADR 0012). `None` = no hay reglas cargadas, y
+    # el Espejo lo dice como laguna en vez de dar la partida por comprobada.
+    reglas = cargar_reglas(session, on_date=fecha)
     cliente = session.get(Client, pedimento.client_id)
     sectores = (
         frozenset(cliente.prosec_sector_codes)
@@ -203,6 +207,18 @@ def revisar(
 
     for partida in partidas:
         esperada = _construir_espejo(session, partida, fecha, catalogo, peticion)
+        if esperada is not None and reglas is not None:
+            exigidos = reglas.para(
+                pedimento_key=pedimento.pedimento_key,
+                fraction_code=partida.declared_fraction_code,
+                nico_code=partida.declared_nico_code,
+            )
+            esperada = esperada.model_copy(
+                update={
+                    "required_identifiers": exigidos.de_la_partida,
+                    "required_document_identifiers": exigidos.del_documento,
+                }
+            )
         if esperada is None:
             sin_espejo += 1
 
@@ -217,7 +233,11 @@ def revisar(
 
         lineas.append(
             LineInput(
-                declared=_declarada(partida, exchange_rate=pedimento.exchange_rate),
+                declared=_declarada(
+                    partida,
+                    exchange_rate=pedimento.exchange_rate,
+                    document_identifiers=pedimento.identifiers,
+                ),
                 expected=esperada,
                 transaction_value=valor,
                 declared_rates=declaradas,
@@ -248,7 +268,12 @@ def revisar(
 # ── Armado de cada partida ───────────────────────────────────────────────────
 
 
-def _declarada(partida: PedimentoItem, *, exchange_rate: Decimal | None) -> DeclaredItem:
+def _declarada(
+    partida: PedimentoItem,
+    *,
+    exchange_rate: Decimal | None,
+    document_identifiers: dict[str, Any] | None = None,
+) -> DeclaredItem:
     """La partida tal como viene en el pedimento, sin interpretarla.
 
     `exchange_rate` es del PEDIMENTO (`Pedimento.exchange_rate`), no de la
@@ -265,6 +290,7 @@ def _declarada(partida: PedimentoItem, *, exchange_rate: Decimal | None) -> Decl
         customs_value_currency=partida.customs_value_currency,
         applied_nom_codes=tuple(partida.applied_nom_codes or ()),
         identifiers=dict(partida.identifiers or {}),
+        document_identifiers=dict(document_identifiers or {}),
         unit=partida.commercial_unit,
         igi_amount=partida.igi_amount,
         vat_amount=partida.vat_amount,
@@ -714,9 +740,9 @@ def _construir_espejo(
         # exige una fracción. Las acotadas van aparte, a la vista de una
         # persona — ver `_nom_exigidas`.
         required_nom_codes=_nom_exigidas(session, fecha, codigo)[0],
-        # Los identificadores siguen en `None`: el Apéndice 8 cargado es el
-        # CATÁLOGO de códigos, y saber cuáles existen no dice cuáles exige una
-        # operación. Decir «no exige ninguno» sería afirmar sin fuente.
+        # Los identificadores se ponen en `revisar`, con las reglas del
+        # pedimento entero (ADR 0012): dependen de su clave, que la partida no
+        # conoce. Aquí `None` = no se sabe todavía.
         required_identifiers=None,
         **documental,
     )
