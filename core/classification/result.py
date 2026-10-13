@@ -54,6 +54,17 @@ class ClassificationOutcome(BaseModel):
 
     facts_used: dict[str, str] = Field(default_factory=dict)
 
+    nico_code: str | None = None
+    """El NICO de la fracción, cuando la LIGIE no deja nada que elegir (§19).
+
+    Sólo se llena si la fracción vigente tiene UN único NICO. Con varios, elegir
+    exige distinguir por materia, uso o presentación, y no hay regla medida que
+    lo haga: se deja en `None` y `nico_reason` dice por qué. Nunca se rellena
+    con el «00» por costumbre."""
+
+    nico_reason: str | None = None
+    """Por qué hay o no hay NICO. Va al razonamiento persistido."""
+
     @property
     def status(self) -> RGIStatus:
         return self.trace.final_status
@@ -67,6 +78,11 @@ class ClassificationOutcome(BaseModel):
         defendible", y sólo la segunda sirve para declarar un pedimento.
         """
         return None if self.blocked_by else self.trace.resolved_code
+
+    @property
+    def nico(self) -> str | None:
+        """El NICO, sólo si la fracción es defendible. Sin fracción no hay NICO."""
+        return self.nico_code if self.code else None
 
     @property
     def confidence(self) -> Decimal | None:
@@ -97,6 +113,7 @@ class ClassificationOutcome(BaseModel):
         return {
             "status": self.status.value,
             "fraction_code": self.code,
+            "nico_code": self.nico,
             "reasoning": " · ".join(
                 p.reasoning_summary for p in self.trace.steps if p.reasoning_summary
             ),
@@ -116,6 +133,7 @@ class ClassificationOutcome(BaseModel):
         lineas = [f"Estado: {self.status.value}"]
         if self.code:
             lineas.append(f"Fracción: {self.code}")
+            lineas.append(f"NICO: {self.nico or '—'} ({self.nico_reason})")
         if self.blocked_by:
             lineas.append(f"NO DEFENDIBLE: {self.blocked_by}")
         lineas += [f"  {p.rule_id}: {p.reasoning_summary}" for p in self.trace.steps]
