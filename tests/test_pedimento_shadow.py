@@ -728,7 +728,7 @@ def test_los_identificadores_no_se_atribuyen_al_apendice_8() -> None:
 
     razones = _lagunas(ExpectedItem(line_number=1, required_identifiers=None), None)
 
-    assert any("reglas de la RGCE" in r for r in razones)
+    assert any("no hay reglas vigentes" in r for r in razones)
     assert not any("falta cargar el Apéndice 8" in r for r in razones)
 
 

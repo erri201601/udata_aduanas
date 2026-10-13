@@ -218,6 +218,9 @@ class Pedimento(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, SyntheticM
     is_simulation: Mapped[bool] = mapped_column(
         sa.Boolean, nullable=False, server_default=sa.false()
     )
+    identifiers: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    """Identificadores declarados a nivel pedimento (nivel `G` del Apéndice 8),
+    clave → complementos. Los de partida van en `pedimento_items.identifiers`."""
 
 
 class PedimentoItem(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, SyntheticMixin, Base):

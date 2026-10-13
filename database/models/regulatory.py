@@ -18,6 +18,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from database.models.base import Base
 from database.models.enums import (
+    IDENTIFIER_CONDITION,
+    IDENTIFIER_LEVEL,
     LEGAL_DOCUMENT_KIND,
     REGULATORY_EVENT_KIND,
     SOURCE_KIND,
@@ -439,6 +441,70 @@ class PedimentoIdentifier(
     level: Mapped[str | None] = mapped_column(sa.String(1), nullable=True)
     label: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     supuestos_de_aplicacion: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+
+
+class PedimentoIdentifierRequirement(
+    UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base
+):
+    """Cuándo una operación EXIGE un identificador del Apéndice 8 (ADR 0012).
+
+    `pedimento_identifiers` es el catálogo: qué claves existen. Esta tabla es
+    la regla: qué hecho de la operación obliga a declarar cada una. Mismo
+    patrón que `FractionNomRequirement` (ADR 0003): clave natural, vigencia y
+    procedencia, sin lógica en la tabla.
+
+    SÓLO LO ESTRUCTURABLE
+
+    El reconocimiento del 6-oct (`docs/RECONOCIMIENTO_APENDICE_8.md`) leyó los
+    168 «Supuestos de aplicación»: como mucho 12 dependen de algo que el
+    Canonical Model conoce —la clave de pedimento o una fracción/NICO—. El
+    resto depende de hechos del despacho (¿hubo candado?, ¿despacho
+    anticipado?) que no están en ningún campo. Esos NO van aquí: sin campo que
+    los capture, una fila sería una regla que nadie puede evaluar.
+
+    Que ninguna fila aplique a una operación NO dice que no exija ningún
+    identificador: dice que no exige ninguno de los estructurables.
+    """
+
+    __tablename__ = "pedimento_identifier_requirements"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "identifier_code",
+            "condition_kind",
+            "condition_value",
+            "valid_from",
+            name="uq_pedimento_identifier_requirements_fila",
+        ),
+        sa.Index(
+            "ix_pedimento_identifier_requirements_vigencia",
+            "condition_kind",
+            "condition_value",
+            "valid_from",
+            "valid_to",
+        ),
+        {"schema": _SCHEMA},
+    )
+
+    identifier_code: Mapped[str] = mapped_column(sa.String(2), nullable=False)
+    """La clave del Apéndice 8, p. ej. «V1»."""
+
+    identifier_level: Mapped[str] = mapped_column(
+        check_enum(IDENTIFIER_LEVEL, "identifier_level"), nullable=False
+    )
+    """Dónde se declara: `G` en el pedimento, `P` en la partida. Obligatorio:
+    sin saber dónde se declara no se puede comprobar, y una fila que no se
+    puede comprobar no se carga."""
+
+    condition_kind: Mapped[str] = mapped_column(
+        check_enum(IDENTIFIER_CONDITION, "identifier_condition"), nullable=False
+    )
+    condition_value: Mapped[str] = mapped_column(sa.String(10), nullable=False)
+    """`PEDIMENTO_KEY`: la clave del Apéndice 2 («V1»). `FRACTION`: ocho
+    dígitos. `NICO`: los ocho de la fracción y los dos del NICO, juntos
+    («9803000101»)."""
+
+    scope_note: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    """El supuesto de aplicación íntegro, tal como lo escribe el Apéndice 8."""
 
 
 class NomenclatureSynonym(

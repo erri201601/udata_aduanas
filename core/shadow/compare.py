@@ -262,6 +262,19 @@ def compare_item(declared: DeclaredItem, expected: ExpectedItem) -> list[Diverge
                 ident,
                 f"Falta el identificador {ident} que exige la operación.",
             )
+    # Los de nivel pedimento se declaran una vez por documento. Salen en cada
+    # partida con el mismo texto, como el tipo de cambio, y quien los presenta
+    # los cuenta una vez: el campo `document_identifiers` es lo que los
+    # distingue (`CAMPOS_DEL_DOCUMENTO` en el tablero).
+    for ident in expected.required_document_identifiers or ():
+        if ident not in declared.document_identifiers:
+            emitir(
+                DivergenceType.IDENTIFIER_MISMATCH,
+                CAMPO_IDENTIFICADORES_DEL_DOCUMENTO,
+                ", ".join(sorted(declared.document_identifiers)) or None,
+                ident,
+                f"Falta el identificador {ident} que la operación exige en el pedimento.",
+            )
 
     # ── Tipo de cambio ───────────────────────────────────────────────────────
     # El mismo valor se repite en cada línea del pedimento (es del documento,
@@ -386,6 +399,10 @@ def _depende_de_clasificar(divergencia: Divergence, expected: ExpectedItem) -> b
 #: una copia escrita a mano del texto se desviaría en silencio.
 COMPROBACION_DE_FRACCION: Final = "fracción arancelaria"
 
+#: El `field` de un identificador que falta en el PEDIMENTO y no en la partida.
+#: Es lo que permite contarlo una vez por documento (ADR 0012).
+CAMPO_IDENTIFICADORES_DEL_DOCUMENTO: Final = "document_identifiers"
+
 _COMPROBACIONES: Final[tuple[tuple[str, str], ...]] = (
     (COMPROBACION_DE_FRACCION, "fraction_code"),
     ("NICO", "nico"),
@@ -432,6 +449,12 @@ def comprobaciones_hechas(expected: ExpectedItem) -> tuple[str, ...]:
             # Con la expectativa firme o con el catálogo basta: el catálogo
             # solo ya permite afirmar que un NICO declarado NO existe.
             if expected.nico_code or expected.valid_nico_codes:
+                hechas.append(nombre)
+        elif campo == "required_identifiers":
+            if (
+                expected.required_identifiers is not None
+                or expected.required_document_identifiers is not None
+            ):
                 hechas.append(nombre)
         elif getattr(expected, campo) is not None:
             hechas.append(nombre)
@@ -532,11 +555,11 @@ def _lagunas(expected: ExpectedItem, declared: DeclaredItem | None = None) -> li
                 f"no se conoce qué NOM exige la fracción {expected.fraction_code}: no hay "
                 "correlación fracción → NOM (Anexo 2.4.1) vigente en la fecha de la operación"
             )
-    if expected.required_identifiers is None:
+    if expected.required_identifiers is None and expected.required_document_identifiers is None:
         razones.append(
             "no se conocen los identificadores que exige la operación: el catálogo del "
-            "Apéndice 8 está cargado, pero no las reglas de la RGCE que dicen cuáles exige "
-            "cada operación"
+            "Apéndice 8 está cargado, pero no hay reglas vigentes que digan cuáles exige "
+            "según la clave de pedimento, la fracción o el NICO (ADR 0012)"
         )
     return razones
 

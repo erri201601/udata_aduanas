@@ -34,6 +34,7 @@ from decimal import Decimal
 
 import sqlalchemy as sa
 from core.audit import ALCANCE_CONTRIBUCION
+from core.shadow.compare import CAMPO_IDENTIFICADORES_DEL_DOCUMENTO
 from database.models import (
     ClassificationDecision,
     OpportunityFinding,
@@ -96,6 +97,11 @@ class Auditoria(BaseModel):
 #: tablero cuentan una vez por pedimento. El tipo de cambio se declara una vez
 #: por documento.
 HALLAZGOS_DEL_DOCUMENTO: tuple[str, ...] = ("EXCHANGE_RATE_MISMATCH",)
+
+#: Campos que, en cualquier tipo de hallazgo, son del documento: un
+#: identificador de nivel pedimento que falta (ADR 0012) es `IDENTIFIER_MISMATCH`
+#: igual que uno de partida, y lo que lo distingue es el campo.
+CAMPOS_DEL_DOCUMENTO: tuple[str, ...] = (CAMPO_IDENTIFICADORES_DEL_DOCUMENTO,)
 
 
 class Hallazgos(BaseModel):
@@ -463,16 +469,21 @@ def tablero(session: SessionDep) -> Dashboard:
     # CRÍTICOS», y unos 180 eran el mismo dato repetido partida por partida.
     # Es la primera pantalla de la demo. El Espejo ya lo enseña una vez «del
     # pedimento entero» (#224); el tablero cuenta igual.
-    de_partida = sa.and_(vigentes, RiskFinding.finding_type.notin_(HALLAZGOS_DEL_DOCUMENTO))
+    es_del_documento = sa.or_(
+        RiskFinding.finding_type.in_(HALLAZGOS_DEL_DOCUMENTO),
+        sa.func.coalesce(RiskFinding.field, "").in_(CAMPOS_DEL_DOCUMENTO),
+    )
+    de_partida = sa.and_(vigentes, sa.not_(es_del_documento))
     del_documento = (
         sa.select(
             RiskFinding.pedimento_id,
             RiskFinding.finding_type,
+            RiskFinding.field,
             RiskFinding.severity,
             RiskFinding.declared_value,
             RiskFinding.expected_value,
         )
-        .where(vigentes, RiskFinding.finding_type.in_(HALLAZGOS_DEL_DOCUMENTO))
+        .where(vigentes, es_del_documento)
         .distinct()
         .subquery()
     )

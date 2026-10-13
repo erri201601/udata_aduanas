@@ -37,6 +37,10 @@ class DeclaredItem(BaseModel):
     customs_value_currency: str | None = None
     applied_nom_codes: tuple[str, ...] = ()
     identifiers: dict[str, Any] = Field(default_factory=dict)
+    """Identificadores declarados en la PARTIDA (nivel `P` del Apéndice 8)."""
+    document_identifiers: dict[str, Any] = Field(default_factory=dict)
+    """Identificadores declarados en el PEDIMENTO (nivel `G`). Se repiten igual
+    en cada línea, como `exchange_rate`: son del documento, no de la partida."""
     sku: str | None = None
 
     unit: str | None = None
@@ -182,11 +186,17 @@ class ExpectedItem(BaseModel):
     """
 
     required_identifiers: tuple[str, ...] | None = None
-    """Identificadores del Anexo 22 que la operación exige. `None` = no se sabe.
+    """Identificadores de PARTIDA (nivel `P`) que la operación exige. `None` =
+    no se sabe.
 
-    Misma semántica que `required_nom_codes`. El Apéndice 8 del Anexo 22 —el
-    catálogo de identificadores— está pendiente de cargar.
+    Salen de `regulatory.pedimento_identifier_requirements` (ADR 0012): sólo
+    las reglas que dependen de la clave de pedimento, la fracción o el NICO.
+    `()` dice que no exige ninguno DE ESOS, no que no exija ninguno: los que
+    dependen de hechos del despacho no están estructurados.
     """
+    required_document_identifiers: tuple[str, ...] | None = None
+    """Identificadores de PEDIMENTO (nivel `G`) que la operación exige. Misma
+    semántica que `required_identifiers`."""
     sku: str | None = None
 
     confidence: Decimal | None = None
