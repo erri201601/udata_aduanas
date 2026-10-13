@@ -390,7 +390,10 @@ class RiskFinding(
     #: Cómo se llegó a `impact_amount` (§22): fórmula, entradas, resultado,
     #: divisa, versión del cálculo, supuestos, fuentes y si es simulación.
     #: `NULL` cuando no hay monto, y en las filas anteriores a la columna.
-    impact_calculation: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    #: `none_as_null`: sin él, el `None` de Python se guarda como JSON `null` y
+    #: `impact_calculation IS NULL` deja de distinguir «sin cálculo» —262 filas
+    #: el 13-oct, todas sin monto, que una consulta contaba como calculadas—.
+    impact_calculation: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
     is_simulation: Mapped[bool] = mapped_column(
         sa.Boolean, nullable=False, server_default=sa.false()
     )
