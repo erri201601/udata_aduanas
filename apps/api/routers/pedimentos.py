@@ -72,6 +72,7 @@ from core.shadow import DeclaredItem, ExpectedItem
 from core.shadow.types import ORIGEN_DEL_PROVEEDOR
 from core.taxation import Money, TaxRates
 from database.models import (
+    Client,
     FractionNomRequirement,
     Invoice,
     InvoiceItem,
@@ -84,6 +85,7 @@ from database.repositories.compensatory_duties import cuotas_vigentes, normaliza
 from database.repositories.exchange import tasa_vigente
 from database.repositories.invoices import divisa_de_la_factura
 from database.repositories.preguntas import dictamen_de
+from database.repositories.programas import cargar_programas
 from database.repositories.tariff import TariffCatalogRepository
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
@@ -189,6 +191,16 @@ def revisar(
     lineas: list[LineInput] = []
     sin_espejo = 0
 
+    # PROSEC y Regla 8ª (ADR 0011). `None` = los catálogos no están cargados, y
+    # el informe lo dice en vez de callar.
+    programas = cargar_programas(session, on_date=fecha, catalogo=catalogo)
+    cliente = session.get(Client, pedimento.client_id)
+    sectores = (
+        frozenset(cliente.prosec_sector_codes)
+        if cliente is not None and cliente.prosec_sector_codes is not None
+        else None
+    )
+
     for partida in partidas:
         esperada = _construir_espejo(session, partida, fecha, catalogo, peticion)
         if esperada is None:
@@ -210,12 +222,16 @@ def revisar(
                 transaction_value=valor,
                 declared_rates=declaradas,
                 expected_rates=esperadas,
+                applied_rates=_tasas_aplicadas(
+                    catalogo, fecha, peticion, partida.declared_fraction_code
+                ),
+                programs=programas.para(partida.declared_fraction_code) if programas else None,
                 # Lo derivado de un pedimento sintético es sintético (§10).
                 is_simulation=pedimento.is_simulation or partida.data_origin == "SYNTHETIC",
             )
         )
 
-    revision = review_pedimento(lineas)
+    revision = review_pedimento(lineas, client_sectors=sectores)
 
     corrida = save_review(
         session,
@@ -762,20 +778,35 @@ def _tasas(
     if declarada is None or esperada is None:
         return None, None
 
-    igi_declarada = catalogo.igi_rate(on_date=fecha, fraction_code=declarada)
-    igi_esperada = catalogo.igi_rate(on_date=fecha, fraction_code=esperada)
-    if igi_declarada is None or igi_esperada is None:
+    tasas_declarada = _tasas_aplicadas(catalogo, fecha, peticion, declarada)
+    tasas_esperada = _tasas_aplicadas(catalogo, fecha, peticion, esperada)
+    if tasas_declarada is None or tasas_esperada is None:
         return None, None
+    return tasas_declarada, tasas_esperada
 
-    comunes = {
-        "iva_rate": peticion.iva_rate or Decimal("0"),
-        "dta_rate": peticion.dta_rate or Decimal("0"),
-        "dta_fixed": peticion.dta_fixed,
-        "ieps_rate": peticion.ieps_rate or Decimal("0"),
-    }
-    return (
-        TaxRates(igi_rate=igi_declarada, **comunes),
-        TaxRates(igi_rate=igi_esperada, **comunes),
+
+def _tasas_aplicadas(
+    catalogo: TariffCatalogRepository,
+    fecha: date,
+    peticion: ReviewRequest,
+    declarada: str | None,
+) -> TaxRates | None:
+    """Las tasas de la fracción declarada, haya o no fracción esperada.
+
+    Las usa el Opportunity Finder para saber si un programa ahorra algo frente
+    a lo que se aplicó; no necesita espejo.
+    """
+    if declarada is None:
+        return None
+    igi = catalogo.igi_rate(on_date=fecha, fraction_code=declarada)
+    if igi is None:
+        return None
+    return TaxRates(
+        igi_rate=igi,
+        iva_rate=peticion.iva_rate or Decimal("0"),
+        dta_rate=peticion.dta_rate or Decimal("0"),
+        dta_fixed=peticion.dta_fixed,
+        ieps_rate=peticion.ieps_rate or Decimal("0"),
     )
 
 

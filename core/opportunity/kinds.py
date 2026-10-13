@@ -68,6 +68,7 @@ CONDITIONS: Final[dict[OpportunityKind, tuple[str, ...]]] = {
     OpportunityKind.REGLA_8A: (
         "Que exista autorización vigente para aplicar la Regla 8ª.",
         "Que la mercancía forme parte de un bien de la industria autorizada.",
+        "Que la mercancía no esté excluida del beneficio para el sector.",
     ),
     OpportunityKind.TRADE_PREFERENCE: (
         "Que exista certificado de origen válido para el embarque.",
