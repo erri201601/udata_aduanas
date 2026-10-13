@@ -70,5 +70,24 @@ class MemoriaChunkStore:
 
         return sorted(candidatos, key=puntuar, reverse=True)[:limit]
 
+    def por_reglas(
+        self,
+        rule_ids: Sequence[str],
+        *,
+        on_date: date,
+        limit: int = 10,
+        solo_fundamentables: bool = True,
+    ) -> Sequence[LegalChunk]:
+        """Los vigentes de esas reglas, en el orden de `rule_ids`."""
+        orden = {str(r): i for i, r in enumerate(rule_ids)}
+        candidatos = [
+            c
+            for c in self._chunks
+            if str(c.legal_rule_id) in orden
+            and c.vigente_en(on_date)
+            and (c.puede_fundamentar or not solo_fundamentables)
+        ]
+        return sorted(candidatos, key=lambda c: orden[str(c.legal_rule_id)])[:limit]
+
     def __len__(self) -> int:
         return len(self._chunks)

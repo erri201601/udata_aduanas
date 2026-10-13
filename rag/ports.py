@@ -63,3 +63,39 @@ class ChunkStore(Protocol):
         también el seguro.
         """
         ...
+
+    def por_reglas(
+        self,
+        rule_ids: Sequence[str],
+        *,
+        on_date: date,
+        limit: int = 10,
+        solo_fundamentables: bool = True,
+    ) -> Sequence[LegalChunk]:
+        """Los chunks vigentes de esas reglas (`legal_rule_id`), en ese orden.
+
+        Es la otra mitad de la búsqueda por grafo: el grafo dice QUÉ reglas
+        mirar, y el texto, la vigencia y el hash salen de aquí — nunca del
+        grafo (§28: el grafo no fundamenta nada).
+        """
+        ...
+
+
+@runtime_checkable
+class Expansor(Protocol):
+    """Sugiere reglas relacionadas con una consulta, a partir del grafo (§27).
+
+    Devuelve IDENTIFICADORES de `legal_rules`, no texto: dice dónde mirar, no
+    qué es verdad. Quien lo use lee los chunks de esas reglas del almacén, con
+    su vigencia.
+
+    No lanza: si el grafo no responde, devuelve vacío y lo dice en `nota`, igual
+    que `rag.embedder` degrada a término en vez de tumbar la consulta.
+    """
+
+    nota: str | None
+    """Qué hizo en la última llamada, o por qué no pudo. Se enseña al usuario."""
+
+    def reglas_relacionadas(self, consulta: str, *, on_date: date, limit: int) -> Sequence[str]:
+        """Ids de reglas relacionadas, de la más a la menos relacionada."""
+        ...

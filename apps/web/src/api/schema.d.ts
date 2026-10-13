@@ -1818,6 +1818,11 @@ export interface components {
             url?: string | null;
             /** Content Hash */
             content_hash?: string | null;
+            /**
+             * Via Grafo
+             * @default false
+             */
+            via_grafo: boolean;
             /** Distancia */
             distancia?: number | null;
             /** Terminos Coincidentes */
@@ -2446,6 +2451,8 @@ export interface components {
              * @default 0
              */
             descartados_por_origen: number;
+            /** Grafo */
+            grafo?: string | null;
             /** Terminos Buscados */
             terminos_buscados?: string[];
             /**

@@ -44,16 +44,36 @@ empieza a calcular dinero fuera del motor.
 
 LO QUE EL §28 LISTA Y AQUÍ NO ESTÁ, Y QUÉ LO DESBLOQUEA
 
-  NOM              falta la correlación fracción → NOM (Anexo 2.4.1 del
-                   Acuerdo de la SE); hoy no existe la fuente
   PROSECSector     falta cargar los decretos PROSEC
   Treaty           falta cargar los tratados y sus reglas de origen
-  RegulatoryEvent  la tabla existe y está en 0: el DOF Watcher no ha arrancado
   Manufacturer     sólo hay un nombre en texto libre en `suppliers`, no una
                    entidad con identidad propia
 
 Crear esos nodos vacíos daría un grafo que parece completo y no lo está. Se
 añaden cuando exista el dato.
+
+LO QUE ESTABA EN ESA LISTA Y YA NO (13-oct)
+
+  NOM              desbloqueado por el Anexo 2.4.1 del Acuerdo de la SE, cargado
+                   en `regulatory.fraction_nom_requirements` (ADR 0003, 456
+                   correlaciones). Hay UN NODO POR FILA DE CORRELACIÓN, no uno
+                   por NOM: el alcance («Únicamente: …») y la vigencia son de la
+                   correlación, y la vigencia va en los nodos, nunca en las
+                   relaciones. `(TariffFraction)-[:SUBJECT_TO]->(NOM)` une cada
+                   versión de la fracción cuya vigencia se solapa con la de la
+                   correlación.
+  RegulatoryEvent  la proyección está escrita y lee `regulatory_events`, que
+                   hoy está en 0 —el DOF Watcher de Persona 2 no ha arrancado—.
+                   No se crea ningún nodo vacío: el día que haya eventos,
+                   aparecen con `(TariffFraction)-[:AFFECTED_BY]->(RegulatoryEvent)`
+                   hacia la versión vigente en su fecha de efecto.
+
+AL DÍA, Y SE DICE CUÁNDO
+
+La proyección es una foto. Al terminar deja un nodo `Proyeccion {id: "ultima"}`
+con la hora y cuántas decisiones había, para que quien consulte el grafo pueda
+decir lo vieja que es su respuesta. El 13-oct el grafo tenía 9 decisiones de
+miles porque nadie había vuelto a correrla: `make graph` la repite.
 
 DOS DESVÍOS CONSCIENTES DEL §28
 
@@ -75,12 +95,14 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Final
 
 import sqlalchemy as sa
 from database.models import (
     ClassificationDecision,
     EvidenceRecord,
+    FractionNomRequirement,
     Invoice,
     InvoiceItem,
     LegalDocument,
@@ -89,6 +111,7 @@ from database.models import (
     Pedimento,
     PedimentoItem,
     Product,
+    RegulatoryEvent,
     Supplier,
     TariffFraction,
 )
@@ -287,6 +310,39 @@ def _nodos(session: Session) -> list[tuple[str, list[dict[str, Any]], str]]:
             ),
             "id",
         ),
+        (
+            "NOM",
+            _filas(
+                session,
+                sa.select(
+                    FractionNomRequirement.id,
+                    FractionNomRequirement.nom_code.label("code"),
+                    FractionNomRequirement.fraction_code,
+                    FractionNomRequirement.numeral,
+                    FractionNomRequirement.scope_note,
+                    FractionNomRequirement.valid_from,
+                    FractionNomRequirement.valid_to,
+                    FractionNomRequirement.data_origin,
+                ),
+            ),
+            "id",
+        ),
+        (
+            "RegulatoryEvent",
+            _filas(
+                session,
+                sa.select(
+                    RegulatoryEvent.id,
+                    RegulatoryEvent.title,
+                    RegulatoryEvent.event_kind,
+                    RegulatoryEvent.effective_date,
+                    RegulatoryEvent.valid_from,
+                    RegulatoryEvent.valid_to,
+                    RegulatoryEvent.data_origin,
+                ),
+            ),
+            "id",
+        ),
     ]
 
 
@@ -334,6 +390,48 @@ def _relaciones(session: Session) -> list[tuple[str, str, str, list[tuple[str, s
         .join(InvoiceItem, InvoiceItem.id == PedimentoItem.invoice_item_id)
         .join(Invoice, Invoice.id == InvoiceItem.invoice_id)
         .where(PedimentoItem.product_id.isnot(None), Invoice.supplier_id.isnot(None)),
+    )
+
+    # Cada versión de la fracción cuya vigencia se solapa con la de la
+    # correlación. No sólo la vigente hoy: una operación de 2023 tiene que
+    # encontrar la NOM que se exigía en 2023 (§14).
+    exige_nom = sa.select(TariffFraction.id, FractionNomRequirement.id).join(
+        FractionNomRequirement,
+        sa.and_(
+            FractionNomRequirement.fraction_code == TariffFraction.code,
+            sa.or_(
+                FractionNomRequirement.valid_to.is_(None),
+                FractionNomRequirement.valid_to >= TariffFraction.valid_from,
+            ),
+            sa.or_(
+                TariffFraction.valid_to.is_(None),
+                TariffFraction.valid_to >= FractionNomRequirement.valid_from,
+            ),
+        ),
+    )
+
+    # Un evento afecta a la versión de la fracción vigente en su fecha de
+    # efecto (o, sin ella, en su `valid_from`). Hoy la tabla está en 0.
+    fecha_evento = sa.func.coalesce(RegulatoryEvent.effective_date, RegulatoryEvent.valid_from)
+    codigo_afectado = (
+        sa.select(
+            RegulatoryEvent.id.label("evento"),
+            sa.func.unnest(RegulatoryEvent.affected_fraction_codes).label("code"),
+            fecha_evento.label("fecha"),
+        )
+        .where(sa.func.cardinality(RegulatoryEvent.affected_fraction_codes) > 0)
+        .subquery()
+    )
+    afecta = sa.select(TariffFraction.id, codigo_afectado.c.evento).join(
+        codigo_afectado,
+        sa.and_(
+            TariffFraction.code == codigo_afectado.c.code,
+            TariffFraction.valid_from <= codigo_afectado.c.fecha,
+            sa.or_(
+                TariffFraction.valid_to.is_(None),
+                TariffFraction.valid_to >= codigo_afectado.c.fecha,
+            ),
+        ),
     )
 
     return [
@@ -407,6 +505,8 @@ def _relaciones(session: Session) -> list[tuple[str, str, str, list[tuple[str, s
                 ),
             ),
         ),
+        ("SUBJECT_TO", "TariffFraction", "NOM", _pares(session, exige_nom)),
+        ("AFFECTED_BY", "TariffFraction", "RegulatoryEvent", _pares(session, afecta)),
     ]
 
 
@@ -420,7 +520,11 @@ def _paises_de_proveedores(session: Session) -> list[tuple[str, str]]:
     ]
 
 
-def proyectar(session: Session, grafo: Grafo) -> Resumen:
+#: Identidad del nodo que dice cuándo se proyectó. Uno solo: la última corrida.
+PROYECCION: Final = "ultima"
+
+
+def proyectar(session: Session, grafo: Grafo, *, ahora: datetime | None = None) -> Resumen:
     """Vuelca Postgres al grafo. Idempotente: dos corridas dejan lo mismo."""
     nodos: dict[str, int] = {}
     for etiqueta, filas, clave in _nodos(session):
@@ -437,5 +541,21 @@ def proyectar(session: Session, grafo: Grafo) -> Resumen:
         "Country",
         _paises_de_proveedores(session),
         clave_destino="code",
+    )
+
+    # Cuándo, y con cuántas decisiones. Sin esto, un grafo de septiembre se
+    # leía como si fuera de hoy (13-oct: 9 decisiones de miles).
+    grafo.merge_nodos(
+        "Proyeccion",
+        [
+            {
+                "id": PROYECCION,
+                "at": (ahora or datetime.now(UTC)).isoformat(),
+                "decisiones": nodos.get("Decision", 0),
+                "nodos": sum(nodos.values()),
+                "relaciones": sum(relaciones.values()),
+            }
+        ],
+        clave="id",
     )
     return Resumen(nodos=nodos, relaciones=relaciones)

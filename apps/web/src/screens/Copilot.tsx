@@ -146,6 +146,16 @@ function Resultado({ pasaje, total }: { pasaje: Pasaje; total: number }) {
             {casados}/{total} términos
           </span>
           <DataOriginBadge origin={pasaje.data_origin as DataOrigin} />
+          {/* El grafo dice dónde mirar; el texto, la vigencia y el hash de
+              este pasaje salen igual de Postgres (§28). */}
+          {pasaje.via_grafo && (
+            <span
+              className="pasaje__grafo"
+              title="Lo sugirió el Knowledge Graph: lo citan decisiones sobre la fracción preguntada."
+            >
+              sugerido por el grafo
+            </span>
+          )}
         </div>
       </header>
 
@@ -273,6 +283,7 @@ export function Copilot() {
         </div>
       )}
 
+      {datos?.grafo && <p className="copilot__modo">{datos.grafo}</p>}
       {datos && <Redaccion datos={datos} />}
 
       {datos && !datos.hay_fundamento && (
