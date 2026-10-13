@@ -106,6 +106,9 @@ class DivergenciaRead(BaseModel):
     impact_calculation: dict[str, Any] | None = None
     """Cómo se llegó al importe (§22): fórmula, entradas, versión, supuestos,
     fuentes. `None` sin importe, o en hallazgos anteriores al 13-oct."""
+    sources: list[dict[str, Any]] = Field(default_factory=list)
+    """Las filas que sostienen el hallazgo (§21): documento, URL, hash y
+    vigencia. `[]` en hallazgos anteriores al 13-oct."""
     is_simulation: bool = False
 
 
@@ -397,6 +400,7 @@ def espejo(pedimento_id: uuid.UUID, session: SessionDep) -> PedimentoEspejo:
                 impact_amount_currency=h.impact_amount_currency,
                 impact_scope=h.impact_scope,
                 impact_calculation=h.impact_calculation,
+                sources=h.sources or [],
                 is_simulation=h.is_simulation,
             )
             for h in propios

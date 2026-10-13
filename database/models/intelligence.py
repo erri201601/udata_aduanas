@@ -400,6 +400,11 @@ class RiskFinding(
     #: `impact_calculation IS NULL` deja de distinguir «sin cálculo» —262 filas
     #: el 13-oct, todas sin monto, que una consulta contaba como calculadas—.
     impact_calculation: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
+    #: Las filas que sostienen el hallazgo (§21 `source_ids`): tabla, fila,
+    #: documento, URL, hash y vigencia de cada una (`core.shadow.SourceRef`).
+    #: `[]` = no se registró ninguna: lo normal en filas anteriores al 13-oct,
+    #: y en las nuevas un hueco que se explica.
+    sources: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
     is_simulation: Mapped[bool] = mapped_column(
         sa.Boolean, nullable=False, server_default=sa.false()
     )

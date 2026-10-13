@@ -94,6 +94,7 @@ from pydantic import BaseModel, Field
 from apps.api.clasificacion import clasificar_borrador
 from apps.api.db import SessionDep
 from apps.api.dna import cargar_borrador, version_vigente
+from apps.api.fuentes import fuentes_de_la_partida
 
 router = APIRouter(prefix="/pedimentos", tags=["pedimentos"])
 
@@ -217,6 +218,20 @@ def revisar(
                 update={
                     "required_identifiers": exigidos.de_la_partida,
                     "required_document_identifiers": exigidos.del_documento,
+                }
+            )
+        if esperada is not None:
+            # De qué fila sale cada expectativa (§21). Va después de los
+            # identificadores: también ellos necesitan su fuente.
+            esperada = esperada.model_copy(
+                update={
+                    "sources": fuentes_de_la_partida(
+                        session,
+                        partida=partida,
+                        fecha=fecha,
+                        esperada=esperada,
+                        pedimento_key=pedimento.pedimento_key,
+                    )
                 }
             )
         if esperada is None:

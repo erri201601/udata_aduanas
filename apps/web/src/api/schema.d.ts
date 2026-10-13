@@ -1321,6 +1321,10 @@ export interface components {
             impact_calculation?: {
                 [key: string]: unknown;
             } | null;
+            /** Sources */
+            sources?: {
+                [key: string]: unknown;
+            }[];
             /**
              * Is Simulation
              * @default false
@@ -2664,6 +2668,10 @@ export interface components {
             impact_calculation?: {
                 [key: string]: unknown;
             } | null;
+            /** Sources */
+            sources?: {
+                [key: string]: unknown;
+            }[];
             /**
              * Is Simulation
              * @default false

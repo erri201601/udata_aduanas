@@ -11,12 +11,40 @@ Por eso `ExpectedItem` se construye desde el Product DNA y la clasificación, y
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 from typing import Any, Final
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from core.shadow.divergences import DEFAULT_SEVERITY, DivergenceType
+
+
+class SourceRef(BaseModel):
+    """La fila exacta que sostiene una comprobación (§21, §17).
+
+    `source_id` sólo dice quién publica —SNICE, DOF, Banxico— y en dos tablas
+    ni eso. Lo que permite defender un hallazgo es la fila: qué documento, en
+    qué URL, con qué hash y vigente desde cuándo. Eso es lo que viaja aquí.
+
+    También sirve para lo que no es norma —el proveedor de la factura, la
+    ficha técnica, un dictamen—: `data_origin` dice cuál es cuál, y un dato
+    `SYNTHETIC` nunca se presenta como fuente oficial.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    what: str
+    """Qué afirma, en una frase: «fracción 84713001 en la LIGIE»."""
+    table: str
+    row_id: str | None = None
+    source_id: str | None = None
+    document: str | None = None
+    url: str | None = None
+    content_hash: str | None = None
+    valid_from: date | None = None
+    valid_to: date | None = None
+    data_origin: str | None = None
 
 
 class DeclaredItem(BaseModel):
@@ -111,6 +139,11 @@ class ExpectedItem(BaseModel):
 
     Las tasas las pasa quien llama; el motor no las inventa (§8.1).
     """
+
+    sources: dict[str, tuple[SourceRef, ...]] = Field(default_factory=dict)
+    """De dónde sale cada expectativa, por el `field` de la divergencia que
+    la compararía («fraction_code», «igi_amount»…). Viaja a la divergencia y
+    de ahí al hallazgo (§21: `source_ids`)."""
 
     derivations: dict[str, str] = Field(default_factory=dict)
     """Cómo se obtuvo cada importe esperado, campo → fórmula con sus entradas
@@ -235,6 +268,8 @@ class Divergence(BaseModel):
     reasoning: str = ""
     derivation: str | None = None
     """Cómo se obtuvo `expected_value`, cuando es un importe calculado (§22)."""
+    sources: tuple[SourceRef, ...] = ()
+    """Las filas que sostienen esta divergencia (§21)."""
     source_ids: tuple[Any, ...] = ()
     requires_human_review: bool = True
 
@@ -253,6 +288,7 @@ class Divergence(BaseModel):
             "confidence": self.confidence,
             "requires_human_review": self.requires_human_review,
             "reasoning": self.reasoning,
+            "sources": [f.model_dump(mode="json") for f in self.sources],
         }
 
 
