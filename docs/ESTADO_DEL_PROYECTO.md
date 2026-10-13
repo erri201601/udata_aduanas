@@ -1,10 +1,10 @@
 # ADUANERO OS — Estado del proyecto y backlog
 
-**Actualizado:** 2026-10-07  
+**Actualizado:** 2026-10-13  
 **Mantiene:** Persona 1 (Erick)
 
 Las cifras de este documento se verificaron contra la base y el repositorio el
-7 de octubre. Las que dependen de otra persona van marcadas: este documento no
+7 de octubre; lo marcado «13-oct» se verificó ese día. Las que dependen de otra persona van marcadas: este documento no
 afirma el avance de nadie que no haya empujado código.
 
 Documento de contexto. Sirve para poner al día a cualquiera —persona o agente—
@@ -139,9 +139,12 @@ tests/               1 294 tests              ✅
 .github/workflows/ci.yml                      ✅ 6 jobs
 ```
 
-### Base de datos — 36 tablas
+### Base de datos — 39 tablas
 
-Alembic en `88cd0fb12273` (cuota compensatoria, #218). Conteos verificados el 7
+Alembic en `8471a674f18d` (13-oct, #238). Las tres tablas nuevas del 13-oct
+—`prosec_rates`, `regla_8a_fractions` y `pedimento_identifier_requirements`—
+son contratos para Persona 2 y están **vacías** (ADR 0011 y 0012). Hasta el
+7-oct la head era `88cd0fb12273` (cuota compensatoria, #218). Conteos verificados el 7
 de octubre:
 
 ```
@@ -498,6 +501,22 @@ migración. Gemini declara `text-embedding-004`, cuya dimensionalidad por defect
 23-sep **no rotarla mientras el entorno sea de pruebas**, y cambiarla al pasar
 a producción. Ver la decisión y su disparador más abajo.
 
+### Lo que se cerró el 13 de octubre (frente al maestro)
+
+Tras revisar el maestro sección por sección, se dejó de añadir lo que no pide
+y se cerraron los huecos de Persona 1:
+
+| § | Qué faltaba | Qué hay ahora |
+|---|---|---|
+| §19 | La clasificación **nunca** entregaba NICO (0 de 105) | Lo entrega cuando la LIGIE da uno único; con varios no elige y dice por qué. Medido en `clasificacion_39`: **40 de 40 (±4,38)**, se abstiene en 58 de 98 (ADR 0013, #235) |
+| §20 | El Espejo no comparaba identificadores | Contrato `pedimento_identifier_requirements` (clave de pedimento, fracción o NICO; nivel G/P) y comparación de los dos niveles; el de pedimento cuenta una vez en el Panorama (ADR 0012, #234). **Falta la carga** |
+| §22 | Al guardar un hallazgo sólo sobrevivían importe y divisa | Cada hallazgo y cada oportunidad con monto guardan el sobre completo: fórmula, entradas, resultado, divisa, versión, supuestos, fuentes y simulación. El esperado de un IGI/IVA lleva su derivación. La consola lo enseña plegado: «Cómo sale esta cifra» (#236, #237, #238) |
+| §23 | Opportunity Finder sólo con sobrepagos | Contrato `prosec_rates` y `regla_8a_fractions` (la tasa de la 9802 se lee de la LIGIE) y consumo: sólo tasas menores que la aplicada, sin sector del importador PROSEC sale sin monto y Regla 8ª no se evalúa, las alternativas no se suman ni en el informe ni en el Panorama (ADR 0011, #233, #238). **Falta la carga** |
+| §31 | El Copilot no seguía el contrato | Decidido en el ADR 0010 (#232): `answer` sólo sobre pasajes recuperados, validador determinista de citas, `confidence` calculada. **Lo implementa Persona 3** |
+
+Las cifras del Panorama no cambiaron con nada de esto: 151 hallazgos, 72
+críticos, 15 del documento, ahorro 40 484,80 MXN (13-oct).
+
 ### Scorecard del §44
 
 ```
@@ -507,7 +526,8 @@ DATA           7 de 14   LIGIE ✅ (los 97 capítulos, con los textos de cada
                          correlaciones fracción → NOM, #170) · Banxico ✅
                          (FIX, comparado por el Espejo: #217, #219)
                          Cuotas 🟡 1 de 21 combinaciones del corpus (#218) ·
-                         PROSEC ❌ · Regla 8a ❌ · CBP ❌ · EBTI ❌ ·
+                         PROSEC 🟡 · Regla 8a 🟡 (contrato y consumo, sin
+                         datos: ADR 0011) · CBP ❌ · EBTI ❌ ·
                          ANAM/SAT/Data México ❌
 CORE           4 de 4    Product DNA ✅ · RGI ✅ · Classification ✅ ·
                          Evidence ✅
@@ -590,7 +610,7 @@ el repo, equivocado en producción.
 | 2 | **El puente de vocabulario no puede ensanchar ninguna búsqueda** | La tabla existe, el endpoint funciona y las respuestas entran firmadas, pero el puente cae siempre fuera del tope de seis términos. Dejarlo pasar costó 29 aciertos, porque además le da un punto de cobertura a la posición de cuyo texto salió. Hace falta que la cobertura distinga un término de la ficha de un puente — toca el puerto `TariffCatalog` y su SQL (#188). |
 | 3 | ~~Cinco fracciones del dictamen no existen en la TIGIE~~ | **Cerrado.** El clasificador dio las fracciones correctas el 6-oct (73051999 y 73051291) y ningún veredicto vigente tiene hoy una fracción fuera de la TIGIE de su fecha. |
 | 4 | **Knowledge Graph** | La proyección está escrita en `graph/` (~950 líneas, 21-sep) y **nada la consume** salvo el chequeo de salud. Falta ejecutarla contra la base y darle un consumidor. Es **proyección de Postgres, nunca fuente**: nada que fundamente jurídicamente puede citarse desde ahí. |
-| 5 | **Los identificadores del pedimento** | 174 claves del Anexo 22 cargadas y el Espejo no comprueba ninguna. Necesita las reglas de las RGCE que dicen cuál exige cada fracción. |
+| 5 | **Los identificadores del pedimento** | Contrato y comparación listos desde el 13-oct (ADR 0012). Falta que Persona 2 cargue las reglas estructurables (~12 claves); hasta entonces el Espejo lo declara como laguna. |
 | 6 | **Las fuentes vacías** | `anam`, `cbp_cross`, `datamexico`, `ebti`, `sat`, `vucem`, `wco`. Ninguna bloquea el camino crítico hoy. Las cuotas tienen 1 de 21 combinaciones con resolución primaria; las otras 18 siguen `NEEDS_VALIDATION`. |
 | 7 | **PED_SIM_005-001 tiene como ficha vigente una versión vacía** | El 30-sep se probó la extracción desde imagen sobre ese producto; dos lecturas devolvieron cero atributos y cada una quedó como vigente. Desde entonces el motor clasifica una ficha sin nada: «no hay términos de búsqueda». La guarda que lo impide entró el 2-oct (`guardar_dna`: una extracción vacía no desplaza a la anterior) pero no reparó lo guardado. Reparar = volver a hacer vigente la v1 del corpus (5 atributos); **pendiente de la decisión de Persona 1**, porque toca la base compartida. Las v2/v3 tampoco tienen evidencia enlazada. |
 
@@ -718,47 +738,46 @@ rama suelta de `legal-chunks-legal-rule-id`.
 
 ## 8. Backlog por persona
 
-> Al 7 de octubre, tras el #221. Este documento no afirma en qué está
+> Al 13 de octubre. Los encargos de ese día salen del maestro (§4 y los huecos
+> de la revisión), no de ideas nuevas. Este documento no afirma en qué está
 > trabajando nadie — lo de abajo es lo que consta en el repositorio.
 
 ### Persona 2 — Brandon (Data Engineer)
 
 | # | Tarea | Estado |
 |---|---|---|
-| 1 | El cargador del corpus | ✅ cargado: 16 pedimentos, 181 partidas, 61 anomalías |
-| 2 | La cadena del proveedor | ✅ la comprobación de país corre sobre el corpus |
-| 3 | Niveles intermedios de un guion (ADR 0004) | ✅ 30-sep |
-| 4 | Abrir el PR del ADR 0003 | ✅ #196 |
-| 5 | Cerrar o descartar dos ramas suyas | ✅ |
-| 6 | Tipo de cambio FIX: carga y consumidor en el Espejo | ✅ #199, #217, #219 (la divisa sale de la factura) |
-| 7 | Cuota compensatoria del cable de acero de China (ADR 0009) | ✅ #218, cargada en la compartida el 7-oct |
-| 8 | **Corregir `published_at` de la cuota** | 🔴 dice 2024-12-17 (inicio de vigencia); el DOF la publicó el 2026-04-09 |
-| 9 | Las reglas de identificadores de las RGCE | 🟡 desbloquea el hueco 5 del §7 |
-| 10 | Reconocimiento de CBP CROSS | ⏸ nada depende de ello hoy |
+| 1 | Generador sintético en `synthetic/` (§24, §25, §10): los 8 componentes, los 10 escenarios (hoy 4), rectificaciones, FIX real, peso por partida. **Sobre los mismos productos y fichas** | 🔴 encargado el 13-oct. Plan de carga a revisión de Persona 1 antes de cargar: cambia todas las cifras |
+| 2 | Vigilante del DOF (§11, §43): RAW con hash y `regulatory_events` | 🔴 encargado; hoy 0 eventos |
+| 3 | PROSEC y Regla 8ª: reconocimiento y carga **en el contrato del ADR 0011** | 🔴 encargado; el consumo ya está |
+| 4 | Identificadores exigidos: carga **en el contrato del ADR 0012** | 🔴 encargado; la comparación ya está |
+| 5 | CBP CROSS y EBTI, después ANAM, SAT, Data México, VUCEM (§11) | ⏸ después de 1–4 |
+| 6 | Corregir `published_at` de la cuota (2026-04-09, no 2024-12-17) | 🔴 |
 
 ### Persona 3 — Ulises (AI + Full Stack)
 
 | # | Tarea | Estado |
 |---|---|---|
-| 1 | Métrica de detección (§26) | ✅ corriendo: TP 50 · FP 0 · recall 90.91 % |
-| 2 | Los dictámenes humanos como fuente de precisión | ✅ 28-sep, y usada: 133 veredictos |
-| 3 | Una sola definición de «pendiente» (ADR 0008) | ✅ #214; los contadores, #220 |
-| 4 | Veredicto desde Classification, con aviso de fracción descartada | ✅ #221 (hecho por Persona 1 en su ausencia; lo revisa al volver) |
-| 5 | **Knowledge Graph** | 🟡 la proyección está escrita y nada la consume. Lo único que falta de INTELLIGENCE |
-| 6 | Harness de `hs_accuracy` contra CBP CROSS | ⏸ baja prioridad: el corpus mide sin depender de nadie |
+| 1 | Product DNA desde texto y PDF (§16, §48), con `evidence_reference` | 🔴 encargado el 13-oct. Es la primera meta del maestro |
+| 2 | El Copilot cumple el §31 **según el ADR 0010** | 🔴 encargado; contrato decidido |
+| 3 | El Knowledge Graph se usa (§27, §28): proyección al día y en la búsqueda | 🔴 encargado |
+| 4 | Evaluación de DNA y de la búsqueda jurídica (§39) | 🔴 encargado |
+| 5 | `run_id` y telemetría en los registros (§37) | 🔴 encargado |
+| — | Revisar #214, #220 y #221 (hechos en su ausencia) | 🟡 |
 
 ### Persona 1 — Erick (Tech Lead)
 
 | # | Tarea | Estado |
 |---|---|---|
-| 1 | **Decidir la búsqueda de partida por significado** | 🔴 es el hueco 1 del §7 y el único que no se puede decidir desde dentro: toca el camino que mide el harness y afecta a los 181 productos |
-| 2 | Preguntar al clasificador las cinco fracciones de 7305 | ✅ contestadas el 6-oct |
-| 2b | **Reparar la ficha vacía de PED_SIM_005-001** | 🔴 hueco 7 del §7: toca la base compartida y es su decisión |
-| 2c | **Preguntar al clasificador por PED_SIM_002-008** | 🔴 conserva 73239305 con la misma ficha («material no especificado») que el 7-oct declaró sin fundamento en otros dos SKU |
-| 3 | Abrir la consola en el tailnet | ✅ **decidido el 6-oct: no se abre.** El clasificador trabaja desde el dev server |
-| 4 | Rotar las tres credenciales expuestas | ⏸ diferido a producción. Disparador: el primer dato real de cliente |
-| 5 | Respaldos fuera de esta máquina | 🔴 la máquina de respaldo sigue apagada: el respaldo diario se hace y se verifica, pero la réplica a `yayo` falla cada día. Desde el 7-oct hay 133 veredictos humanos que sólo existen en este disco |
-| 6 | Modelo de negocio y fecha de entrega | ⏸ fuera del alcance de los agentes por decisión suya |
+| 1 | NICO en la clasificación (§19) | ✅ 13-oct, ADR 0013 |
+| 2 | Contratos de PROSEC/Regla 8ª e identificadores, con su consumo | ✅ 13-oct, ADR 0011 y 0012 |
+| 3 | ADR del Copilot (§31) | ✅ 13-oct, ADR 0010 |
+| 4 | El cálculo del §22 en hallazgos y oportunidades | ✅ 13-oct |
+| 5 | Integrar, medir y mergear lo de Persona 2 y 3 | continuo |
+| 6 | **Elegir NICO entre varios** (58 abstenciones) | 🟡 sólo con una regla medida contra los 25 NICO firmados en fracciones de varios |
+| 7 | **Reparar la ficha vacía de PED_SIM_005-001** | 🔴 hueco 7 del §7: toca la base compartida y es su decisión |
+| 8 | **Preguntar al clasificador por PED_SIM_002-008** | 🔴 |
+| 9 | Respaldos fuera de esta máquina | 🔴 `yayo` sigue apagada |
+| 10 | Modelo de negocio y fecha de entrega | ⏸ fuera del alcance de los agentes |
 
 ---
 
@@ -819,6 +838,12 @@ En paralelo y sin esperar a nadie:
 | [0005](adr/0005-la-materia-que-opone-la-tarifa.md) | cuando la tarifa opone dos hermanas por materia, ya decidió |
 | [0006](adr/0006-como-se-agrega-el-dinero-de-una-partida.md) | `LINEA_COMPLETA` frente a `UNA_CONTRIBUCION` al sumar impacto |
 | [0007](adr/0007-la-busqueda-de-partida-no-se-arregla-tocando-terminos.md) | tres formas medidas de no arreglar la búsqueda de partida |
+| [0008](adr/0008-que-caso-espera-a-una-persona.md) | un caso es una ficha: vigente, dictamen y pendiente |
+| [0009](adr/0009-cuota-compensatoria-cable-de-acero.md) | la cuota compensatoria del cable de acero de China |
+| [0010](adr/0010-contrato-del-copilot.md) | el Copilot cumple el §31: redacta sólo sobre pasajes, citas validadas |
+| [0011](adr/0011-contrato-de-prosec-y-regla-8a.md) | contrato de PROSEC y Regla 8ª, y cómo los consume el Opportunity Finder |
+| [0012](adr/0012-identificadores-exigidos.md) | qué identificadores exige una operación, sólo lo estructurable |
+| [0013](adr/0013-el-nico-de-la-clasificacion.md) | el NICO cuando la LIGIE da uno único |
 
 ---
 
