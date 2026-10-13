@@ -1877,3 +1877,14 @@ code {
   color: var(--ok);
   line-height: 1.5;
 }
+
+/* Un pasaje que llegó porque el grafo lo sugirió. No es una fuente distinta:
+   su texto sale de Postgres como cualquier otro. */
+.pasaje__grafo {
+  font-size: 0.68rem;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--acento);
+  border-radius: 999px;
+  color: var(--acento);
+  white-space: nowrap;
+}

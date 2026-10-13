@@ -92,6 +92,7 @@ def _cliente(
     *,
     embedder: Any = None,
     sesion: SesionFalsa | None = None,
+    expansor: Any = None,
     **cobertura: int,
 ) -> Iterator[TestClient]:
     """Cliente con el almacén en memoria en lugar del de Postgres.
@@ -115,6 +116,8 @@ def _cliente(
     with (
         patch("apps.api.routers.copilot.PostgresChunkStore", lambda _s: almacen),
         patch("apps.api.routers.copilot.embedder_opcional", lambda: embedder),
+        # Sin grafo salvo que el test lo pida: ninguno sale a Neo4j.
+        patch("apps.api.routers.copilot.expansor_opcional", lambda: expansor),
         TestClient(app) as cliente,
     ):
         yield cliente
@@ -447,3 +450,36 @@ def test_sin_vectores_la_distancia_es_nula_y_no_cero() -> None:
         cuerpo = c.post("/copilot/consultas", json={"pregunta": "valor en aduana"}).json()
 
     assert cuerpo["pasajes"][0]["distancia"] is None
+
+
+# ── El grafo en la búsqueda (§27, 13-oct) ───────────────────────────────────
+
+
+def test_un_pasaje_sugerido_por_el_grafo_se_marca_y_se_dice_como() -> None:
+    from graph.busqueda import ExpansorDelGrafo
+
+    from tests.test_grafo_en_la_busqueda import REGLA_54, GrafoFalso
+    from tests.test_grafo_en_la_busqueda import _chunk as chunk_con_regla
+
+    with _cliente(
+        [
+            chunk_con_regla(
+                "54", "El agente aduanal responde de la clasificación.", regla=REGLA_54
+            ),
+            _chunk(article="58", text="obligaciones del importador y el valor en aduana"),
+        ],
+        expansor=ExpansorDelGrafo(GrafoFalso([REGLA_54])),
+    ) as c:
+        d = _preguntar(c, "obligaciones del importador sobre la 7312.10.05")
+
+    por_articulo = {p["articulo"]: p for p in d["pasajes"]}
+    assert por_articulo["54"]["via_grafo"] is True
+    assert por_articulo["58"]["via_grafo"] is False
+    assert d["pasajes"][0]["articulo"] == "54", "lo del grafo no lo tira el reordenamiento"
+    assert "sugirió" in d["grafo"]
+
+
+def test_sin_grafo_configurado_no_se_dice_nada_del_grafo(cliente: TestClient) -> None:
+    d = _preguntar(cliente, "valor en aduana")
+    assert d["grafo"] is None
+    assert not any(p["via_grafo"] for p in d["pasajes"])

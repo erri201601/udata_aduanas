@@ -45,6 +45,7 @@ import sqlalchemy as sa
 from database.models.regulatory import LegalChunkRecord, LegalDocument
 from database.repositories.chunks import PostgresChunkStore
 from fastapi import APIRouter
+from graph.busqueda import expansor_opcional
 from pydantic import BaseModel, Field
 from rag import (
     MODO_SEMANTICO,
@@ -108,6 +109,8 @@ class Pasaje(BaseModel):
     """`False` = sirve para orientarse, no para sostener nada ante nadie."""
     url: str | None = None
     content_hash: str | None = None
+    via_grafo: bool = False
+    """¿Llegó porque el grafo lo sugirió? Su texto sale igual de Postgres."""
     distancia: float | None = None
     """Distancia del coseno a la pregunta. `None` si se buscó por término.
 
@@ -147,6 +150,10 @@ class Respuesta(BaseModel):
     """Coincidían con la pregunta, pero no regían esa fecha."""
     descartados_por_origen: int = 0
     """Regían, pero no pueden fundamentar: fixtures o fuentes no oficiales."""
+
+    grafo: str | None = None
+    """Cómo se usó el grafo (§27) en esta consulta, o por qué no. `None` si no
+    hay Neo4j configurado. Lo que el grafo sugiere se lee de Postgres."""
 
     terminos_buscados: list[str] = Field(default_factory=list)
     """Con qué se buscó realmente. Las palabras vacías no cuentan."""
@@ -235,9 +242,12 @@ def _reordenar(pasajes: list[Pasaje], *, uso_vectores: bool) -> list[Pasaje]:
     """
     if uso_vectores:
         return pasajes
+    # Lo que sugirió el grafo va delante: casa pocos términos precisamente
+    # porque la norma no nombra la fracción, y el recorte posterior a `limite`
+    # lo tiraría.
     return sorted(
         pasajes,
-        key=lambda p: (-len(p.terminos_coincidentes), -p.valid_from.toordinal()),
+        key=lambda p: (not p.via_grafo, -len(p.terminos_coincidentes), -p.valid_from.toordinal()),
     )
 
 
@@ -319,6 +329,9 @@ def consultar(consulta: Consulta, session: SessionDep) -> Respuesta:
         store=PostgresChunkStore(session),
         embedder=embedder,
         limit=candidatos,
+        # Texto + vector + grafo (§27). Sin Neo4j configurado es `None` y la
+        # búsqueda sigue como antes.
+        expansor=expansor_opcional(),
     )
 
     # Se pregunta DESPUÉS de recuperar: hasta que no se intentó vectorizar no
@@ -340,6 +353,7 @@ def consultar(consulta: Consulta, session: SessionDep) -> Respuesta:
             content_hash=c.content_hash,
             distancia=c.distancia,
             terminos_coincidentes=_coincidencias(c.text, terminos),
+            via_grafo=c.content_hash in recuperacion.via_grafo,
         )
         for c in recuperacion.chunks
     ]
@@ -353,6 +367,7 @@ def consultar(consulta: Consulta, session: SessionDep) -> Respuesta:
         sin_evidencia=None if recuperacion.hay_fundamento else recuperacion.sin_evidencia(),
         descartados_por_vigencia=recuperacion.descartados_por_vigencia,
         descartados_por_origen=recuperacion.descartados_por_origen,
+        grafo=recuperacion.grafo,
         corpus_consultado=_corpus_consultado(session, on_date),
         terminos_buscados=list(terminos),
         # El modo dice lo que pasó, no lo que el corpus permitiría.

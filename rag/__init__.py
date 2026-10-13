@@ -65,7 +65,7 @@ from rag.embedder import (
 )
 from rag.evidencia import a_legal_ref, a_legal_refs, citar
 from rag.memoria import MemoriaChunkStore
-from rag.ports import ChunkStore, Embedder
+from rag.ports import ChunkStore, Embedder, Expansor
 from rag.retrieval import (
     LIMITE_POR_DEFECTO,
     Recuperacion,
@@ -88,6 +88,7 @@ __all__ = [
     "DataOrigin",
     "Embedder",
     "EmbedderDegradable",
+    "Expansor",
     "LegalChunk",
     "MemoriaChunkStore",
     "Recuperacion",

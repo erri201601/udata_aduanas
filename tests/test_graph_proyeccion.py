@@ -124,9 +124,11 @@ def _escenario() -> list[list[Mapping[str, Any]]]:
         "valid_to": None,
         "data_origin": "OFFICIAL",
     }
-    nodos: list[list[Mapping[str, Any]]] = [[fraccion], [nico], [regla]] + [[] for _ in range(8)]
+    # 13 consultas de nodos (NOM y RegulatoryEvent van al final, 13-oct).
+    nodos: list[list[Mapping[str, Any]]] = [[fraccion], [nico], [regla]] + [[] for _ in range(10)]
+    # 12 de relaciones (SUBJECT_TO y AFFECTED_BY al final).
     relaciones: list[list[Mapping[str, Any]]] = [[{"tariff_fraction_id": FRACCION, "id": NICO}]] + [
-        [] for _ in range(9)
+        [] for _ in range(11)
     ]
     return nodos + relaciones
 
@@ -149,9 +151,11 @@ def test_las_omisiones_del_28_estan_escritas() -> None:
     from graph import proyeccion
 
     doc = proyeccion.__doc__ or ""
-    for ausente in ("NOM", "PROSECSector", "Treaty", "RegulatoryEvent", "Manufacturer"):
+    for ausente in ("PROSECSector", "Treaty", "Manufacturer"):
         assert ausente in doc, f"falta decir por qué no está {ausente}"
-    assert "Anexo 2.4.1" in doc, "hay que decir qué fuente desbloquea cada uno"
+    # Y los que salieron de la lista, con la fuente que los desbloqueó.
+    for nombre in ("NOM", "RegulatoryEvent", "Anexo 2.4.1"):
+        assert nombre in doc
 
 
 def test_el_grafo_no_fundamenta_nada() -> None:
@@ -219,3 +223,61 @@ def test_el_resumen_suma_lo_que_se_proyecto() -> None:
 
     assert r.total_nodos == 19639
     assert r.total_relaciones == 11503
+
+
+# ── NOM y cuándo se proyectó (13-oct) ───────────────────────────────────────
+
+NOM_ID = uuid.uuid4()
+
+
+def _escenario_con_nom() -> list[list[Mapping[str, Any]]]:
+    """La fracción del escenario y una correlación del Anexo 2.4.1."""
+    lotes = _escenario()
+    nom = {
+        "id": NOM_ID,
+        "code": "NOM-019-SCFI-1998",
+        "fraction_code": "84713001",
+        "numeral": 1,
+        "scope_note": "Únicamente: equipos con alimentación de la red",
+        "valid_from": date(2023, 1, 1),
+        "valid_to": None,
+        "data_origin": "OFFICIAL",
+    }
+    lotes[11] = [nom]  # la 12.ª consulta de nodos es la de NOM
+    lotes[13 + 10] = [{"tariff_fraction_id": FRACCION, "id": NOM_ID}]  # SUBJECT_TO
+    return lotes
+
+
+def test_la_nom_se_proyecta_con_su_alcance_y_su_vigencia() -> None:
+    """Un nodo por correlación: el «Únicamente: …» y la vigencia son suyos."""
+    grafo = GrafoFalso()
+    proyectar(SesionFalsa(_escenario_con_nom()), grafo)  # type: ignore[arg-type]
+
+    nom = grafo.nodos["NOM"][str(NOM_ID)]
+    assert nom["code"] == "NOM-019-SCFI-1998"
+    assert nom["scope_note"].startswith("Únicamente")
+    assert nom["valid_from"] == date(2023, 1, 1)
+    assert nom["data_origin"] == "OFFICIAL"
+    assert grafo.relaciones["SUBJECT_TO"] == {(str(FRACCION), str(NOM_ID))}
+
+
+def test_sin_eventos_no_se_crea_ningun_nodo_vacio() -> None:
+    grafo = GrafoFalso()
+    proyectar(SesionFalsa(_escenario()), grafo)  # type: ignore[arg-type]
+
+    assert grafo.nodos.get("RegulatoryEvent", {}) == {}
+    assert grafo.relaciones.get("AFFECTED_BY", set()) == set()
+
+
+def test_la_proyeccion_dice_cuando_se_hizo() -> None:
+    """Un grafo de septiembre no puede leerse como si fuera de hoy."""
+    from datetime import UTC, datetime
+
+    grafo = GrafoFalso()
+    ahora = datetime(2026, 10, 13, 22, 0, tzinfo=UTC)
+    proyectar(SesionFalsa(_escenario()), grafo, ahora=ahora)  # type: ignore[arg-type]
+
+    [marca] = grafo.nodos["Proyeccion"].values()
+    assert marca["at"] == "2026-10-13T22:00:00+00:00"
+    assert marca["decisiones"] == 0
+    assert marca["nodos"] == 3
