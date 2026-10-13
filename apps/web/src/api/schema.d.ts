@@ -293,9 +293,9 @@ export interface paths {
         put?: never;
         /**
          * Pregunta al corpus jurídico
-         * @description Recupera los pasajes vigentes que hablan de la pregunta.
+         * @description Recupera los pasajes vigentes y redacta sobre ellos, citándolos (§31).
          *
-         *     No redacta una respuesta: devuelve la norma. Ver el módulo para el porqué.
+         *     Ver el módulo y el ADR 0010 para qué se entrega y qué se descarta.
          */
         post: operations["consultar_copilot_consultas_post"];
         delete?: never;
@@ -1528,6 +1528,34 @@ export interface components {
          * @enum {string}
          */
         FindingSeverity: "INFO" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+        /**
+         * Fuente
+         * @description Una fuente CITADA en `answer` (ADR 0010, punto 3).
+         *
+         *     Se construye desde las citas que el código validó, nunca desde lo que el
+         *     modelo diga que usó.
+         */
+        Fuente: {
+            /** N */
+            n: number;
+            /** Source Id */
+            source_id?: string | null;
+            /** Documento */
+            documento: string;
+            /** Articulo */
+            articulo?: string | null;
+            /**
+             * Valid From
+             * Format: date
+             */
+            valid_from: string;
+            /** Valid To */
+            valid_to?: string | null;
+            /** Url */
+            url?: string | null;
+            /** Content Hash */
+            content_hash?: string | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -1758,6 +1786,13 @@ export interface components {
          *     la condición que hacía que no aplicara.
          */
         Pasaje: {
+            /**
+             * N
+             * @default 0
+             */
+            n: number;
+            /** Source Id */
+            source_id?: string | null;
             /** Documento */
             documento: string;
             /** Articulo */
@@ -2367,6 +2402,31 @@ export interface components {
              * Format: date
              */
             fecha: string;
+            /**
+             * Answer
+             * @default
+             */
+            answer: string;
+            /**
+             * Confidence
+             * @default 0.00
+             */
+            confidence: string;
+            /** Sources */
+            sources?: components["schemas"]["Fuente"][];
+            /** Evidence */
+            evidence?: components["schemas"]["Pasaje"][];
+            /** Missing Information */
+            missing_information?: string[];
+            /**
+             * Requires Human Review
+             * @default true
+             */
+            requires_human_review: boolean;
+            /** Prompt Id */
+            prompt_id?: string | null;
+            /** Prompt Version */
+            prompt_version?: string | null;
             /** Pasajes */
             pasajes?: components["schemas"]["Pasaje"][];
             /**
