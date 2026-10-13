@@ -69,11 +69,17 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass, field
 from decimal import Decimal
+from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
+from core.classification import nico_de
 from core.evaluation.intervalos import wilson
+from database.repositories.tariff import TariffCatalogRepository
 
 from apps.evaluacion.procedencia import linea_de_procedencia, procedencia
+
+if TYPE_CHECKING:
+    from core.classification import NicoCatalog
 
 
 @dataclass
@@ -97,6 +103,16 @@ class Resultado:
     """Cuántas se midieron contra el dictamen de un clasificador."""
     contra_declaracion: int = 0
     """Cuántas se midieron contra la fracción declarada en el pedimento."""
+
+    nico_acerto: int = 0
+    """Fracción acertada y NICO entregado igual al de la verdad."""
+    nico_fallo: int = 0
+    nico_se_abstuvo: int = 0
+    """Fracción acertada pero sin NICO: la fracción tiene varios y no se elige."""
+    nico_sin_verdad: int = 0
+    """Fracción acertada, pero ni el dictamen ni la declaración traen NICO."""
+    errores_nico: list[tuple[str, str, str]] = field(default_factory=list)
+    """(sku, NICO verdadero, NICO entregado)."""
 
     errores: list[tuple[str, str, str, str]] = field(default_factory=list)
     """(sku, verdad, propuesta, de dónde sale la verdad) de cada fallo. Sin
@@ -123,6 +139,14 @@ class Resultado:
         if not self.medibles:
             return None
         return (Decimal(self.contestadas) / Decimal(self.medibles) * 100).quantize(Decimal("0.01"))
+
+    @property
+    def nico_contestadas(self) -> int:
+        return self.nico_acerto + self.nico_fallo
+
+    @property
+    def nico_medibles(self) -> int:
+        return self.nico_contestadas + self.nico_se_abstuvo
 
 
 _CON_FRACCION_FIABLE = sa.text(
@@ -170,6 +194,21 @@ _CON_FRACCION_FIABLE = sa.text(
              ORDER BY h.created_at DESC
              LIMIT 1
            ) AS dictamen,
+           (
+             SELECT h.nico_code
+             FROM intelligence.classification_decisions h
+             WHERE h.product_dna_id = (
+                     SELECT d2.product_dna_id
+                     FROM intelligence.classification_decisions d2
+                     WHERE d2.product_id = i.product_id
+                     ORDER BY d2.created_at DESC LIMIT 1
+                   )
+               AND h.data_origin = 'HUMAN_VALIDATED'
+             ORDER BY h.created_at DESC
+             LIMIT 1
+           ) AS dictamen_nico,
+           i.declared_nico_code AS declarada_nico,
+           ped.operation_date AS fecha,
            COALESCE((
              SELECT h.fraction_code IS NULL
              FROM intelligence.classification_decisions h
@@ -189,6 +228,7 @@ _CON_FRACCION_FIABLE = sa.text(
            ) AS hubo_decision
     FROM operational.pedimento_items i
     JOIN operational.products p ON p.id = i.product_id
+    JOIN operational.pedimentos ped ON ped.id = i.pedimento_id
     WHERE i.declared_fraction_code IS NOT NULL
       -- SÓLO LAS QUE TIENEN LA FRACCIÓN MUTADA, NO TODAS LAS SUCIAS
       --
@@ -213,7 +253,7 @@ _CON_FRACCION_FIABLE = sa.text(
 )
 
 
-def medir(sesion: sa.orm.Session) -> Resultado:
+def medir(sesion: sa.orm.Session, nicos: NicoCatalog | None = None) -> Resultado:
     """Compara lo propuesto con la verdad, y la verdad no siempre es la declarada.
 
     EL DICTAMEN DE UN CLASIFICADOR MANDA SOBRE LA DECLARACIÓN
@@ -244,7 +284,18 @@ def medir(sesion: sa.orm.Session) -> Resultado:
     El informe dice cuántas se midieron contra cada cosa. Sin eso, el
     porcentaje no se puede interpretar: 100 % contra declaración sintética y
     100 % contra dictamen humano son dos afirmaciones muy distintas.
+
+    EL NICO (§19, §39), SÓLO DONDE LA FRACCIÓN ACERTÓ
+
+    Medir el NICO de una fracción equivocada mezclaría dos errores en uno. El
+    NICO que se compara es el que entrega `nico_de` para la fracción
+    propuesta: es una función determinista de la fracción y la fecha, la misma
+    que usa el clasificador, así que no hace falta reclasificar el corpus para
+    medirla. La verdad sigue la misma precedencia: el NICO del dictamen, y si
+    no, el declarado (las partidas con `WRONG_NICO` ya están excluidas).
     """
+    if nicos is None:
+        nicos = TariffCatalogRepository(sesion)
     salida = Resultado()
     for fila in sesion.execute(_CON_FRACCION_FIABLE).all():
         if fila.sin_fundamento:
@@ -266,10 +317,27 @@ def medir(sesion: sa.orm.Session) -> Resultado:
 
         if fila.propuesta == verdad:
             salida.acerto += 1
+            _medir_nico(salida, fila, nicos)
         else:
             salida.fallo += 1
             salida.errores.append((fila.sku, verdad, fila.propuesta, de_donde))
     return salida
+
+
+def _medir_nico(salida: Resultado, fila: Any, nicos: NicoCatalog) -> None:
+    verdad = fila.dictamen_nico if fila.dictamen is not None else None
+    verdad = verdad or fila.declarada_nico
+    if not verdad:
+        salida.nico_sin_verdad += 1
+        return
+    entregado, _ = nico_de(nicos, on_date=fila.fecha, fraction_code=fila.propuesta)
+    if entregado is None:
+        salida.nico_se_abstuvo += 1
+    elif entregado == verdad:
+        salida.nico_acerto += 1
+    else:
+        salida.nico_fallo += 1
+        salida.errores_nico.append((fila.sku, verdad, entregado))
 
 
 def informe(r: Resultado) -> str:
@@ -305,6 +373,21 @@ def informe(r: Resultado) -> str:
 
     if r.cobertura is not None:
         lineas.append(f"COBERTURA  {r.cobertura} % — cuántas veces se atrevió a contestar")
+
+    lineas += [
+        "",
+        "NICO  sólo donde la fracción acertó; se entrega cuando la LIGIE da uno único",
+        f"  contestó {r.nico_contestadas} de {r.nico_medibles}: acertó {r.nico_acerto},"
+        f" falló {r.nico_fallo}, se abstuvo {r.nico_se_abstuvo} (varios NICO)",
+        f"  sin NICO de verdad contra el que medir: {r.nico_sin_verdad}",
+    ]
+    if r.nico_contestadas:
+        lineas.append(
+            f"  PRECISIÓN NICO  {Decimal(r.nico_acerto * 100) / r.nico_contestadas:.2f} %"
+            f" · margen al 95 %: ±{wilson(r.nico_acerto, r.nico_contestadas):.2f} puntos"
+        )
+    for sku, verdad, entregado in r.errores_nico[:10]:
+        lineas.append(f"  {sku:<18} NICO verdadero {verdad}  entregó {entregado}")
 
     if r.errores:
         lineas.append("")

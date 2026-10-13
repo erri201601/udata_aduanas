@@ -23,7 +23,7 @@ Entre paso y paso hay decisiones que ningún motor puede tomar solo:
 from __future__ import annotations
 
 import uuid
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, Protocol
 
 from core.classification.result import ClassificationOutcome
 from core.evidence import EvidenceError, builder, contract, questions
@@ -41,6 +41,39 @@ if TYPE_CHECKING:
     from core.taxation import Money, TaxRates
 
 
+class NicoCatalog(Protocol):
+    """Los NICO vigentes de una fracción. Lo implementa
+    `database/repositories/tariff.py::TariffCatalogRepository`.
+
+    `None` = la fracción no está vigente; `()` = no tiene NICO cargados."""
+
+    def nicos(self, *, on_date: date, fraction_code: str) -> tuple[str, ...] | None: ...
+
+
+def nico_de(nicos: NicoCatalog, *, on_date: date, fraction_code: str) -> tuple[str | None, str]:
+    """El NICO de una fracción ya decidida, y por qué (§19).
+
+    Sólo se elige cuando no hay elección: un único NICO vigente en la LIGIE.
+    Medido el 13-oct contra los veredictos de César: en las fracciones de un
+    solo NICO, 14 de 14 coinciden con el que firmó. Con varios no se elige —el
+    NICO distingue por materia, uso o presentación, y ninguna regla medida lo
+    hace todavía—. Misma disciplina que la RGI 6: resolver sólo cuando queda
+    uno.
+    """
+    vigentes = nicos.nicos(on_date=on_date, fraction_code=fraction_code)
+    if vigentes is None:
+        return None, f"la fracción {fraction_code} no está vigente en el catálogo de NICO"
+    if not vigentes:
+        return None, f"la fracción {fraction_code} no tiene NICO cargados"
+    if len(vigentes) == 1:
+        return vigentes[0], f"único NICO vigente de la fracción {fraction_code} en la LIGIE"
+    return None, (
+        f"la fracción {fraction_code} tiene {len(vigentes)} NICO vigentes "
+        f"({', '.join(vigentes)}); elegir uno exige distinguir por materia, uso o "
+        "presentación, y no se elige sin una regla que lo sostenga"
+    )
+
+
 def classify_product(
     dna: ProductDnaDraft,
     *,
@@ -53,6 +86,7 @@ def classify_product(
     trade_flow: str = "IMPORT",
     exclusiones: Sequence[tuple[str, str]] = (),
     equivalencias: Sequence[tuple[str, str]] = (),
+    nicos: NicoCatalog | None = None,
 ) -> ClassificationOutcome:
     """Clasifica un producto y devuelve la decisión con lo que la sostiene.
 
@@ -63,6 +97,9 @@ def classify_product(
 
     Nunca lanza por no poder clasificar. Un `INSUFFICIENT_INFORMATION` con su
     razón es un resultado legítimo, no un error.
+
+    Con `nicos`, una fracción defendible baja también al NICO cuando la LIGIE
+    sólo tiene uno (`nico_de`). Sin `nicos` no se intenta.
     """
     hechos = tuple(ProductFact(**a.to_fact_fields()) for a in dna.attributes)
 
@@ -102,6 +139,13 @@ def classify_product(
         data_used=contexto.as_input_facts(),
     )
 
+    nico: str | None = None
+    motivo_nico: str | None = None
+    if nicos is not None and bloqueo is None and traza.resolved_code:
+        nico, motivo_nico = nico_de(
+            nicos, on_date=operation_date, fraction_code=traza.resolved_code
+        )
+
     return ClassificationOutcome(
         trace=traza,
         operation_date=operation_date,
@@ -109,6 +153,8 @@ def classify_product(
         dossier=dossier,
         blocked_by=bloqueo,
         facts_used=contexto.as_input_facts(),
+        nico_code=nico,
+        nico_reason=motivo_nico,
     )
 
 

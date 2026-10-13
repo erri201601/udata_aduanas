@@ -280,10 +280,13 @@ def clasificar_borrador(
     )
     legal_refs = a_legal_refs(_solo_lo_que_funda_una_clasificacion(session, recuperacion))
 
+    catalogo = TariffCatalogRepository(session)
     outcome = classify_product(
         borrador,
         operation_date=operation_date,
-        catalog=TariffCatalogRepository(session),
+        catalog=catalogo,
+        # El NICO, cuando la LIGIE no deja elección (§19).
+        nicos=catalogo,
         notes=notas,
         search_terms=busqueda,
         legal_refs=legal_refs,

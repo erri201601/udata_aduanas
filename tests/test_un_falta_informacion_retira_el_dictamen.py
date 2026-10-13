@@ -50,6 +50,9 @@ def _fila(**kw: Any) -> Any:
         "dictamen": None,
         "sin_fundamento": False,
         "hubo_decision": True,
+        "dictamen_nico": None,
+        "declarada_nico": None,
+        "fecha": None,
     }
     base.update(kw)
     return type("Fila", (), base)()
