@@ -1,8 +1,8 @@
 # ADR 0011 — Peso neto por partida y rectificación de pedimentos
 
 - **Fecha:** 2026-10-13
-- **Estado:** propuesto — implementado en rama, pendiente de revisión de
-  Persona 1 antes de mergear a `develop` o cargar a la base compartida.
+- **Estado:** aceptado (2026-10-13, Persona 1) — pendiente mergear por
+  `make merge` cuando el CI termine en verde.
 - **Decide:** Persona 1
 - **Pide:** Persona 1 (hoy, tarea del generador sintético §24: "el peso de
   cada partida, para que la cuota compensatoria pueda llevar importe" y
@@ -73,5 +73,6 @@ de aceptación, es un ADR aparte con datos reales que lo pidan.
   partida declara mercancía sujeta a cuota compensatoria por peso, y puede
   producir un par (original, rectificación) para el escenario de
   rectificaciones del §10.
-- Probado sólo contra mi Postgres local. No toca `develop` ni la base
-  compartida.
+- Probado sólo contra mi Postgres local. Aprobado por Persona 1 (13-oct)
+  — queda mergear por PR con `make merge` en cuanto el CI termine en
+  verde; la base compartida la aplica Persona 1.
