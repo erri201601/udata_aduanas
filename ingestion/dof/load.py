@@ -18,6 +18,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
+import structlog
 from database.models.regulatory import (
     CustomsOffice,
     LegalChunkRecord,
@@ -27,12 +28,14 @@ from database.models.regulatory import (
     NonTariffRegulation,
     PedimentoClave,
     PedimentoIdentifier,
+    RegulatoryEvent,
     UnitOfMeasure,
 )
 from database.repositories.chunks import PostgresChunkStore
 from rag.types import LegalChunk, hash_contenido
 
 from ingestion.dof.rgce import fracciones_de
+from ingestion.dof.sumario import clasificar_event_kind
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -45,6 +48,9 @@ if TYPE_CHECKING:
         ParsedUnitOfMeasure,
     )
     from ingestion.dof.rgce import ParsedRule
+    from ingestion.dof.sumario import ParsedSumarioItem
+
+log = structlog.stdlib.get_logger("ingestion.dof.load")
 
 DOF_SLUG = "dof"
 ANEXO22_SHORT_NAME = "ANEXO_22_RGCE_2026"
@@ -567,3 +573,66 @@ def load_identifier_chunks(
     if not chunks:
         return 0
     return PostgresChunkStore(session).add(chunks)
+
+
+def load_regulatory_events(
+    session: Session,
+    *,
+    items: list[ParsedSumarioItem],
+    content_hash: str,
+    retrieved_at: datetime | None = None,
+) -> int:
+    """Carga `regulatory_events` (§11 DOF, §43 Sprint 6) -- lo mínimo que
+    hace que el Sentinel deje de decir "sin vigilancia": `eventos_dof` deja
+    de ser 0 en cuanto esto corre una vez.
+
+    `items` ya viene filtrado a relevancia de comercio exterior
+    (`ingestion.dof.sumario.es_relevante_comercio_exterior`) -- este loader
+    no decide relevancia, sólo escribe.
+
+    `affected_fraction_codes`/`affected_rule_ids` quedan `[]` (el default
+    de la columna): identificar qué fracción o regla afecta un decreto
+    exige leer el documento completo, no el resumen de una línea del
+    sumario -- afirmarlo desde ahí sería inventar (§8.1 maestro). El
+    Sentinel hoy sólo cuenta filas (`apps/api/routers/sentinel.py`); que
+    muestre "qué cambió" con `title`/`summary` es cableado de quien lo
+    decida, igual que `required_identifiers` (ADR 0010).
+
+    Identidad por `source_url` (único por `codigo` del DOF) -- idempotente,
+    mismo criterio que `cargar_cuotas_compensatorias`.
+    """
+    retrieved_at = retrieved_at or datetime.now(UTC)
+    source = get_or_create_dof_source(session)
+
+    existentes = {url for (url,) in session.query(RegulatoryEvent.source_url).all()}
+
+    creados = 0
+    for item in items:
+        if item.source_url in existentes:
+            continue
+        existentes.add(item.source_url)
+        session.add(
+            RegulatoryEvent(
+                title=item.description,
+                authority=item.authority,
+                event_kind=clasificar_event_kind(item),
+                effective_date=None,
+                summary=item.description,
+                keywords=[],
+                affected_fraction_codes=[],
+                affected_rule_ids=[],
+                data_origin="OFFICIAL",
+                source_id=source.id,
+                valid_from=item.value_date,
+                published_at=item.value_date,
+                source_url=item.source_url,
+                source_document=f"DOF, sumario diario ({item.value_date.isoformat()})",
+                content_hash=content_hash,
+                retrieved_at=retrieved_at,
+            )
+        )
+        creados += 1
+
+    session.flush()
+    log.info("dof.regulatory_events.cargado", creados=creados, recibidos=len(items))
+    return creados
