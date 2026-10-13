@@ -31,6 +31,11 @@ dependencies = [
     "python-dateutil>=2.9",
     # Ingestión — fuentes oficiales publican XLSX (SNICE: LIGIE, NICO)
     "openpyxl>=3.1",
+    # Product DNA desde PDF (§16): se saca la capa de texto y se pasa por el
+    # extractor de texto. Sin OCR: un PDF escaneado sin texto se rechaza con
+    # «sin texto extraíble» (Persona 1, 13-oct). Con techo, por lo mismo que
+    # python-multipart.
+    "pypdf>=6,<7",
 ]
 
 [project.optional-dependencies]

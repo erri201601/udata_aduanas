@@ -12,7 +12,7 @@
 
 import { AttributeStatusBadge, ConfidenceMeter } from '../components/AttributeStatusBadge'
 import { ClassifyButton } from '../components/ClassifyButton'
-import { SubirImagen } from '../components/SubirImagen'
+import { CargarFicha } from '../components/CargarFicha'
 import { SyntheticBanner } from '../components/DataOriginBadge'
 import { useProductDna, useProducts } from '../hooks/useProductDna'
 import type { AttributeStatus, ProductAttributeRead } from '../api/client'
@@ -67,7 +67,7 @@ export function ProductDna({ onClasificado }: Props = {}) {
 
       <SyntheticBanner origin={dna?.data_origin} />
 
-      {activo && <SubirImagen productId={activo} onExtraido={recargar} />}
+      {activo && <CargarFicha productId={activo} onExtraido={recargar} />}
 
       {activo && onClasificado && (
         <ClassifyButton
@@ -184,13 +184,17 @@ export function ProductDna({ onClasificado }: Props = {}) {
                     <td>
                       <ConfidenceMeter value={a.confidence ? Number(a.confidence) : null} />
                     </td>
+                    {/* Dónde está el dato DENTRO del documento: «[p.3]
+                        Especificaciones». El id de la evidencia dice de qué
+                        archivo salió; el localizador, en qué parte de él. */}
                     <td>
+                      {a.locator && <span className="evidencia__donde">{a.locator}</span>}
                       {a.evidence_reference ? (
-                        <code className="evidencia">
+                        <code className="evidencia" title={a.evidence_reference}>
                           {a.evidence_reference.slice(0, 8)}
                         </code>
                       ) : (
-                        <span className="sin-dato">—</span>
+                        !a.locator && <span className="sin-dato">—</span>
                       )}
                     </td>
                   </tr>

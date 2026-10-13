@@ -27,11 +27,25 @@ def _escribir(root: Path, familia: str, nombre: str, version: str, cuerpo: str =
 
 
 def test_el_prompt_de_product_dna_existe_y_carga() -> None:
+    from core.product_dna.llm_extractor import PROMPT_VERSION
+
     prompt = load_prompt("product_dna.extract")
 
     assert prompt.prompt_id == "product_dna.extract"
-    assert prompt.prompt_version == "0.1"
+    # La última versión es la que usa el extractor: si no, lo que se carga por
+    # omisión y lo que se registra en cada ficha serían cosas distintas.
+    assert prompt.prompt_version == PROMPT_VERSION == "0.2"
     assert prompt.content_hash
+
+
+def test_la_version_anterior_del_prompt_sigue_cargando() -> None:
+    """Lo extraído con la 0.1 tiene que poder reproducirse con la 0.1."""
+    assert load_prompt("product_dna.extract", "0.1").prompt_version == "0.1"
+
+
+def test_el_prompt_pide_citar_la_pagina_del_pdf() -> None:
+    """Sin eso, en un datasheet largo «dónde está el dato» es volver a leerlo."""
+    assert "[p.3]" in load_prompt("product_dna.extract", "0.2").body
 
 
 def test_el_prompt_declara_los_cuatro_estados_de_product_dna() -> None:
