@@ -22,6 +22,8 @@ import { useEffect, useState } from 'react'
 import { TASAS_DEL_CORPUS, fetchEspejo, fetchPedimentos, revisarPedimento } from '../api/client'
 import type { LineaEspejo, PedimentoEspejo, PedimentoRead } from '../api/client'
 import { detalleDe, etiquetaDe } from '../components/divergencias'
+import { CalculoDelMonto } from '../components/CalculoDelMonto'
+import { comoCalculo } from '../components/calculo'
 import { SyntheticBanner } from '../components/DataOriginBadge'
 import { SEVERIDADES, formatearMonto } from '../components/severity'
 import type { Severity } from '../api/client'
@@ -231,6 +233,7 @@ function Partida({
           <ul className="divergencias">
             {propias.map((d) => {
               const monto = formatearMonto(d.impact_amount, d.impact_amount_currency)
+              const calculo = monto ? comoCalculo(d.impact_calculation) : null
               return (
                 <li key={d.finding_id}>
                   <div className="divergencia__titulo">
@@ -285,6 +288,7 @@ function Partida({
                       </em>
                     )}
                   </p>
+                  {calculo && <CalculoDelMonto calculo={calculo} />}
                 </li>
               )
             })}

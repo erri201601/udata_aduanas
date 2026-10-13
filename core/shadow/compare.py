@@ -49,6 +49,7 @@ def compare_item(declared: DeclaredItem, expected: ExpectedItem) -> list[Diverge
         exp: str | None,
         razon: str,
         severidad: str | None = None,
+        derivacion: str | None = None,
     ) -> None:
         hallazgos.append(
             Divergence(
@@ -60,6 +61,7 @@ def compare_item(declared: DeclaredItem, expected: ExpectedItem) -> list[Diverge
                 severity=severidad or default_severity(kind),
                 confidence=expected.confidence,
                 reasoning=razon,
+                derivation=derivacion,
                 source_ids=expected.source_ids,
             )
         )
@@ -153,6 +155,7 @@ def compare_item(declared: DeclaredItem, expected: ExpectedItem) -> list[Diverge
                 f"{declared.fraction_code}: sale {expected.igi_amount} y se declaró "
                 f"{declared.igi_amount}."
             ),
+            derivacion=expected.derivations.get("igi_amount"),
         )
 
     # ── IVA ──────────────────────────────────────────────────────────────────
@@ -173,6 +176,7 @@ def compare_item(declared: DeclaredItem, expected: ExpectedItem) -> list[Diverge
                 f"más DTA—: sale {expected.vat_amount} y se declaró {declared.vat_amount}. "
                 "Puede ser la base o el importe; desde el pedimento no se distingue."
             ),
+            derivacion=expected.derivations.get("vat_amount"),
         )
 
     # ── Unidad de medida ─────────────────────────────────────────────────────

@@ -112,6 +112,12 @@ class ExpectedItem(BaseModel):
     Las tasas las pasa quien llama; el motor no las inventa (§8.1).
     """
 
+    derivations: dict[str, str] = Field(default_factory=dict)
+    """Cómo se obtuvo cada importe esperado, campo → fórmula con sus entradas
+    («valor_aduana(100000.00) × tasa_IGI 84713001 (0.15) = 15000.00»). Viaja a
+    la divergencia y de ahí al cálculo del hallazgo (§22): sin esto el
+    esperado era un número que había que creerse."""
+
     exchange_rate: Decimal | None = None
     """El FIX vigente para la fecha de operación y la divisa de la factura.
 
@@ -227,6 +233,8 @@ class Divergence(BaseModel):
     severity: str = "MEDIUM"
     confidence: Decimal | None = None
     reasoning: str = ""
+    derivation: str | None = None
+    """Cómo se obtuvo `expected_value`, cuando es un importe calculado (§22)."""
     source_ids: tuple[Any, ...] = ()
     requires_human_review: bool = True
 

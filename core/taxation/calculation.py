@@ -42,6 +42,28 @@ class LineItem(BaseModel):
     source_ids: tuple[Any, ...] = ()
 
 
+class MonetaryResult(BaseModel):
+    """El sobre del §22: lo que toda cifra lleva para poder repetirse a mano.
+
+    Existe porque el cálculo completo vivía en `TaxCalculation` y al guardar un
+    hallazgo sólo sobrevivían el importe y la divisa. Quien abría el hallazgo
+    veía «4 822.95 MXN» y no tenía cómo comprobarlo. Con esto, la fila lleva la
+    fórmula, las entradas exactas y la versión del cálculo que la produjo.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    formula: str
+    inputs: dict[str, str] = Field(default_factory=dict)
+    """Como cadenas, para no perder precisión al serializar."""
+    result: str
+    currency: str | None = None
+    calculation_version: str = CALCULATION_VERSION
+    assumptions: tuple[str, ...] = ()
+    source_ids: tuple[str, ...] = ()
+    is_simulation: bool = True
+
+
 class TaxCalculation(BaseModel):
     """El cálculo completo de las contribuciones de una operación."""
 
@@ -127,6 +149,39 @@ class DivergenceImpact(BaseModel):
         if self.is_overpayment:
             return "SOBREPAGO"
         return "SIN_DIFERENCIA"
+
+    def as_result(self, assumptions: tuple[str, ...] = ()) -> MonetaryResult:
+        """El impacto en el sobre del §22, con el desglose por contribución.
+
+        Las entradas son las fórmulas de cada contribución, de los dos lados:
+        con ellas se rehace el total sin abrir el código.
+        """
+        entradas: dict[str, str] = {
+            "total_declarado": str(self.declared.total_taxes.amount),
+            "total_esperado": str(self.expected.total_taxes.amount),
+        }
+        for lado, calculo in (("declarado", self.declared), ("esperado", self.expected)):
+            for item in calculo.items:
+                entradas[f"{lado}.{item.concept}"] = f"{item.formula} = {item.amount.amount}"
+        fuentes = dict.fromkeys(
+            str(s)
+            for c in (self.declared, self.expected)
+            for s in (*c.source_ids, *(f for i in c.items for f in i.source_ids))
+        )
+        return MonetaryResult(
+            formula="Σ contribuciones esperadas - Σ contribuciones declaradas",
+            inputs=entradas,
+            result=str(self.difference.amount),
+            currency=self.difference.currency,
+            calculation_version=self.expected.calculation_version,
+            assumptions=tuple(
+                dict.fromkeys(
+                    (*self.declared.assumptions, *self.expected.assumptions, *assumptions)
+                )
+            ),
+            source_ids=tuple(fuentes),
+            is_simulation=self.is_simulation,
+        )
 
     def as_money_impact(self) -> str:
         """Cadena para `Dossier.money_impact` del Evidence Contract.
