@@ -1,8 +1,9 @@
 # ADR 0010 — Qué clave de pedimento exige cada identificador del Apéndice 8
 
 - **Fecha:** 2026-10-13
-- **Estado:** propuesto — implementado en rama, pendiente de revisión de
-  Persona 1 antes de mergear a `develop` o cargar a la base compartida.
+- **Estado:** aceptado (2026-10-13, Persona 1) — pendiente mergear por
+  `make merge` cuando el CI termine en verde; el cableado de
+  `required_identifiers` en `core/shadow` lo hace Persona 1.
 - **Decide:** Persona 1
 - **Pide:** Persona 1 (hoy, "qué identificadores exige cada operación —
   necesito una tabla con vigencia y fuente"), sobre el reconocimiento que
@@ -114,7 +115,7 @@ ya no por falta de la tabla.
   mismo patrón que `cargar_cuotas_compensatorias`. CLI:
   `ingestion.dof.cli --apendice8-requisitos`.
 - Probado contra mi Postgres local únicamente (migración aplicada,
-  9 filas cargadas, suite completa en verde). **No tocado:** la base
-  compartida ni `develop` — pendiente de que Persona 1 revise este ADR y
-  avise que se puede mergear/cargar, como pidió para toda la sesión de
-  hoy.
+  9 filas cargadas, suite completa en verde). Aprobado por Persona 1
+  (13-oct) — queda mergear por PR con `make merge` en cuanto el CI
+  termine en verde; la carga a la base compartida la aplica Persona 1,
+  como en todo cambio de esquema (§6 no negociable de CLAUDE.md).
