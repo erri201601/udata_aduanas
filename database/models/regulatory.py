@@ -441,6 +441,71 @@ class PedimentoIdentifier(
     supuestos_de_aplicacion: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
 
 
+class PedimentoIdentifierRequirement(
+    UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base
+):
+    """Qué identificador del Apéndice 8 exige una clave de pedimento del
+    Apéndice 2 — la regla que `docs/RECONOCIMIENTO_APENDICE_8.md` dejó
+    diferida el 6-oct porque el corpus sintético es 100% clave `A1` y
+    ninguna de las claves estructurables lo era. Mismo patrón que
+    `FractionNomRequirement` (ADR 0003): clave natural, vigencia,
+    procedencia, sin lógica en la tabla.
+
+    SÓLO 9 DE LAS 10 CLAVES DEL RECONOCIMIENTO, Y UNA CORREGIDA
+
+    El reconocimiento listó 10 claves "categoría (a)" como estructurables
+    con el patrón `identifier_code -> pedimento_key`: `A3, AF, TD, V1,
+    V4-V9`. Verificando el texto real de `pedimento_identifiers.
+    supuestos_de_aplicacion` (no el resumen del propio reconocimiento) antes
+    de migrar:
+
+    - 8 son AUTO-REFERENTES: el identificador `V1` exige la clave de
+      documento `V1` del Apéndice 2 (y así `A3`->`A3`, `V4`->`V4`, ...,
+      `V9`->`V9`) -- el código es igual en los dos catálogos a propósito.
+    - `TD` NO es auto-referente: su texto real dice «conforme a los
+      supuestos de la clave de documento K1 del apéndice 2», no `TD`. El
+      reconocimiento citó mal esta -- se corrige aquí contra la fuente.
+    - `AF` NO entra: su texto («identificar el activo fijo, únicamente
+      cuando la clave de documento no sea exclusiva para dicha mercancía»)
+      no nombra una clave concreta -- es una condición de exclusión sobre
+      CUALQUIER clave, no un `identifier_code -> pedimento_key` de uno a
+      uno. Forzarla a una fila sería inventar la clave que el documento no
+      da. Queda fuera de esta tabla; `required_identifiers` no la cubre.
+
+    `scope_note` guarda la cita de regla/artículo cuando el texto la trae
+    (6 de las 9: `V1, V4-V9`); `A3` y `TD` no citan ninguna regla aparte.
+    """
+
+    __tablename__ = "pedimento_identifier_requirements"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "identifier_code",
+            "pedimento_key",
+            "valid_from",
+            name="uq_pedimento_identifier_requirements_fila",
+        ),
+        sa.Index(
+            "ix_pedimento_identifier_requirements_vigencia",
+            "pedimento_key",
+            "valid_from",
+            "valid_to",
+        ),
+        {"schema": _SCHEMA},
+    )
+
+    identifier_code: Mapped[str] = mapped_column(sa.String(2), nullable=False)
+    """Clave del Apéndice 8 (`PedimentoIdentifier.code`), p. ej. `"V1"`."""
+
+    pedimento_key: Mapped[str] = mapped_column(sa.String(2), nullable=False)
+    """Clave de documento del Apéndice 2 (`PedimentoClave.code`) cuya
+    presencia en el pedimento exige declarar `identifier_code`."""
+
+    scope_note: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    """Regla RGCE/artículo citado en el propio "Supuestos de Aplicación"
+    (p. ej. "regla 4.3.21. y artículo 86 de la Ley" para `V1`). `None` para
+    `A3`/`TD`, que no citan ninguna."""
+
+
 class NomenclatureSynonym(
     UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base
 ):

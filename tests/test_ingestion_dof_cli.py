@@ -10,7 +10,8 @@ pytestmark = pytest.mark.unit
 
 def test_anexo22_o_rgce_es_obligatorio_sin_raw_only() -> None:
     with pytest.raises(
-        SystemExit, match="--anexo22, --rgce, --split-long-rules o --apendice8-texto"
+        SystemExit,
+        match="--anexo22, --rgce, --split-long-rules, --apendice8-texto o --apendice8-requisitos",
     ):
         main(["--target", "local"])
 

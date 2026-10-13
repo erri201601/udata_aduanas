@@ -12,6 +12,7 @@ Uso:
     python -m ingestion.dof.cli --target shared --rgce --chunks
     python -m ingestion.dof.cli --target shared --split-long-rules
     python -m ingestion.dof.cli --target shared --apendice8-texto
+    python -m ingestion.dof.cli --target shared --apendice8-requisitos
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ from apps.api.config import get_settings
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from ingestion.dof import anexo22, load, rgce
+from ingestion.dof import anexo22, apendice_8_requisitos, load, rgce
 from ingestion.snice import raw
 
 if TYPE_CHECKING:
@@ -109,6 +110,18 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--apendice8-requisitos",
+        action="store_true",
+        help=(
+            "Carga regulatory.pedimento_identifier_requirements: qué clave de "
+            "documento (Apéndice 2) exige cada identificador de pedimento "
+            "(Apéndice 8) -- 9 filas verificadas a mano, ver "
+            "ingestion.dof.apendice_8_requisitos. No parsea el PDF: la "
+            "correlación ya se verificó contra el texto de "
+            "pedimento_identifiers.supuestos_de_aplicacion. Idempotente."
+        ),
+    )
+    parser.add_argument(
         "--raw-only",
         action="store_true",
         help="Solo sube y verifica el RAW en --target; no toca la base.",
@@ -124,10 +137,11 @@ def main(argv: list[str] | None = None) -> int:
         and not args.rgce
         and not args.split_long_rules
         and not args.apendice8_texto
+        and not args.apendice8_requisitos
     ):
         raise SystemExit(
-            "--anexo22, --rgce, --split-long-rules o --apendice8-texto es "
-            "obligatorio salvo con --raw-only"
+            "--anexo22, --rgce, --split-long-rules, --apendice8-texto o "
+            "--apendice8-requisitos es obligatorio salvo con --raw-only"
         )
     if args.chunks and not args.rgce:
         raise SystemExit("--chunks sólo tiene efecto junto con --rgce")
@@ -184,6 +198,10 @@ def main(argv: list[str] | None = None) -> int:
             identificadores_texto = anexo22.parse_identifiers_con_texto(
                 str(anexo22_path), first_page=primera_pagina, last_page=ultima_pagina
             )
+
+        requisitos = None
+        if args.apendice8_requisitos:
+            requisitos = apendice_8_requisitos.requisitos_apendice_8()
 
         reglas = None
         if args.rgce or args.split_long_rules:
@@ -319,6 +337,19 @@ def main(argv: list[str] | None = None) -> int:
                 enriquecidas=enriquecidas,
                 chunks=n_id_chunks,
             )
+
+        if requisitos is not None:
+            n_requisitos = load.load_identifier_requirements(
+                session,
+                requisitos=requisitos,
+                content_hash=anexo22_capture.content_hash,
+                retrieved_at=anexo22_capture.retrieved_at,
+            )
+            print(
+                f"OK ({args.target}): --apendice8-requisitos: {n_requisitos} filas "
+                "nuevas en pedimento_identifier_requirements."
+            )
+            log.info("dof.apendice8_requisitos.cli.done", target=args.target, creadas=n_requisitos)
         session.commit()
 
     return 0

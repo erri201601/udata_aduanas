@@ -27,6 +27,7 @@ from database.models.regulatory import (
     NonTariffRegulation,
     PedimentoClave,
     PedimentoIdentifier,
+    PedimentoIdentifierRequirement,
     UnitOfMeasure,
 )
 from database.repositories.chunks import PostgresChunkStore
@@ -44,6 +45,7 @@ if TYPE_CHECKING:
         ParsedPedimentoClave,
         ParsedUnitOfMeasure,
     )
+    from ingestion.dof.apendice_8_requisitos import ParsedIdentifierRequirement
     from ingestion.dof.rgce import ParsedRule
 
 DOF_SLUG = "dof"
@@ -567,3 +569,56 @@ def load_identifier_chunks(
     if not chunks:
         return 0
     return PostgresChunkStore(session).add(chunks)
+
+
+def load_identifier_requirements(
+    session: Session,
+    *,
+    requisitos: list[ParsedIdentifierRequirement],
+    content_hash: str,
+    retrieved_at: datetime | None = None,
+) -> int:
+    """Carga `pedimento_identifier_requirements` (§20 maestro) -- la regla
+    que faltaba para que `required_identifiers` deje de ser `None` para las
+    operaciones con estas 9 claves de documento (ver
+    `ingestion.dof.apendice_8_requisitos` para por qué son 9 y no las 10 del
+    reconocimiento del 6-oct).
+
+    Identidad por `(identifier_code, pedimento_key, valid_from)`, igual que
+    la `UniqueConstraint` de la tabla. Idempotente: no reconcilia una fila
+    ya cargada, igual que `cargar_cuotas_compensatorias`.
+
+    No cablea nada en `core/shadow`: ese consumo es de quien decida usarlo
+    (`docs/RECONOCIMIENTO_APENDICE_8.md`, sección "Consumidor de este
+    dato").
+    """
+    retrieved_at = retrieved_at or datetime.now(UTC)
+    source = get_or_create_dof_source(session)
+
+    existentes = {
+        (f.identifier_code, f.pedimento_key, f.valid_from)
+        for f in session.query(
+            PedimentoIdentifierRequirement.identifier_code,
+            PedimentoIdentifierRequirement.pedimento_key,
+            PedimentoIdentifierRequirement.valid_from,
+        ).all()
+    }
+
+    creadas = 0
+    for parsed in requisitos:
+        clave = (parsed.identifier_code, parsed.pedimento_key, ANEXO22_VALID_FROM)
+        if clave in existentes:
+            continue
+        existentes.add(clave)
+        session.add(
+            PedimentoIdentifierRequirement(
+                identifier_code=parsed.identifier_code,
+                pedimento_key=parsed.pedimento_key,
+                scope_note=parsed.scope_note,
+                **_row_kwargs(source, content_hash=content_hash, retrieved_at=retrieved_at),
+            )
+        )
+        creadas += 1
+
+    session.flush()
+    return creadas
