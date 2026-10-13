@@ -282,3 +282,10 @@ class PedimentoItem(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Synthe
         ARRAY(sa.String(16)), nullable=False, server_default="{}"
     )
     identifiers: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    net_weight_kg: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    """Peso neto de la partida, en kilogramos -- campo real del Anexo 22, no
+    antes modelado. `quantity`/`commercial_unit` declaran la UMC comercial
+    (p. ej. metro lineal de cable), que no siempre es kilogramo; sin este
+    campo, una cuota compensatoria fijada por kilogramo (ADR 0009, cable de
+    acero) no tiene de dónde sacar el importe -- queda como hallazgo sin
+    monto. `NULL` = no consta, nunca 0."""

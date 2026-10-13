@@ -54,7 +54,11 @@ lint: ## ruff + mypy
 	$(VENV)/ruff format --check .
 	@# El MISMO alcance que el CI. Con menos, `make lint` daba verde sobre
 	@# un error que el CI sí veía: 130 archivos aquí contra 177 allí.
-	$(VENV)/mypy apps core database schemas ingestion rag graph
+	@# `synthetic/` entra aquí el 13-oct (antes estaba vacío salvo
+	@# `__init__.py`, y el CI lo salta solo -- ahora que tiene código, si
+	@# no se agrega aquí también, `make lint` vuelve a dar el mismo falso
+	@# verde que esta nota ya advertía).
+	$(VENV)/mypy apps core database schemas ingestion rag graph synthetic
 
 fmt: ## Formatea y autocorrige
 	$(VENV)/ruff format .
