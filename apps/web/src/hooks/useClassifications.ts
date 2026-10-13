@@ -8,19 +8,19 @@ import {
   fetchPrecisionClasificacion,
 } from '../api/client'
 import type {
-  ClassificationDecisionRead,
+  DecisionEnLista,
   ClassificationDetail,
   PrecisionClasificacion,
 } from '../api/client'
 
 export interface EstadoDecisiones {
-  decisiones: ClassificationDecisionRead[]
+  decisiones: DecisionEnLista[]
   error: string | null
   cargando: boolean
 }
 
 export function useClassifications(): EstadoDecisiones {
-  const [decisiones, setDecisiones] = useState<ClassificationDecisionRead[]>([])
+  const [decisiones, setDecisiones] = useState<DecisionEnLista[]>([])
   const [error, setError] = useState<string | null>(null)
   const [cargando, setCargando] = useState(true)
 

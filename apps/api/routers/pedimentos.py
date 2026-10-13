@@ -60,6 +60,7 @@ cuesta. Inventar un cero daría una cifra plausible y falsa.
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import date
 from decimal import Decimal
@@ -71,6 +72,7 @@ from core.shadow import DeclaredItem, ExpectedItem
 from core.shadow.types import ORIGEN_DEL_PROVEEDOR
 from core.taxation import Money, TaxRates
 from database.models import (
+    Client,
     FractionNomRequirement,
     Invoice,
     InvoiceItem,
@@ -81,14 +83,17 @@ from database.models import (
 from database.repositories import save_review
 from database.repositories.compensatory_duties import cuotas_vigentes, normalizar_nombre
 from database.repositories.exchange import tasa_vigente
+from database.repositories.identificadores import cargar_reglas
 from database.repositories.invoices import divisa_de_la_factura
+from database.repositories.preguntas import dictamen_de
+from database.repositories.programas import cargar_programas
 from database.repositories.tariff import TariffCatalogRepository
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from apps.api.clasificacion import clasificar_borrador
 from apps.api.db import SessionDep
-from apps.api.dna import cargar_borrador
+from apps.api.dna import cargar_borrador, version_vigente
 
 router = APIRouter(prefix="/pedimentos", tags=["pedimentos"])
 
@@ -187,8 +192,33 @@ def revisar(
     lineas: list[LineInput] = []
     sin_espejo = 0
 
+    # PROSEC y Regla 8ª (ADR 0011). `None` = los catálogos no están cargados, y
+    # el informe lo dice en vez de callar.
+    programas = cargar_programas(session, on_date=fecha, catalogo=catalogo)
+    # Identificadores exigidos (ADR 0012). `None` = no hay reglas cargadas, y
+    # el Espejo lo dice como laguna en vez de dar la partida por comprobada.
+    reglas = cargar_reglas(session, on_date=fecha)
+    cliente = session.get(Client, pedimento.client_id)
+    sectores = (
+        frozenset(cliente.prosec_sector_codes)
+        if cliente is not None and cliente.prosec_sector_codes is not None
+        else None
+    )
+
     for partida in partidas:
         esperada = _construir_espejo(session, partida, fecha, catalogo, peticion)
+        if esperada is not None and reglas is not None:
+            exigidos = reglas.para(
+                pedimento_key=pedimento.pedimento_key,
+                fraction_code=partida.declared_fraction_code,
+                nico_code=partida.declared_nico_code,
+            )
+            esperada = esperada.model_copy(
+                update={
+                    "required_identifiers": exigidos.de_la_partida,
+                    "required_document_identifiers": exigidos.del_documento,
+                }
+            )
         if esperada is None:
             sin_espejo += 1
 
@@ -203,17 +233,25 @@ def revisar(
 
         lineas.append(
             LineInput(
-                declared=_declarada(partida, exchange_rate=pedimento.exchange_rate),
+                declared=_declarada(
+                    partida,
+                    exchange_rate=pedimento.exchange_rate,
+                    document_identifiers=pedimento.identifiers,
+                ),
                 expected=esperada,
                 transaction_value=valor,
                 declared_rates=declaradas,
                 expected_rates=esperadas,
+                applied_rates=_tasas_aplicadas(
+                    catalogo, fecha, peticion, partida.declared_fraction_code
+                ),
+                programs=programas.para(partida.declared_fraction_code) if programas else None,
                 # Lo derivado de un pedimento sintético es sintético (§10).
                 is_simulation=pedimento.is_simulation or partida.data_origin == "SYNTHETIC",
             )
         )
 
-    revision = review_pedimento(lineas)
+    revision = review_pedimento(lineas, client_sectors=sectores)
 
     corrida = save_review(
         session,
@@ -230,7 +268,12 @@ def revisar(
 # ── Armado de cada partida ───────────────────────────────────────────────────
 
 
-def _declarada(partida: PedimentoItem, *, exchange_rate: Decimal | None) -> DeclaredItem:
+def _declarada(
+    partida: PedimentoItem,
+    *,
+    exchange_rate: Decimal | None,
+    document_identifiers: dict[str, Any] | None = None,
+) -> DeclaredItem:
     """La partida tal como viene en el pedimento, sin interpretarla.
 
     `exchange_rate` es del PEDIMENTO (`Pedimento.exchange_rate`), no de la
@@ -247,6 +290,7 @@ def _declarada(partida: PedimentoItem, *, exchange_rate: Decimal | None) -> Decl
         customs_value_currency=partida.customs_value_currency,
         applied_nom_codes=tuple(partida.applied_nom_codes or ()),
         identifiers=dict(partida.identifiers or {}),
+        document_identifiers=dict(document_identifiers or {}),
         unit=partida.commercial_unit,
         igi_amount=partida.igi_amount,
         vat_amount=partida.vat_amount,
@@ -453,7 +497,7 @@ def _dta(valor: Decimal, peticion: ReviewRequest) -> Decimal | None:
 
 def _fiscal_esperado(
     partida: PedimentoItem, fecha: date, catalogo: TariffCatalogRepository, peticion: ReviewRequest
-) -> tuple[Decimal | None, Decimal | None]:
+) -> tuple[Decimal | None, Decimal | None, dict[str, str]]:
     """IGI e IVA que deberían haberse declarado. `None` cuando no se puede saber.
 
     El IGI sale de la tarifa de la fracción DECLARADA: no hace falta clasificar
@@ -463,18 +507,30 @@ def _fiscal_esperado(
     partida lo declara, en vez de compararse contra un número supuesto.
     """
     if partida.customs_value is None or not partida.declared_fraction_code:
-        return None, None
+        return None, None, {}
 
-    tasa = catalogo.igi_rate(on_date=fecha, fraction_code=partida.declared_fraction_code)
+    fraccion = partida.declared_fraction_code
+    tasa = catalogo.igi_rate(on_date=fecha, fraction_code=fraccion)
     if tasa is None:
-        return None, None
-    igi = (partida.customs_value * tasa).quantize(_CENTAVOS)
+        return None, None, {}
+    valor = partida.customs_value
+    igi = (valor * tasa).quantize(_CENTAVOS)
+    # Cómo sale cada importe, con sus entradas (§22): viaja hasta el hallazgo.
+    derivaciones = {
+        "igi_amount": f"valor_aduana({valor}) × tasa_IGI {fraccion} ({tasa}) = {igi}",
+    }
 
-    dta = _dta(partida.customs_value, peticion)
+    dta = _dta(valor, peticion)
     if dta is None or peticion.iva_rate is None:
-        return igi, None
-    base = partida.customs_value + igi + dta.quantize(_CENTAVOS)
-    return igi, (base * peticion.iva_rate).quantize(_CENTAVOS)
+        return igi, None, derivaciones
+    dta = dta.quantize(_CENTAVOS)
+    base = valor + igi + dta
+    iva = (base * peticion.iva_rate).quantize(_CENTAVOS)
+    derivaciones["vat_amount"] = (
+        f"(valor_aduana({valor}) + IGI({igi}) + DTA({dta})) × tasa_IVA ({peticion.iva_rate})"
+        f" = {iva}"
+    )
+    return igi, iva, derivaciones
 
 
 def _espejo_documental(
@@ -489,7 +545,7 @@ def _espejo_documental(
     valor, moneda = _valor_esperado(session, partida, fecha)
     tipo_de_cambio = _tipo_de_cambio_esperado(session, partida, fecha)
     aplica_cuota, monto_cuota = _cuota_compensatoria_esperada(session, partida, fecha)
-    igi, iva = _fiscal_esperado(partida, fecha, catalogo, peticion)
+    igi, iva, derivaciones = _fiscal_esperado(partida, fecha, catalogo, peticion)
     # `None` y `False` dicen cosas distintas: sin catálogo cargado no se puede
     # afirmar que una unidad no exista, y acusar ahí sería culpar al pedimento
     # de un hueco nuestro.
@@ -501,6 +557,7 @@ def _espejo_documental(
     return {
         "igi_amount": igi,
         "vat_amount": iva,
+        "derivations": derivaciones,
         "declared_unit_is_known": unidad_conocida,
         "country_of_origin": pais,
         "origin_source": ORIGEN_DEL_PROVEEDOR if pais else None,
@@ -651,33 +708,91 @@ def _construir_espejo(
         trade_flow="IMPORT",
     ).outcome
 
+    # EL DICTAMEN DE UN CLASIFICADOR MANDA SOBRE EL MOTOR (7-oct)
+    #
+    # El Espejo sólo esperaba lo que el motor sabía clasificar. Donde el motor
+    # se abstiene —cuatro de cada diez partidas del corpus— no comparaba
+    # fracción, aunque un clasificador hubiera dictaminado esa misma mercancía.
+    # En el pedimento 600015 una olla de presión de aluminio se declaraba como
+    # fregadero (73241001) y pasaba sin señalar, con el dictamen de César
+    # —76151002— en la base.
+    #
+    # Es el mismo orden de precedencia que la medición (#197): el dictamen de
+    # la ficha, si lo hay, sobre lo que diga la máquina. Y el hallazgo dice de
+    # quién es la expectativa (`fraction_source`).
+    codigo: str | None
+    nico_firmado: str | None
+    fuente: str | None
+    dictamen = _dictamen_de_la_ficha(session, partida.product_id, fecha, catalogo)
+    if dictamen is not None:
+        codigo, nico_firmado, fuente = dictamen
+    else:
+        codigo, nico_firmado, fuente = outcome.code, None, None
+
     return ExpectedItem(
         line_number=partida.line_number,
-        fraction_code=outcome.code,
+        fraction_code=codigo,
         # El NICO de la fracción ESPERADA, no de la declarada. Sin esto el
         # Espejo no tenía expectativa de NICO en ninguna partida y las 180 del
         # corpus arrastraban el mismo hueco: «saber si es el que corresponde
         # exige la ficha técnica». Para las fracciones de un solo NICO eso no
         # era cierto — no hacía falta ninguna ficha, sólo mirar el catálogo.
-        nico_code=_nico_esperado(catalogo, fecha, outcome.code),
+        # Si el clasificador firmó un NICO, manda el suyo.
+        nico_code=nico_firmado or _nico_esperado(catalogo, fecha, codigo),
+        fraction_source=fuente,
+        nico_source=fuente if nico_firmado else None,
         # `is_resolved` sale del contrato de evidencia, no de que el motor haya
         # llegado a un código: una clasificación que no se sostiene no puede
-        # usarse para acusar a nadie.
-        is_resolved=outcome.code is not None,
-        confidence=outcome.trace.confidence,
+        # usarse para acusar a nadie. Un dictamen firmado sí se sostiene.
+        is_resolved=codigo is not None,
+        confidence=outcome.trace.confidence if fuente is None else None,
         # Lo que el extractor declaró que le faltó. Aquí sí es `()` cuando la
         # ficha está completa: se consultó y no falta nada.
         missing_technical_fields=borrador.missing_information,
         # Desde el 4-oct el Anexo 2.4.1 está cargado: ya se puede decir qué NOM
         # exige una fracción. Las acotadas van aparte, a la vista de una
         # persona — ver `_nom_exigidas`.
-        required_nom_codes=_nom_exigidas(session, fecha, outcome.code)[0],
-        # Los identificadores siguen en `None`: el Apéndice 8 cargado es el
-        # CATÁLOGO de códigos, y saber cuáles existen no dice cuáles exige una
-        # operación. Decir «no exige ninguno» sería afirmar sin fuente.
+        required_nom_codes=_nom_exigidas(session, fecha, codigo)[0],
+        # Los identificadores se ponen en `revisar`, con las reglas del
+        # pedimento entero (ADR 0012): dependen de su clave, que la partida no
+        # conoce. Aquí `None` = no se sabe todavía.
         required_identifiers=None,
         **documental,
     )
+
+
+#: «Revisión humana de César: corrige. …» → «César». El veredicto no tiene una
+#: columna de revisor: el nombre vive al principio del razonamiento.
+_QUIEN_DICTAMINO = re.compile(r"^Revisión humana de ([^:]{1,64}):")
+
+
+def _dictamen_de_la_ficha(
+    session: SessionDep,
+    product_id: uuid.UUID,
+    fecha: date,
+    catalogo: TariffCatalogRepository,
+) -> tuple[str, str | None, str] | None:
+    """La fracción que un clasificador dictaminó para la ficha vigente, si la hay.
+
+    `(fracción, NICO o None, de quién y cuándo)`, o `None` si no hay dictamen,
+    si el último es un FALTA_INFORMACION —no dice qué es la mercancía—, o si
+    la fracción no existe en la tarifa vigente el día de la operación: un
+    dictamen no convierte en fracción un código que la TIGIE no tiene ese día.
+    """
+    ficha = version_vigente(session, product_id)
+    if ficha is None:
+        return None
+    veredicto = dictamen_de(session, ficha.id)
+    if veredicto is None or not veredicto.fraction_code:
+        return None
+    if not catalogo.fraccion_existe(on_date=fecha, code=veredicto.fraction_code):
+        return None
+    quien = _QUIEN_DICTAMINO.match(veredicto.reasoning or "")
+    fuente = (
+        f"dictamen de {quien.group(1).strip() if quien else 'un clasificador'} "
+        f"del {veredicto.created_at.date().isoformat()}"
+    )
+    return veredicto.fraction_code, veredicto.nico_code, fuente
 
 
 def _valor(partida: PedimentoItem) -> Money | None:
@@ -702,20 +817,35 @@ def _tasas(
     if declarada is None or esperada is None:
         return None, None
 
-    igi_declarada = catalogo.igi_rate(on_date=fecha, fraction_code=declarada)
-    igi_esperada = catalogo.igi_rate(on_date=fecha, fraction_code=esperada)
-    if igi_declarada is None or igi_esperada is None:
+    tasas_declarada = _tasas_aplicadas(catalogo, fecha, peticion, declarada)
+    tasas_esperada = _tasas_aplicadas(catalogo, fecha, peticion, esperada)
+    if tasas_declarada is None or tasas_esperada is None:
         return None, None
+    return tasas_declarada, tasas_esperada
 
-    comunes = {
-        "iva_rate": peticion.iva_rate or Decimal("0"),
-        "dta_rate": peticion.dta_rate or Decimal("0"),
-        "dta_fixed": peticion.dta_fixed,
-        "ieps_rate": peticion.ieps_rate or Decimal("0"),
-    }
-    return (
-        TaxRates(igi_rate=igi_declarada, **comunes),
-        TaxRates(igi_rate=igi_esperada, **comunes),
+
+def _tasas_aplicadas(
+    catalogo: TariffCatalogRepository,
+    fecha: date,
+    peticion: ReviewRequest,
+    declarada: str | None,
+) -> TaxRates | None:
+    """Las tasas de la fracción declarada, haya o no fracción esperada.
+
+    Las usa el Opportunity Finder para saber si un programa ahorra algo frente
+    a lo que se aplicó; no necesita espejo.
+    """
+    if declarada is None:
+        return None
+    igi = catalogo.igi_rate(on_date=fecha, fraction_code=declarada)
+    if igi is None:
+        return None
+    return TaxRates(
+        igi_rate=igi,
+        iva_rate=peticion.iva_rate or Decimal("0"),
+        dta_rate=peticion.dta_rate or Decimal("0"),
+        dta_fixed=peticion.dta_fixed,
+        ieps_rate=peticion.ieps_rate or Decimal("0"),
     )
 
 

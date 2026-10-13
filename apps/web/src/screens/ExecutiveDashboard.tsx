@@ -186,7 +186,11 @@ export function ExecutiveDashboard() {
           <div className="rejilla">
             <Tarjeta
               titulo="Riesgo por severidad"
-              pie="Un CRITICAL entre ochenta y ocho y ochenta y ocho CRITICAL se leían igual. El reparto evita creer que el alarmado es el sistema y no los pedimentos."
+              pie={`Un CRITICAL entre ochenta y ocho y ochenta y ocho CRITICAL se leían igual. El reparto evita creer que el alarmado es el sistema y no los pedimentos.${
+                datos.hallazgos.de_documento > 0
+                  ? ` Lo que es del documento entero —el tipo de cambio— cuenta una vez por pedimento, no una por partida: ${datos.hallazgos.de_documento} de ${datos.hallazgos.total}.`
+                  : ''
+              }`}
             >
               {porSeveridad.length > 0 ? (
                 <Barras datos={porSeveridad} />

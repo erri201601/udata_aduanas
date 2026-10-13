@@ -76,6 +76,7 @@ def save_classification(
         # Los niveles se derivan de la fracción, no se piden aparte: pedirlos
         # abriría la puerta a que lleguen inconsistentes entre sí.
         **_niveles(fraccion),
+        nico_code=outcome.nico,
         reasoning=_razonamiento(outcome),
         rgi_path=[p.rule_id for p in outcome.trace.steps],
         legal_rule_ids=_normas_citadas(outcome),
@@ -194,6 +195,8 @@ def _razonamiento(outcome: ClassificationOutcome) -> str:
     ]
     if outcome.blocked_by:
         partes.append(f"NO DEFENDIBLE: {outcome.blocked_by}")
+    elif outcome.code and outcome.nico_reason:
+        partes.append(f"NICO: {outcome.nico_reason}")
     return " · ".join(partes)
 
 

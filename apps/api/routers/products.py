@@ -142,6 +142,10 @@ class ClassifyResponse(BaseModel):
     decision_id: uuid.UUID
     status: str
     fraction_code: str | None = None
+    nico_code: str | None = None
+    """Sólo cuando la LIGIE da un único NICO para la fracción (§19)."""
+    nico_motivo: str | None = None
+    """Por qué hay o no hay NICO."""
     confidence: Decimal | None = None
     requires_human_review: bool
     trace_steps: int
@@ -398,6 +402,8 @@ def clasificar(
         decision_id=decision.id,
         status=outcome.status.value,
         fraction_code=outcome.code,
+        nico_code=outcome.nico,
+        nico_motivo=outcome.nico_reason if outcome.code else None,
         confidence=outcome.trace.confidence,
         requires_human_review=decision.requires_human_review,
         trace_steps=len(outcome.trace.steps),

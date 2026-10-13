@@ -58,8 +58,18 @@ def _decision(
 
 
 class SesionFalsa:
-    def __init__(self, filas: list[ClassificationDecision]) -> None:
+    def __init__(self, filas: list[ClassificationDecision], *, pendientes: int = 0) -> None:
         self._filas = filas
+        self._pendientes = pendientes
+
+    def scalar(self, _sentencia: Any) -> int:
+        # El único `scalar` del router es el conteo de la bandeja, con la
+        # definición de `database.repositories.preguntas` (ADR 0008). Eso es
+        # SQL —`DISTINCT ON`, `NOT EXISTS`— y una sesión falsa no lo ejecuta:
+        # aquí se fija la cifra y se comprueba que el campo la informa. Que la
+        # cifra sea la de la bandeja lo prueba
+        # `tests/test_contadores_de_pendientes.py` contra Postgres.
+        return self._pendientes
 
     def scalars(self, sentencia: Any) -> Any:
         # El router pide primero los humanos y después los de máquina.
@@ -70,9 +80,9 @@ class SesionFalsa:
         return r
 
 
-def _cliente(filas: list[ClassificationDecision]) -> TestClient:
+def _cliente(filas: list[ClassificationDecision], *, pendientes: int = 0) -> TestClient:
     app = create_app()
-    app.dependency_overrides[get_session] = lambda: SesionFalsa(filas)
+    app.dependency_overrides[get_session] = lambda: SesionFalsa(filas, pendientes=pendientes)
     return TestClient(app)
 
 
@@ -87,21 +97,26 @@ def test_sin_revisiones_la_precision_es_desconocida_no_cero() -> None:
     """
     filas = [_decision(fraccion="84713001", pendiente=True) for _ in range(7)]
 
-    with _cliente(filas) as c:
+    # Siete decisiones de la MISMA ficha son UN caso en la bandeja (ADR 0008).
+    with _cliente(filas, pendientes=1) as c:
         m = c.get("/metrics/classification").json()
 
     assert m["fraction_accuracy"]["porcentaje"] is None
     assert m["hs_accuracy"]["porcentaje"] is None
     assert m["revisadas"] == 0
-    assert m["pendientes_de_revision"] == 7
+    assert m["pendientes_de_revision"] == 1
 
 
 def test_declara_cuantas_esperan_para_explicar_el_vacio() -> None:
-    """La cifra que dice POR QUÉ las demás están vacías."""
+    """La cifra que dice POR QUÉ las demás están vacías: los casos de la bandeja.
+
+    Antes contaba filas con la bandera —siete decisiones de una misma ficha
+    eran «7 esperando»— y el 7-oct decía 4 610 con la bandeja vacía.
+    """
     filas = [_decision(fraccion=None, pendiente=True) for _ in range(7)]
 
-    with _cliente(filas) as c:
-        assert c.get("/metrics/classification").json()["pendientes_de_revision"] == 7
+    with _cliente(filas, pendientes=1) as c:
+        assert c.get("/metrics/classification").json()["pendientes_de_revision"] == 1
 
 
 def test_sin_decisiones_tampoco_inventa_una_tasa() -> None:
@@ -353,3 +368,39 @@ def test_la_comparacion_de_hoy_va_por_ficha_no_por_la_decision_mas_reciente() ->
 
     assert h["coinciden"] == 1, "la vigente de su ficha dice lo mismo que la persona"
     assert h["discrepan"] == 0, "la más reciente de OTRA ficha no entra en la comparación"
+
+
+def test_manda_el_ultimo_veredicto_del_caso() -> None:
+    """Un veredicto que el clasificador sustituyó no discrepa de nadie (7-oct).
+
+    Contando todos, la pantalla decía «discrepan 2»: eran dos veredictos viejos
+    ya reemplazados por el propio César. Con el último de cada caso, cero.
+    """
+    primera = _decision(fraccion="73053199", minutos=0)
+    segunda = _decision(fraccion=None, pendiente=True, minutos=30)
+    hoy = _decision(fraccion="73051291", minutos=90)
+    viejo = _veredicto("73053199", primera)
+    viejo.created_at = AHORA + timedelta(minutes=10)
+    nuevo = _veredicto("73051291", segunda)
+    nuevo.created_at = AHORA + timedelta(minutes=40)
+
+    with _cliente([primera, segunda, hoy, viejo, nuevo]) as c:
+        h = c.get("/metrics/classification").json()["contra_el_motor_de_hoy"]
+
+    assert h["coinciden"] == 1
+    assert h["discrepan"] == 0, "el veredicto sustituido no cuenta"
+
+
+def test_un_falta_informacion_posterior_saca_el_caso_de_la_comparacion() -> None:
+    primera = _decision(fraccion="73121099", minutos=0)
+    hoy = _decision(fraccion="73121005", minutos=90)
+    viejo = _veredicto("73121099", primera)
+    viejo.created_at = AHORA + timedelta(minutes=10)
+    falta = _veredicto(None, primera)
+    falta.created_at = AHORA + timedelta(minutes=40)
+
+    with _cliente([primera, hoy, viejo, falta]) as c:
+        h = c.get("/metrics/classification").json()["contra_el_motor_de_hoy"]
+
+    assert h["coinciden"] == 0
+    assert h["discrepan"] == 0, "el clasificador retiró su fracción: no hay con qué discrepar"

@@ -387,6 +387,13 @@ class RiskFinding(
     impact_scope: Mapped[str | None] = mapped_column(
         check_enum(IMPACT_SCOPE, "impact_scope"), nullable=True
     )
+    #: Cómo se llegó a `impact_amount` (§22): fórmula, entradas, resultado,
+    #: divisa, versión del cálculo, supuestos, fuentes y si es simulación.
+    #: `NULL` cuando no hay monto, y en las filas anteriores a la columna.
+    #: `none_as_null`: sin él, el `None` de Python se guarda como JSON `null` y
+    #: `impact_calculation IS NULL` deja de distinguir «sin cálculo» —262 filas
+    #: el 13-oct, todas sin monto, que una consulta contaba como calculadas—.
+    impact_calculation: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
     is_simulation: Mapped[bool] = mapped_column(
         sa.Boolean, nullable=False, server_default=sa.false()
     )
@@ -434,6 +441,10 @@ class OpportunityFinding(
     rationale: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     estimated_saving_amount: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
     estimated_saving_amount_currency: Mapped[str | None] = mapped_column(_CCY, nullable=True)
+    #: Cómo se llegó al ahorro (§22), igual que `RiskFinding.impact_calculation`.
+    estimated_saving_calculation: Mapped[dict | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
+    )
     #: `RiskFinding` la tenía desde el principio y aquí faltaba, así que la
     #: corrida reventaba con un 500 en cuanto un pedimento producía una
     #: oportunidad —raro, por eso llevaba meses escondido—. Y el defecto de

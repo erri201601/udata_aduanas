@@ -1152,6 +1152,8 @@ code {
 .cara dt { font-size: 0.78rem; color: var(--tenue); }
 .cara dd { margin: 0; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
 .cara__divergente { color: var(--mal); font-weight: 600; }
+.cara__coincide { color: var(--ok); font-weight: 600; }
+.cara__nota { font-size: 0.76rem; color: var(--tenue); }
 
 .cara__sin-expectativa {
   margin: 0;
@@ -1188,6 +1190,14 @@ code {
 
 .divergencia__razon { margin: 0.35rem 0; font-size: 0.82rem; line-height: 1.55; max-width: 72ch; }
 .divergencia__monto { margin: 0.35rem 0 0; font-size: 0.78rem; color: var(--tenue); }
+.calculo { margin: 0.35rem 0 0; font-size: 0.78rem; }
+.calculo summary { cursor: pointer; color: var(--tenue); }
+.calculo p { margin: 0.3rem 0; }
+.calculo__entradas { margin: 0.3rem 0; display: grid; gap: 0.15rem; }
+.calculo__entradas div { display: grid; grid-template-columns: minmax(10rem, max-content) 1fr; gap: 0.6rem; }
+.calculo__entradas dt { color: var(--tenue); }
+.calculo__entradas dd { margin: 0; overflow-wrap: anywhere; }
+.calculo__nota { color: var(--tenue); }
 
 .huecos > li {
   border-left: 2px solid var(--aviso);
@@ -1208,13 +1218,15 @@ code {
   gap: 0.35rem 0.5rem;
 }
 
+/* `--bien` era un tinte en el tema oscuro y pasó a verde sólido con el claro
+   (30-sep): el texto gris encima no se leía. Tinte del verde y texto verde. */
 .comprobaciones > li {
   font-size: 0.76rem;
-  color: var(--tenue);
+  color: var(--ok);
   padding: 0.12rem 0.5rem;
   border-radius: 999px;
-  border: 1px solid var(--borde);
-  background: var(--bien, transparent);
+  border: 1px solid color-mix(in srgb, var(--ok) 30%, transparent);
+  background: color-mix(in srgb, var(--ok) 10%, transparent);
 }
 
 .comprobado__cuenta {
@@ -1802,6 +1814,57 @@ code {
   font-size: 0.76rem;
   color: var(--mal);
   line-height: 1.5;
+}
+
+.espejo__auditar {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+  max-width: 22rem;
+  text-align: right;
+}
+
+.espejo__auditar small {
+  font-size: 0.72rem;
+  color: var(--tenue);
+}
+
+.espejo-documento {
+  margin: 0 0 1rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--borde);
+  border-left: 4px solid var(--mal);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.espejo-documento h5 {
+  margin: 0 0 0.25rem;
+}
+
+.espejo-documento__pie,
+.espejo-linea__remite {
+  margin: 0 0 0.5rem;
+  font-size: 0.76rem;
+  color: var(--tenue);
+}
+
+.hallazgo__veces {
+  margin-left: auto;
+  font-size: 0.72rem;
+  color: var(--tenue);
+}
+
+.contestar__alcance-ficha {
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+/* Un dato que está en más de un tercio de las fichas casi nunca es el que
+   distingue a una mercancía: se enseña en el color de lo que hay que mirar. */
+.contestar__alcance-ficha--general {
+  color: var(--aviso);
 }
 
 .contestar__guardado {

@@ -95,6 +95,7 @@ log = structlog.stdlib.get_logger("apps.evaluacion.deteccion")
 #: §26 en vez de reescribir la cadena: si allí cambia, aquí no se desincroniza.
 DETECTOR_DE_FICHA: Final = DETECTOR_POR_ERROR["MISSING_TECHNICAL_FIELD"]
 DETECTOR_DE_FRACCION: Final = DETECTOR_POR_ERROR["WRONG_FRACTION"]
+DETECTOR_DE_NICO: Final = DETECTOR_POR_ERROR["WRONG_NICO"]
 
 
 def _subtipo_nico(session: Session, partida: PedimentoItem, operacion: date | None) -> str:
@@ -191,7 +192,10 @@ def _fichas_recortadas_a_proposito(
 
 
 def _fracciones_que_un_dictamen_contradice(
-    session: Session, partidas: Mapping[uuid.UUID, PedimentoItem], sembradas: set[uuid.UUID]
+    session: Session,
+    partidas: Mapping[uuid.UUID, PedimentoItem],
+    sembradas: set[uuid.UUID],
+    sembradas_de_nico: set[uuid.UUID] | None = None,
 ) -> set[tuple[str, str]]:
     """Pares (partida, FRACTION_MISMATCH) que no se cuentan como falso positivo.
 
@@ -239,15 +243,16 @@ def _fracciones_que_un_dictamen_contradice(
     dictamen = sa.select(
         ClassificationDecision.product_dna_id,
         ClassificationDecision.fraction_code,
+        ClassificationDecision.nico_code,
         ClassificationDecision.created_at,
     ).where(ClassificationDecision.data_origin == "HUMAN_VALIDATED")
-    por_ficha: dict[uuid.UUID, tuple[Any, str | None]] = {}
-    for dna_id, fraccion, cuando in session.execute(dictamen).all():
+    por_ficha: dict[uuid.UUID, tuple[Any, str | None, str | None]] = {}
+    for dna_id, fraccion, nico, cuando in session.execute(dictamen).all():
         if dna_id is None:
             continue
         previo = por_ficha.get(dna_id)
         if previo is None or cuando > previo[0]:
-            por_ficha[dna_id] = (cuando, fraccion)
+            por_ficha[dna_id] = (cuando, fraccion, nico)
 
     ficha_de: dict[uuid.UUID, uuid.UUID] = {
         fila.product_id: fila.id
@@ -270,6 +275,20 @@ def _fracciones_que_un_dictamen_contradice(
             continue
         if firmado[1] != partidas[pid].declared_fraction_code:
             contradichas.add((str(pid), DETECTOR_DE_FRACCION))
+        # Y EL NICO, CON LA MISMA FRACCIÓN (7-oct)
+        #
+        # Desde que el Espejo espera el dictamen cuando lo hay, un NICO firmado
+        # distinto del declarado es un hallazgo. Es la misma verdad que la de
+        # la fracción —un clasificador dijo otra cosa que la declaración— y se
+        # quedaba fuera: nueve tuberías HFW con NICO 01 declarado y 02
+        # dictaminado salían como falsos positivos.
+        elif (
+            firmado[2]
+            and partidas[pid].declared_nico_code
+            and firmado[2] != partidas[pid].declared_nico_code
+            and pid not in (sembradas_de_nico or set())
+        ):
+            contradichas.add((str(pid), DETECTOR_DE_NICO))
     return contradichas
 
 
@@ -467,7 +486,14 @@ def recolectar(
         for e in session.scalars(consulta).all()
         if e.error_type == "WRONG_FRACTION" and e.pedimento_item_id is not None
     }
-    contradichas = _fracciones_que_un_dictamen_contradice(session, partidas, sembradas_de_fraccion)
+    sembradas_de_nico = {
+        e.pedimento_item_id
+        for e in session.scalars(consulta).all()
+        if e.error_type == "WRONG_NICO" and e.pedimento_item_id is not None
+    }
+    contradichas = _fracciones_que_un_dictamen_contradice(
+        session, partidas, sembradas_de_fraccion, sembradas_de_nico
+    )
     cuotas_ciertas = _cuotas_compensatorias_ciertas(session, partidas, fechas)
     tipos_de_cambio_ciertos = _tipos_de_cambio_ciertos(session, partidas, fechas, tasas_declaradas)
     return (

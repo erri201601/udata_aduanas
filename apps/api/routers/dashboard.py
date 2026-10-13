@@ -34,6 +34,7 @@ from decimal import Decimal
 
 import sqlalchemy as sa
 from core.audit import ALCANCE_CONTRIBUCION
+from core.shadow.compare import CAMPO_IDENTIFICADORES_DEL_DOCUMENTO
 from database.models import (
     ClassificationDecision,
     OpportunityFinding,
@@ -43,6 +44,7 @@ from database.models import (
     ShadowReview,
 )
 from database.repositories.findings import de_la_ultima_revision
+from database.repositories.preguntas import pendientes as casos_pendientes
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
@@ -91,6 +93,17 @@ class Auditoria(BaseModel):
     """Los únicos de los que se puede afirmar que están limpios."""
 
 
+#: Hallazgos que son del PEDIMENTO y el Espejo registra en cada partida: en el
+#: tablero cuentan una vez por pedimento. El tipo de cambio se declara una vez
+#: por documento.
+HALLAZGOS_DEL_DOCUMENTO: tuple[str, ...] = ("EXCHANGE_RATE_MISMATCH",)
+
+#: Campos que, en cualquier tipo de hallazgo, son del documento: un
+#: identificador de nivel pedimento que falta (ADR 0012) es `IDENTIFIER_MISMATCH`
+#: igual que uno de partida, y lo que lo distingue es el campo.
+CAMPOS_DEL_DOCUMENTO: tuple[str, ...] = (CAMPO_IDENTIFICADORES_DEL_DOCUMENTO,)
+
+
 class Hallazgos(BaseModel):
     """Riesgo detectado, separando lo presentable de lo investigable."""
 
@@ -105,6 +118,10 @@ class Hallazgos(BaseModel):
     —y evita que quien mira el tablero crea que el alarmado es el sistema y no
     los pedimentos que audita.
     """
+
+    de_documento: int = 0
+    """Cuántos de `total` son del PEDIMENTO, no de una partida, contados uno
+    por pedimento. Hoy, el tipo de cambio: se declara una vez por documento."""
 
     accionables: int = 0
     """Con impacto cuantificado: se pueden llevar a un cliente."""
@@ -383,15 +400,20 @@ def tablero(session: SessionDep) -> Dashboard:
         resueltas=_contar(
             session, ClassificationDecision, vigente, ClassificationDecision.status == "RESOLVED"
         ),
-        # El mismo criterio que la bandeja: lo que sigue esperando es lo que
-        # NADIE ha dictaminado todavía. Con `status` a secas, un caso ya
-        # revisado seguiría contando como pendiente para siempre.
-        requieren_revision=_contar(
-            session,
-            ClassificationDecision,
-            vigente,
-            ClassificationDecision.requires_human_review.is_(True),
-        ),
+        # LA MISMA DEFINICIÓN QUE LA BANDEJA, NO UNA PARECIDA (ADR 0008)
+        #
+        # Esto contaba la vigente con la bandera, sin mirar el dictamen. El
+        # 7-oct, con la bandeja vacía —César había dictaminado los 57 casos—,
+        # el tablero seguía diciendo 33 «esperan a una persona»: casos ya
+        # dictaminados cuya decisión vigente conservaba la bandera. La primera
+        # pantalla de la demo contradecía a la bandeja.
+        #
+        # El comentario de arriba ya decía «el mismo criterio que la bandeja»;
+        # el código no lo hacía. Ahora no lo imita: la llama.
+        requieren_revision=session.scalar(
+            sa.select(sa.func.count()).select_from(casos_pendientes().subquery())
+        )
+        or 0,
         sin_informacion=_contar(
             session,
             ClassificationDecision,
@@ -434,7 +456,39 @@ def tablero(session: SessionDep) -> Dashboard:
     # `database.repositories.findings` y se importa, en vez de reescribirse.
     vigentes = de_la_ultima_revision()
     con_monto = sa.and_(RiskFinding.impact_amount.isnot(None), RiskFinding.impact_amount != 0)
-    total_hallazgos = _contar(session, RiskFinding, vigentes)
+    # Las FILAS, para el censo de simulación de abajo: se compara fila contra
+    # fila, y cambiarlo por el conteo de pantalla haría desaparecer el aviso
+    # SYNTHETIC aunque todo siga siendo simulado.
+    filas_hallazgos = _contar(session, RiskFinding, vigentes)
+
+    # LO DEL DOCUMENTO CUENTA UNA VEZ POR PEDIMENTO (12-oct)
+    #
+    # El tipo de cambio se declara una vez por pedimento, pero el Espejo lo
+    # registra en cada partida. Con el corpus sintético —tipos de cambio
+    # inventados en los 15 pedimentos— el Panorama decía «301 hallazgos, 234
+    # CRÍTICOS», y unos 180 eran el mismo dato repetido partida por partida.
+    # Es la primera pantalla de la demo. El Espejo ya lo enseña una vez «del
+    # pedimento entero» (#224); el tablero cuenta igual.
+    es_del_documento = sa.or_(
+        RiskFinding.finding_type.in_(HALLAZGOS_DEL_DOCUMENTO),
+        sa.func.coalesce(RiskFinding.field, "").in_(CAMPOS_DEL_DOCUMENTO),
+    )
+    de_partida = sa.and_(vigentes, sa.not_(es_del_documento))
+    del_documento = (
+        sa.select(
+            RiskFinding.pedimento_id,
+            RiskFinding.finding_type,
+            RiskFinding.field,
+            RiskFinding.severity,
+            RiskFinding.declared_value,
+            RiskFinding.expected_value,
+        )
+        .where(vigentes, es_del_documento)
+        .distinct()
+        .subquery()
+    )
+    de_documento = session.scalar(sa.select(sa.func.count()).select_from(del_documento)) or 0
+    total_hallazgos = _contar(session, RiskFinding, de_partida) + de_documento
     accionables = _contar(session, RiskFinding, vigentes, con_monto)
     # Los sobrepagos no entran en la exposición, pero se dicen por número: un
     # hallazgo que desaparece de la pantalla sin explicación es peor que uno
@@ -457,15 +511,18 @@ def tablero(session: SessionDep) -> Dashboard:
         None if mezcla_hallazgos else session.scalar(sa.select(sa.func.sum(_por_partida().c.monto)))
     )
     moneda = next(iter(monedas_hallazgos)) if len(monedas_hallazgos) == 1 else None
-    reparto = {
-        fila.severity: fila.cuantos
-        for fila in session.execute(
-            sa.select(RiskFinding.severity, sa.func.count().label("cuantos"))
-            .where(vigentes)
-            .group_by(RiskFinding.severity)
-        )
-        if fila.severity
-    }
+    reparto: dict[str, int] = {}
+    for consulta in (
+        sa.select(RiskFinding.severity, sa.func.count().label("cuantos"))
+        .where(de_partida)
+        .group_by(RiskFinding.severity),
+        sa.select(del_documento.c.severity, sa.func.count().label("cuantos")).group_by(
+            del_documento.c.severity
+        ),
+    ):
+        for fila in session.execute(consulta):
+            if fila.severity:
+                reparto[fila.severity] = reparto.get(fila.severity, 0) + fila.cuantos
     peor = session.scalar(
         sa.select(RiskFinding.severity)
         .where(vigentes)
@@ -514,15 +571,26 @@ def tablero(session: SessionDep) -> Dashboard:
         if m
     }
     mezcla_ahorro = len(monedas_ahorro) > 1
-    ahorro = (
-        None
-        if mezcla_ahorro
-        else session.scalar(
-            sa.select(sa.func.sum(OpportunityFinding.estimated_saving_amount)).where(
-                vigentes_oportunidad
+    # EL MAYOR POR PARTIDA, NO LA SUMA (ADR 0011)
+    #
+    # PROSEC, Regla 8ª y un sobrepago sobre la misma partida son caminos
+    # distintos al mismo IGI: sumarlos prometería cobrarlo dos veces. Es el
+    # mismo criterio que `OpportunityReport.total_potential`. Las oportunidades
+    # sin partida se suman tal cual: cada una es su propia clave.
+    por_partida = (
+        sa.select(
+            sa.func.max(OpportunityFinding.estimated_saving_amount).label("ahorro"),
+        )
+        .where(vigentes_oportunidad)
+        .group_by(
+            sa.func.coalesce(
+                sa.cast(OpportunityFinding.pedimento_item_id, sa.Text),
+                sa.cast(OpportunityFinding.id, sa.Text),
             )
         )
+        .subquery()
     )
+    ahorro = None if mezcla_ahorro else session.scalar(sa.select(sa.func.sum(por_partida.c.ahorro)))
     ahorro_moneda = next(iter(monedas_ahorro)) if len(monedas_ahorro) == 1 else None
 
     # Los hallazgos van acotados aquí también, o el pie compararía poblaciones
@@ -547,7 +615,7 @@ def tablero(session: SessionDep) -> Dashboard:
     contadas = (
         pedimentos
         + decisiones.total
-        + total_hallazgos
+        + filas_hallazgos
         + _contar(session, Product)
         + total_oportunidades
     )
@@ -562,6 +630,7 @@ def tablero(session: SessionDep) -> Dashboard:
         ),
         hallazgos=Hallazgos(
             total=total_hallazgos,
+            de_documento=de_documento,
             peor_severidad=peor,
             por_severidad=reparto,
             accionables=accionables,

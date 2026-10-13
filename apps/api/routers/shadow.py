@@ -36,11 +36,13 @@ import re
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Any, Final
 
 import sqlalchemy as sa
 from core.audit import total_por_partida
 from core.shadow import comprobaciones_posibles
+from core.shadow.compare import COMPROBACION_DE_FRACCION
+from core.shadow.divergences import DivergenceType
 from database.models import Pedimento, PedimentoItem, RiskFinding, ShadowReview
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
@@ -62,8 +64,15 @@ ORDEN_SEVERIDAD: Final = ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO")
 #: contra el motor de verdad, no contra una cadena escrita a mano.
 _LINEA = re.compile(r"^\s*línea\s+(\d+)\s*:\s*(.+)$", re.IGNORECASE | re.DOTALL)
 
-#: El campo con el que el espejo guarda la fracción esperada.
-_CAMPO_FRACCION: Final = "tariff_fraction"
+#: El hallazgo que lleva la fracción esperada, por su TIPO.
+#:
+#: Antes se buscaba por el nombre del campo, `"tariff_fraction"`, y el
+#: comparador lo guarda como `"fraction_code"`: la cara «esperado» de esta
+#: pantalla no enseñó nunca una fracción, ni siquiera cuando el motor la
+#: resolvía. El test pasaba porque su fixture escribía a mano el nombre
+#: equivocado (7-oct). El tipo es un enum del comparador y no se renombra en
+#: un descuido.
+_TIPO_FRACCION: Final = DivergenceType.FRACTION_MISMATCH.value
 
 
 class DivergenciaRead(BaseModel):
@@ -94,6 +103,9 @@ class DivergenciaRead(BaseModel):
     Presentarlos con la misma etiqueta haría que un importe condicionado se
     leyera como una deuda cierta.
     """
+    impact_calculation: dict[str, Any] | None = None
+    """Cómo se llegó al importe (§22): fórmula, entradas, versión, supuestos,
+    fuentes. `None` sin importe, o en hallazgos anteriores al 13-oct."""
     is_simulation: bool = False
 
 
@@ -113,11 +125,23 @@ class LineaEspejo(BaseModel):
 
     # ── lo esperado ─────────────────────────────────────────────────────────
     expected_fraction_code: str | None = None
-    """Sólo consta cuando hubo divergencia de fracción.
+    """La fracción que el Espejo esperaba, cuando consta.
 
-    `None` en una partida conforme NO significa «no se esperaba nada»: la
-    expectativa coincidió y no dejó rastro. Repetir aquí lo declarado sería
-    fabricar una confirmación que el motor nunca emitió.
+    Consta si hubo divergencia de fracción, o si la revisión REGISTRÓ que la
+    fracción se comprobó y no hubo divergencia: entonces la esperada era la
+    declarada (`fraccion_coincide`).
+
+    `None` sin ese registro NO significa «no se esperaba nada», y no se rellena
+    con lo declarado: eso sería fabricar una confirmación que nadie emitió.
+    """
+
+    fraccion_coincide: bool = False
+    """La fracción se comprobó y coincidió con la declarada (7-oct).
+
+    Sin esto la caja «Esperado por el Espejo» decía «no se construyó una
+    expectativa» en 11 de las 12 partidas del 600015, justo encima de la
+    etiqueta verde «fracción arancelaria» de lo comprobado. Las dos cosas no
+    podían ser verdad a la vez, y la que mentía era la caja.
     """
 
     # ── el veredicto ────────────────────────────────────────────────────────
@@ -372,6 +396,7 @@ def espejo(pedimento_id: uuid.UUID, session: SessionDep) -> PedimentoEspejo:
                 impact_amount=h.impact_amount,
                 impact_amount_currency=h.impact_amount_currency,
                 impact_scope=h.impact_scope,
+                impact_calculation=h.impact_calculation,
                 is_simulation=h.is_simulation,
             )
             for h in propios
@@ -379,9 +404,18 @@ def espejo(pedimento_id: uuid.UUID, session: SessionDep) -> PedimentoEspejo:
         huecos = motivos.get(partida.line_number, [])
         comprobadas = hechas.get(partida.line_number, [])
         esperada = next(
-            (d.expected_value for d in divergencias if d.field == _CAMPO_FRACCION),
+            (d.expected_value for d in divergencias if d.finding_type == _TIPO_FRACCION),
             None,
         )
+        # Se comprobó y no difiere: la esperada ERA la declarada. Se apoya en
+        # la comprobación que quedó guardada, no en suponerlo.
+        coincide = (
+            esperada is None
+            and COMPROBACION_DE_FRACCION in comprobadas
+            and partida.declared_fraction_code is not None
+        )
+        if coincide:
+            esperada = partida.declared_fraction_code
 
         lineas.append(
             LineaEspejo(
@@ -394,6 +428,7 @@ def espejo(pedimento_id: uuid.UUID, session: SessionDep) -> PedimentoEspejo:
                 customs_value=partida.customs_value,
                 customs_value_currency=partida.customs_value_currency,
                 expected_fraction_code=esperada,
+                fraccion_coincide=coincide,
                 estado=_estado(
                     divergencias,
                     huecos,

@@ -42,6 +42,28 @@ class LineItem(BaseModel):
     source_ids: tuple[Any, ...] = ()
 
 
+class MonetaryResult(BaseModel):
+    """El sobre del §22: lo que toda cifra lleva para poder repetirse a mano.
+
+    Existe porque el cálculo completo vivía en `TaxCalculation` y al guardar un
+    hallazgo sólo sobrevivían el importe y la divisa. Quien abría el hallazgo
+    veía «4 822.95 MXN» y no tenía cómo comprobarlo. Con esto, la fila lleva la
+    fórmula, las entradas exactas y la versión del cálculo que la produjo.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    formula: str
+    inputs: dict[str, str] = Field(default_factory=dict)
+    """Como cadenas, para no perder precisión al serializar."""
+    result: str
+    currency: str | None = None
+    calculation_version: str = CALCULATION_VERSION
+    assumptions: tuple[str, ...] = ()
+    source_ids: tuple[str, ...] = ()
+    is_simulation: bool = True
+
+
 class TaxCalculation(BaseModel):
     """El cálculo completo de las contribuciones de una operación."""
 
@@ -128,6 +150,18 @@ class DivergenceImpact(BaseModel):
             return "SOBREPAGO"
         return "SIN_DIFERENCIA"
 
+    def as_result(self, assumptions: tuple[str, ...] = ()) -> MonetaryResult:
+        """El impacto en el sobre del §22, con el desglose por contribución."""
+        return contrastar(
+            self.declared,
+            self.expected,
+            lado_a="declarado",
+            lado_b="esperado",
+            formula="Σ contribuciones esperadas - Σ contribuciones declaradas",
+            assumptions=assumptions,
+            is_simulation=self.is_simulation,
+        )
+
     def as_money_impact(self) -> str:
         """Cadena para `Dossier.money_impact` del Evidence Contract.
 
@@ -140,6 +174,47 @@ class DivergenceImpact(BaseModel):
         )
         base = f"{abs(self.difference.amount):,.2f} {self.difference.currency} {signo}"
         return f"{base} (simulado)" if self.is_simulation else base
+
+
+def contrastar(
+    a: TaxCalculation,
+    b: TaxCalculation,
+    *,
+    lado_a: str,
+    lado_b: str,
+    formula: str,
+    assumptions: tuple[str, ...] = (),
+    is_simulation: bool | None = None,
+) -> MonetaryResult:
+    """`b - a` en el sobre del §22, con las fórmulas de cada contribución.
+
+    Las entradas son las fórmulas de los dos lados: con ellas se rehace el
+    total sin abrir el código. Sirve para un hallazgo (declarado frente a
+    esperado) y para una oportunidad (tasa aplicada frente a la del programa).
+    """
+    entradas: dict[str, str] = {
+        f"total_{lado_a}": str(a.total_taxes.amount),
+        f"total_{lado_b}": str(b.total_taxes.amount),
+    }
+    for lado, calculo in ((lado_a, a), (lado_b, b)):
+        for item in calculo.items:
+            entradas[f"{lado}.{item.concept}"] = f"{item.formula} = {item.amount.amount}"
+    fuentes = dict.fromkeys(
+        str(s) for c in (a, b) for s in (*c.source_ids, *(f for i in c.items for f in i.source_ids))
+    )
+    diferencia = (b.total_taxes - a.total_taxes).quantize()
+    return MonetaryResult(
+        formula=formula,
+        inputs=entradas,
+        result=str(diferencia.amount),
+        currency=diferencia.currency,
+        calculation_version=b.calculation_version,
+        assumptions=tuple(dict.fromkeys((*a.assumptions, *b.assumptions, *assumptions))),
+        source_ids=tuple(fuentes),
+        is_simulation=(a.is_simulation or b.is_simulation)
+        if is_simulation is None
+        else is_simulation,
+    )
 
 
 def empty_calculation(currency: str) -> TaxCalculation:

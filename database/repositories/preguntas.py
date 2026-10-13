@@ -104,6 +104,39 @@ def pendientes() -> sa.Select[Any]:
     return sa.select(d).where(d.id.in_(sa.union_all(con_ficha, sin_ficha)))
 
 
+def vigente_de(session: Session, product_dna_id: uuid.UUID) -> ClassificationDecision | None:
+    """La decisión vigente de UNA ficha: la misma regla que `vigentes()`.
+
+    Se lee de la misma CTE, filtrada, en vez de escribir otra vez «la última
+    que no sea HUMAN_VALIDATED»: una segunda copia de la definición es como
+    acabaron existiendo tres (ADR 0008).
+    """
+    vigente = vigentes()
+    return session.scalars(
+        sa.select(ClassificationDecision).where(
+            ClassificationDecision.id.in_(
+                sa.select(vigente.c.id).where(vigente.c.product_dna_id == product_dna_id)
+            )
+        )
+    ).first()
+
+
+def dictamen_de(session: Session, product_dna_id: uuid.UUID) -> ClassificationDecision | None:
+    """El dictamen del CASO: el último veredicto humano de esa ficha.
+
+    Revise la decisión que revise. Es la regla del #213 —manda el último,
+    llegue o no a una fracción— y la del ADR 0008: el dictamen es sobre la
+    mercancía, no sobre una fila concreta del motor.
+    """
+    d = ClassificationDecision
+    return session.scalars(
+        sa.select(d)
+        .where(d.product_dna_id == product_dna_id, d.data_origin == _HUMANO)
+        .order_by(d.created_at.desc())
+        .limit(1)
+    ).first()
+
+
 def preguntas_de(decision: ClassificationDecision) -> list[dict[str, Any]]:
     """Las preguntas del último paso de la traza, tal cual las dejó el motor.
 

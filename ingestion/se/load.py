@@ -136,7 +136,7 @@ def cargar_cuotas_compensatorias(
                 data_origin="OFFICIAL",
                 valid_from=fila.valid_from,
                 valid_to=fila.valid_to,
-                published_at=fila.valid_from,
+                published_at=fila.published_at,
                 source_url=source_url,
                 source_document=source_document,
                 content_hash=content_hash,

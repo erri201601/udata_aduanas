@@ -18,6 +18,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from database.models.base import Base
 from database.models.enums import (
+    IDENTIFIER_CONDITION,
+    IDENTIFIER_LEVEL,
     LEGAL_DOCUMENT_KIND,
     REGULATORY_EVENT_KIND,
     SOURCE_KIND,
@@ -441,6 +443,70 @@ class PedimentoIdentifier(
     supuestos_de_aplicacion: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
 
 
+class PedimentoIdentifierRequirement(
+    UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base
+):
+    """Cuándo una operación EXIGE un identificador del Apéndice 8 (ADR 0012).
+
+    `pedimento_identifiers` es el catálogo: qué claves existen. Esta tabla es
+    la regla: qué hecho de la operación obliga a declarar cada una. Mismo
+    patrón que `FractionNomRequirement` (ADR 0003): clave natural, vigencia y
+    procedencia, sin lógica en la tabla.
+
+    SÓLO LO ESTRUCTURABLE
+
+    El reconocimiento del 6-oct (`docs/RECONOCIMIENTO_APENDICE_8.md`) leyó los
+    168 «Supuestos de aplicación»: como mucho 12 dependen de algo que el
+    Canonical Model conoce —la clave de pedimento o una fracción/NICO—. El
+    resto depende de hechos del despacho (¿hubo candado?, ¿despacho
+    anticipado?) que no están en ningún campo. Esos NO van aquí: sin campo que
+    los capture, una fila sería una regla que nadie puede evaluar.
+
+    Que ninguna fila aplique a una operación NO dice que no exija ningún
+    identificador: dice que no exige ninguno de los estructurables.
+    """
+
+    __tablename__ = "pedimento_identifier_requirements"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "identifier_code",
+            "condition_kind",
+            "condition_value",
+            "valid_from",
+            name="uq_pedimento_identifier_requirements_fila",
+        ),
+        sa.Index(
+            "ix_pedimento_identifier_requirements_vigencia",
+            "condition_kind",
+            "condition_value",
+            "valid_from",
+            "valid_to",
+        ),
+        {"schema": _SCHEMA},
+    )
+
+    identifier_code: Mapped[str] = mapped_column(sa.String(2), nullable=False)
+    """La clave del Apéndice 8, p. ej. «V1»."""
+
+    identifier_level: Mapped[str] = mapped_column(
+        check_enum(IDENTIFIER_LEVEL, "identifier_level"), nullable=False
+    )
+    """Dónde se declara: `G` en el pedimento, `P` en la partida. Obligatorio:
+    sin saber dónde se declara no se puede comprobar, y una fila que no se
+    puede comprobar no se carga."""
+
+    condition_kind: Mapped[str] = mapped_column(
+        check_enum(IDENTIFIER_CONDITION, "identifier_condition"), nullable=False
+    )
+    condition_value: Mapped[str] = mapped_column(sa.String(10), nullable=False)
+    """`PEDIMENTO_KEY`: la clave del Apéndice 2 («V1»). `FRACTION`: ocho
+    dígitos. `NICO`: los ocho de la fracción y los dos del NICO, juntos
+    («9803000101»)."""
+
+    scope_note: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    """El supuesto de aplicación íntegro, tal como lo escribe el Apéndice 8."""
+
+
 class NomenclatureSynonym(
     UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base
 ):
@@ -718,6 +784,91 @@ class CompensatoryDuty(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Reg
     """Aclaración textual de la fila — por qué `exporter_name` es `NULL` en
     este caso concreto, u otra acotación de la resolución que no cabe en las
     columnas de arriba. Mismo criterio que `FractionNomRequirement.scope_note`."""
+
+
+class ProsecRate(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base):
+    """Tasa de un sector del Decreto PROSEC para una fracción (ADR 0011).
+
+    Mismo patrón que `FractionNomRequirement` y `CompensatoryDuty`: clave
+    natural + vigencia + procedencia, sin lógica en la tabla. Lo lee
+    `database/repositories/programas.py` para el Opportunity Finder (§23).
+
+    UNA FRACCIÓN PUEDE ESTAR EN VARIOS SECTORES, CON TASAS DISTINTAS
+
+    Por eso la clave natural es `(sector_code, fraction_code, valid_from)` y no
+    la fracción sola. Cuál de los sectores aplica depende del importador —en
+    qué sector está inscrito—, y eso no es un dato de esta tabla.
+
+    QUE ESTÉ AQUÍ NO DICE QUE EL IMPORTADOR PUEDA USARLO
+
+    Hace falta que esté inscrito en el programa de ese sector, con registro
+    vigente en la fecha de la operación. Por eso lo que sale de esta tabla es
+    siempre una oportunidad `POTENTIAL` con condiciones, nunca un ahorro.
+    """
+
+    __tablename__ = "prosec_rates"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "sector_code", "fraction_code", "valid_from", name="uq_prosec_rates_fila"
+        ),
+        sa.Index("ix_prosec_rates_vigencia", "fraction_code", "valid_from", "valid_to"),
+        {"schema": _SCHEMA},
+    )
+
+    sector_code: Mapped[str] = mapped_column(sa.String(8), nullable=False)
+    """El inciso del artículo 4 del Decreto PROSEC tal como lo escribe el
+    decreto («I», «XIX»…). Es el código que usan `regla_8a_fractions` y
+    `operational.clients.prosec_sector_codes`."""
+
+    sector_name: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    """«Industria Eléctrica», tal como lo nombra el decreto."""
+
+    fraction_code: Mapped[str] = mapped_column(sa.String(8), nullable=False)
+    """Ocho dígitos, sin puntos — como `tariff_fractions.code`."""
+
+    igi_rate: Mapped[Decimal] = mapped_column(sa.Numeric(9, 6), nullable=False)
+    """Arancel ad valorem del sector, como fracción (0.05, no 5) — misma
+    convención que `tariff_fractions.igi_rate`. «Ex.» (exento) es 0."""
+
+    is_partial: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.false())
+    """La fracción aparece acotada: el beneficio cubre sólo parte de ella.
+    `scope_note` dice cuál. Una fila parcial no se presenta sin la acotación."""
+
+    scope_note: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    """La acotación íntegra, tal como la escribe el decreto. `None` = toda la
+    fracción."""
+
+
+class Regla8aFraction(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base):
+    """La fracción del capítulo 98 que corresponde a cada sector para la Regla 8ª (ADR 0011).
+
+    La Regla 8ª de las complementarias de la LIGIE permite importar las
+    mercancías de un sector por una fracción 9802.00.xx. La TASA de esa
+    fracción ya está en `tariff_fractions` —la LIGIE la publica— y no se copia
+    aquí: dos copias de una tasa acaban diciendo cosas distintas. Esta tabla
+    sólo dice qué fracción 9802 corresponde a qué sector.
+    """
+
+    __tablename__ = "regla_8a_fractions"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "sector_code", "fraction_code", "valid_from", name="uq_regla_8a_fractions_fila"
+        ),
+        sa.Index("ix_regla_8a_fractions_vigencia", "sector_code", "valid_from", "valid_to"),
+        {"schema": _SCHEMA},
+    )
+
+    sector_code: Mapped[str] = mapped_column(sa.String(8), nullable=False)
+    """El mismo código de sector que `prosec_rates.sector_code`."""
+
+    sector_name: Mapped[str] = mapped_column(sa.Text, nullable=False)
+
+    fraction_code: Mapped[str] = mapped_column(sa.String(8), nullable=False)
+    """La fracción 9802.00.xx, ocho dígitos sin puntos."""
+
+    scope_note: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    """Exclusiones o acotaciones que la LIGIE o la autorización fijan para el
+    sector, íntegras. `None` = no se conocen, no «no hay»."""
 
 
 class RegulatoryEvent(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base):

@@ -38,6 +38,68 @@ function SeverityBadge({ severity }: { severity: Severity }) {
   )
 }
 
+/** «línea 3: motivo» → el motivo, con todas las líneas en que aparece.
+ *
+ * La lista venía línea por línea —cinco motivos por partida, doce partidas—
+ * y en la demo era un muro de sesenta renglones con los mismos cinco textos.
+ * Lo que una persona necesita leer es QUÉ no se pudo comprobar y DÓNDE; el
+ * dónde cabe en una línea. */
+function porMotivo(razones: string[]): { motivo: string; lineas: number[] }[] {
+  const grupos = new Map<string, Set<number>>()
+  const sueltas: string[] = []
+  for (const razon of razones) {
+    const m = /^línea (\d+): (.*)$/s.exec(razon)
+    if (!m) {
+      sueltas.push(razon)
+      continue
+    }
+    const lineas = grupos.get(m[2]) ?? new Set<number>()
+    lineas.add(Number(m[1]))
+    grupos.set(m[2], lineas)
+  }
+  return [
+    ...[...grupos]
+      .map(([motivo, lineas]) => ({ motivo, lineas: [...lineas].sort((a, b) => a - b) }))
+      .sort((a, b) => b.lineas.length - a.lineas.length),
+    ...sueltas.map((motivo) => ({ motivo, lineas: [] })),
+  ]
+}
+
+/** Las partidas distintas que aparecen en la lista. Contar renglones decía
+ *  «54 partidas no se pudieron comprobar» en un pedimento de 12. */
+function partidasEn(razones: string[]): number {
+  return new Set(razones.map((r) => /^línea (\d+):/.exec(r)?.[1]).filter(Boolean)).size
+}
+
+type Hallazgo = NonNullable<ReturnType<typeof usePedimentoFindings>['revision']>['findings'][number]
+
+/** Los hallazgos idénticos salvo la partida, juntos.
+ *
+ * El tipo de cambio es un dato del PEDIMENTO: si está mal, sale igual en las
+ * doce partidas, y doce tarjetas CRITICAL con el mismo texto esconden lo demás.
+ * Se juntan sólo los que no tienen monto: con monto, cada tarjeta es una cifra
+ * distinta y sumarlas o esconderlas cambiaría lo que se presenta. */
+function agrupados(hallazgos: Hallazgo[]): { h: Hallazgo; veces: number }[] {
+  const salida: { h: Hallazgo; veces: number }[] = []
+  const vistos = new Map<string, { h: Hallazgo; veces: number }>()
+  for (const h of hallazgos) {
+    if (esAccionable(h.impact_amount)) {
+      salida.push({ h, veces: 1 })
+      continue
+    }
+    const clave = [h.finding_type, h.severity, h.declared_value, h.expected_value, h.rationale].join('|')
+    const previo = vistos.get(clave)
+    if (previo) {
+      previo.veces += 1
+    } else {
+      const nuevo = { h, veces: 1 }
+      vistos.set(clave, nuevo)
+      salida.push(nuevo)
+    }
+  }
+  return salida
+}
+
 export function Findings() {
   const { pedimentos, error: errorLista, cargando: cargandoLista } = usePedimentos()
   const [elegido, setElegido] = useState<string | null>(null)
@@ -114,20 +176,24 @@ export function Findings() {
           ) : (
             <div className="cobertura cobertura--parcial" role="note">
               <strong>
-                Revisión incompleta: {revision.unverifiable.length}{' '}
-                {revision.unverifiable.length === 1
-                  ? 'partida no se pudo comprobar'
-                  : 'partidas no se pudieron comprobar'}
-                .
+                Revisión incompleta: en {partidasEn(revision.unverifiable)}{' '}
+                {partidasEn(revision.unverifiable) === 1 ? 'partida' : 'partidas'} hubo
+                algo que no se pudo comprobar.
               </strong>
               <p>
                 Lo que aparece abajo es lo encontrado{' '}
-                <em>en lo que sí se revisó</em>. Las partidas de esta lista
-                quedaron fuera:
+                <em>en lo que sí se revisó</em>. Esto quedó sin comprobar, y por qué:
               </p>
               <ul className="cobertura__pendientes">
-                {revision.unverifiable.map((razon) => (
-                  <li key={razon}>{razon}</li>
+                {porMotivo(revision.unverifiable).map(({ motivo, lineas }) => (
+                  <li key={motivo}>
+                    {lineas.length > 0 && (
+                      <strong>
+                        {lineas.length === 1 ? 'línea' : 'líneas'} {lineas.join(', ')}:{' '}
+                      </strong>
+                    )}
+                    {motivo}
+                  </li>
                 ))}
               </ul>
             </div>
@@ -167,7 +233,7 @@ export function Findings() {
             </p>
           ) : (
             <ul className="hallazgos">
-              {hallazgos.map((h) => {
+              {agrupados(hallazgos).map(({ h, veces }) => {
                 const monto = formatearMonto(h.impact_amount, h.impact_amount_currency)
                 const accionable = esAccionable(h.impact_amount)
 
@@ -182,6 +248,11 @@ export function Findings() {
                         {etiquetaDe(h.finding_type)}
                       </span>
                       {h.is_simulation && <span className="sim">simulación</span>}
+                      {veces > 1 && (
+                        <span className="hallazgo__veces">
+                          igual en {veces} partidas
+                        </span>
+                      )}
                     </div>
 
                     {(h.declared_value || h.expected_value) && (

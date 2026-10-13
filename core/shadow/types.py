@@ -37,6 +37,10 @@ class DeclaredItem(BaseModel):
     customs_value_currency: str | None = None
     applied_nom_codes: tuple[str, ...] = ()
     identifiers: dict[str, Any] = Field(default_factory=dict)
+    """Identificadores declarados en la PARTIDA (nivel `P` del Apéndice 8)."""
+    document_identifiers: dict[str, Any] = Field(default_factory=dict)
+    """Identificadores declarados en el PEDIMENTO (nivel `G`). Se repiten igual
+    en cada línea, como `exchange_rate`: son del documento, no de la partida."""
     sku: str | None = None
 
     unit: str | None = None
@@ -66,6 +70,20 @@ class ExpectedItem(BaseModel):
     line_number: int
     fraction_code: str | None = None
     nico_code: str | None = None
+    fraction_source: str | None = None
+    """Quién sostiene la fracción esperada. `None` = el motor, por las RGI.
+
+    Con texto —«el dictamen de César del 2026-10-07»— la sostiene un
+    clasificador, y el hallazgo tiene que decirlo: no es lo mismo «según las
+    RGI» que «según el criterio firmado de una persona». Las dos acusan con
+    fundamento; quien lea el hallazgo tiene que saber cuál.
+    """
+    nico_source: str | None = None
+    """Quién sostiene el NICO esperado. `None` = el catálogo o el motor.
+
+    Con texto, un clasificador lo firmó en su dictamen. Igual que con la
+    fracción, el hallazgo lo dice.
+    """
     country_of_origin: str | None = None
     origin_source: str | None = None
     """De dónde sale el país esperado. `None` = de una fuente firme.
@@ -93,6 +111,12 @@ class ExpectedItem(BaseModel):
 
     Las tasas las pasa quien llama; el motor no las inventa (§8.1).
     """
+
+    derivations: dict[str, str] = Field(default_factory=dict)
+    """Cómo se obtuvo cada importe esperado, campo → fórmula con sus entradas
+    («valor_aduana(100000.00) × tasa_IGI 84713001 (0.15) = 15000.00»). Viaja a
+    la divergencia y de ahí al cálculo del hallazgo (§22): sin esto el
+    esperado era un número que había que creerse."""
 
     exchange_rate: Decimal | None = None
     """El FIX vigente para la fecha de operación y la divisa de la factura.
@@ -168,11 +192,17 @@ class ExpectedItem(BaseModel):
     """
 
     required_identifiers: tuple[str, ...] | None = None
-    """Identificadores del Anexo 22 que la operación exige. `None` = no se sabe.
+    """Identificadores de PARTIDA (nivel `P`) que la operación exige. `None` =
+    no se sabe.
 
-    Misma semántica que `required_nom_codes`. El Apéndice 8 del Anexo 22 —el
-    catálogo de identificadores— está pendiente de cargar.
+    Salen de `regulatory.pedimento_identifier_requirements` (ADR 0012): sólo
+    las reglas que dependen de la clave de pedimento, la fracción o el NICO.
+    `()` dice que no exige ninguno DE ESOS, no que no exija ninguno: los que
+    dependen de hechos del despacho no están estructurados.
     """
+    required_document_identifiers: tuple[str, ...] | None = None
+    """Identificadores de PEDIMENTO (nivel `G`) que la operación exige. Misma
+    semántica que `required_identifiers`."""
     sku: str | None = None
 
     confidence: Decimal | None = None
@@ -203,6 +233,8 @@ class Divergence(BaseModel):
     severity: str = "MEDIUM"
     confidence: Decimal | None = None
     reasoning: str = ""
+    derivation: str | None = None
+    """Cómo se obtuvo `expected_value`, cuando es un importe calculado (§22)."""
     source_ids: tuple[Any, ...] = ()
     requires_human_review: bool = True
 

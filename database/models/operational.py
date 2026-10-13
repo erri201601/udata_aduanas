@@ -61,6 +61,15 @@ class Client(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, SyntheticMixi
     rfc: Mapped[str | None] = mapped_column(sa.String(13), nullable=True)
     country: Mapped[str] = mapped_column(sa.String(2), nullable=False, server_default="MX")
     industry: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    prosec_sector_codes: Mapped[list[str] | None] = mapped_column(
+        ARRAY(sa.String(8)), nullable=True
+    )
+    """Sectores del Decreto PROSEC (art. 4) en que opera el importador (ADR 0011).
+
+    `None` = no se sabe; `[]` = consta que no opera en ninguno. No dice que
+    esté INSCRITO en el programa: eso es una condición que se comprueba fuera
+    del sistema. Sirve para no ofrecerle a una mueblera la tasa del sector
+    automotriz."""
     address: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     is_active: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.true())
 
@@ -209,14 +218,9 @@ class Pedimento(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, SyntheticM
     is_simulation: Mapped[bool] = mapped_column(
         sa.Boolean, nullable=False, server_default=sa.false()
     )
-    rectifies_pedimento_id: Mapped[uuid.UUID | None] = mapped_column(
-        sa.ForeignKey(f"{_SCHEMA}.pedimentos.id", ondelete="RESTRICT"), nullable=True
-    )
-    """`NULL` = pedimento original. Si no lo es, apunta al original que
-    rectifica (§10 maestro) -- nunca se borra un original referenciado."""
-
-    rectification_number: Mapped[int | None] = mapped_column(sa.SmallInteger, nullable=True)
-    """1a, 2a... rectificación del mismo original. `NULL` en el original."""
+    identifiers: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    """Identificadores declarados a nivel pedimento (nivel `G` del Apéndice 8),
+    clave → complementos. Los de partida van en `pedimento_items.identifiers`."""
 
 
 class PedimentoItem(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, SyntheticMixin, Base):
