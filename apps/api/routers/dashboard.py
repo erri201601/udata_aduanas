@@ -571,15 +571,26 @@ def tablero(session: SessionDep) -> Dashboard:
         if m
     }
     mezcla_ahorro = len(monedas_ahorro) > 1
-    ahorro = (
-        None
-        if mezcla_ahorro
-        else session.scalar(
-            sa.select(sa.func.sum(OpportunityFinding.estimated_saving_amount)).where(
-                vigentes_oportunidad
+    # EL MAYOR POR PARTIDA, NO LA SUMA (ADR 0011)
+    #
+    # PROSEC, Regla 8ª y un sobrepago sobre la misma partida son caminos
+    # distintos al mismo IGI: sumarlos prometería cobrarlo dos veces. Es el
+    # mismo criterio que `OpportunityReport.total_potential`. Las oportunidades
+    # sin partida se suman tal cual: cada una es su propia clave.
+    por_partida = (
+        sa.select(
+            sa.func.max(OpportunityFinding.estimated_saving_amount).label("ahorro"),
+        )
+        .where(vigentes_oportunidad)
+        .group_by(
+            sa.func.coalesce(
+                sa.cast(OpportunityFinding.pedimento_item_id, sa.Text),
+                sa.cast(OpportunityFinding.id, sa.Text),
             )
         )
+        .subquery()
     )
+    ahorro = None if mezcla_ahorro else session.scalar(sa.select(sa.func.sum(por_partida.c.ahorro)))
     ahorro_moneda = next(iter(monedas_ahorro)) if len(monedas_ahorro) == 1 else None
 
     # Los hallazgos van acotados aquí también, o el pie compararía poblaciones

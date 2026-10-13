@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING
 
 from core.opportunity.kinds import OpportunityKind
 from core.opportunity.types import Opportunity, OpportunityReport, build
-from core.taxation import compute_taxes
+from core.taxation import compute_taxes, contrastar
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -62,6 +62,16 @@ def from_audit(report: AuditReport) -> list[Opportunity]:
             currency=f.impact_currency,
             source_ids=f.divergence.source_ids,
             is_simulation=f.is_simulation,
+            # El mismo cálculo del hallazgo, en positivo: el ahorro es la
+            # magnitud del sobrepago.
+            calculation=f.calculation.model_copy(
+                update={
+                    "formula": f"-({f.calculation.formula})",
+                    "result": str(abs(f.impact_amount)),
+                }
+            )
+            if f.calculation is not None
+            else None,
         )
         for f in report.findings
         if f.is_opportunity and f.impact_amount is not None
@@ -103,6 +113,16 @@ def from_preferential_rate(
         is_simulation=is_simulation,
     )
     ahorro = actual.total_taxes - preferente.total_taxes
+    calculo = contrastar(
+        preferente,
+        actual,
+        lado_a="con_la_tasa_preferencial",
+        lado_b="con_la_tasa_aplicada",
+        formula=(
+            "Σ contribuciones con la tasa aplicada - Σ contribuciones con la tasa preferencial"
+        ),
+        is_simulation=is_simulation,
+    )
 
     return build(
         kind,
@@ -113,6 +133,7 @@ def from_preferential_rate(
         currency=ahorro.currency if ahorro.amount > 0 else None,
         source_ids=preferential_rates.source_ids,
         is_simulation=is_simulation,
+        calculation=calculo if ahorro.amount > 0 else None,
     )
 
 

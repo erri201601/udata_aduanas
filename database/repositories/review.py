@@ -128,6 +128,11 @@ def save_review(
                     if oportunidad.estimated_saving is not None
                     else None,
                     estimated_saving_amount_currency=oportunidad.currency,
+                    estimated_saving_calculation=(
+                        oportunidad.calculation.model_dump(mode="json")
+                        if oportunidad.calculation
+                        else None
+                    ),
                     is_simulation=oportunidad.is_simulation,
                     data_origin=data_origin,
                 )
