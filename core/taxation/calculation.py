@@ -151,35 +151,14 @@ class DivergenceImpact(BaseModel):
         return "SIN_DIFERENCIA"
 
     def as_result(self, assumptions: tuple[str, ...] = ()) -> MonetaryResult:
-        """El impacto en el sobre del §22, con el desglose por contribución.
-
-        Las entradas son las fórmulas de cada contribución, de los dos lados:
-        con ellas se rehace el total sin abrir el código.
-        """
-        entradas: dict[str, str] = {
-            "total_declarado": str(self.declared.total_taxes.amount),
-            "total_esperado": str(self.expected.total_taxes.amount),
-        }
-        for lado, calculo in (("declarado", self.declared), ("esperado", self.expected)):
-            for item in calculo.items:
-                entradas[f"{lado}.{item.concept}"] = f"{item.formula} = {item.amount.amount}"
-        fuentes = dict.fromkeys(
-            str(s)
-            for c in (self.declared, self.expected)
-            for s in (*c.source_ids, *(f for i in c.items for f in i.source_ids))
-        )
-        return MonetaryResult(
+        """El impacto en el sobre del §22, con el desglose por contribución."""
+        return contrastar(
+            self.declared,
+            self.expected,
+            lado_a="declarado",
+            lado_b="esperado",
             formula="Σ contribuciones esperadas - Σ contribuciones declaradas",
-            inputs=entradas,
-            result=str(self.difference.amount),
-            currency=self.difference.currency,
-            calculation_version=self.expected.calculation_version,
-            assumptions=tuple(
-                dict.fromkeys(
-                    (*self.declared.assumptions, *self.expected.assumptions, *assumptions)
-                )
-            ),
-            source_ids=tuple(fuentes),
+            assumptions=assumptions,
             is_simulation=self.is_simulation,
         )
 
@@ -195,6 +174,47 @@ class DivergenceImpact(BaseModel):
         )
         base = f"{abs(self.difference.amount):,.2f} {self.difference.currency} {signo}"
         return f"{base} (simulado)" if self.is_simulation else base
+
+
+def contrastar(
+    a: TaxCalculation,
+    b: TaxCalculation,
+    *,
+    lado_a: str,
+    lado_b: str,
+    formula: str,
+    assumptions: tuple[str, ...] = (),
+    is_simulation: bool | None = None,
+) -> MonetaryResult:
+    """`b - a` en el sobre del §22, con las fórmulas de cada contribución.
+
+    Las entradas son las fórmulas de los dos lados: con ellas se rehace el
+    total sin abrir el código. Sirve para un hallazgo (declarado frente a
+    esperado) y para una oportunidad (tasa aplicada frente a la del programa).
+    """
+    entradas: dict[str, str] = {
+        f"total_{lado_a}": str(a.total_taxes.amount),
+        f"total_{lado_b}": str(b.total_taxes.amount),
+    }
+    for lado, calculo in ((lado_a, a), (lado_b, b)):
+        for item in calculo.items:
+            entradas[f"{lado}.{item.concept}"] = f"{item.formula} = {item.amount.amount}"
+    fuentes = dict.fromkeys(
+        str(s) for c in (a, b) for s in (*c.source_ids, *(f for i in c.items for f in i.source_ids))
+    )
+    diferencia = (b.total_taxes - a.total_taxes).quantize()
+    return MonetaryResult(
+        formula=formula,
+        inputs=entradas,
+        result=str(diferencia.amount),
+        currency=diferencia.currency,
+        calculation_version=b.calculation_version,
+        assumptions=tuple(dict.fromkeys((*a.assumptions, *b.assumptions, *assumptions))),
+        source_ids=tuple(fuentes),
+        is_simulation=(a.is_simulation or b.is_simulation)
+        if is_simulation is None
+        else is_simulation,
+    )
 
 
 def empty_calculation(currency: str) -> TaxCalculation:

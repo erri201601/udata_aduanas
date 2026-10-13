@@ -113,3 +113,63 @@ def test_el_calculo_se_serializa_para_la_fila() -> None:
     fila = f.to_finding_fields()["impact_calculation"]
     assert isinstance(fila, dict)
     assert set(fila) == CAMPOS_22
+
+
+# ── Las oportunidades también (13-oct) ───────────────────────────────────────
+
+
+def test_un_sobrepago_lleva_el_calculo_del_hallazgo_en_positivo() -> None:
+    from core.opportunity import find_opportunities
+
+    informe = audit(
+        compare(
+            [DeclaredItem(line_number=1, fraction_code="85285900")],
+            [
+                ExpectedItem(
+                    line_number=1,
+                    fraction_code="84713001",
+                    is_resolved=True,
+                    confidence=Decimal("1"),
+                )
+            ],
+        ),
+        transaction_value=VALOR,
+        declared_rates=TaxRates(igi_rate=Decimal("0.15")),
+        expected_rates=TaxRates(igi_rate=Decimal("0.00")),
+    )
+    [o] = find_opportunities(audit=informe).opportunities
+    assert o.calculation is not None
+    assert Decimal(o.calculation.result) == o.estimated_saving > 0
+    assert o.calculation.formula.startswith("-(")
+
+
+def test_una_tasa_preferencial_lleva_los_dos_calculos() -> None:
+    from core.opportunity import OpportunityKind, from_preferential_rate
+
+    o = from_preferential_rate(
+        kind=OpportunityKind.PROSEC,
+        transaction_value=VALOR,
+        applied_rates=TaxRates(igi_rate=Decimal("0.15"), source_ids=("ligie",)),
+        preferential_rates=TaxRates(igi_rate=Decimal("0.05"), source_ids=("prosec",)),
+        rationale="",
+    )
+    calculo = o.calculation
+    assert calculo is not None
+    assert Decimal(calculo.result) == o.estimated_saving == Decimal("10000.00")
+    assert "con_la_tasa_aplicada.IGI" in calculo.inputs
+    assert "con_la_tasa_preferencial.IGI" in calculo.inputs
+    assert {"ligie", "prosec"} <= set(calculo.source_ids)
+
+
+def test_una_oportunidad_sin_monto_no_lleva_calculo() -> None:
+    from core.opportunity import OpportunityKind, from_preferential_rate
+
+    o = from_preferential_rate(
+        kind=OpportunityKind.PROSEC,
+        transaction_value=VALOR,
+        applied_rates=TaxRates(igi_rate=Decimal("0.05")),
+        preferential_rates=TaxRates(igi_rate=Decimal("0.10")),
+        rationale="",
+    )
+    assert o.estimated_saving is None
+    assert o.calculation is None

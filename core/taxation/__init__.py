@@ -67,6 +67,7 @@ from core.taxation.calculation import (
     LineItem,
     MonetaryResult,
     TaxCalculation,
+    contrastar,
     empty_calculation,
 )
 from core.taxation.engine import compute_divergence, compute_taxes, customs_value
@@ -86,6 +87,7 @@ __all__ = [
     "TaxRates",
     "compute_divergence",
     "compute_taxes",
+    "contrastar",
     "customs_value",
     "empty_calculation",
     "zero",

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from core.opportunity.kinds import CONDITIONS, OpportunityKind
+from core.taxation import MonetaryResult
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -44,6 +45,9 @@ class Opportunity(BaseModel):
 
     source_ids: tuple[Any, ...] = ()
     is_simulation: bool = True
+
+    calculation: MonetaryResult | None = None
+    """Cómo se llegó a `estimated_saving` (§22). `None` sin monto."""
 
     @property
     def is_quantified(self) -> bool:
@@ -177,6 +181,7 @@ def build(
     currency: str | None = None,
     source_ids: Sequence[Any] = (),
     is_simulation: bool = True,
+    calculation: MonetaryResult | None = None,
 ) -> Opportunity:
     """Construye una oportunidad con las condiciones de su tipo ya puestas.
 
@@ -194,4 +199,5 @@ def build(
         conditions=CONDITIONS[kind],
         source_ids=tuple(source_ids),
         is_simulation=is_simulation,
+        calculation=calculation if estimated_saving is not None else None,
     )

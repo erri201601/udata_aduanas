@@ -441,6 +441,10 @@ class OpportunityFinding(
     rationale: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     estimated_saving_amount: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
     estimated_saving_amount_currency: Mapped[str | None] = mapped_column(_CCY, nullable=True)
+    #: Cómo se llegó al ahorro (§22), igual que `RiskFinding.impact_calculation`.
+    estimated_saving_calculation: Mapped[dict | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
+    )
     #: `RiskFinding` la tenía desde el principio y aquí faltaba, así que la
     #: corrida reventaba con un 500 en cuanto un pedimento producía una
     #: oportunidad —raro, por eso llevaba meses escondido—. Y el defecto de
