@@ -222,7 +222,11 @@ def redactar(
             _RedaccionLLM,
             prompt_id=PROMPT_ID,
             prompt_version=PROMPT_VERSION,
-            temperature=0,
+            # Sin `temperature`: el modelo vigente de Anthropic la rechaza con
+            # un 400 («`temperature` is deprecated for this model») y el
+            # Copilot no redactaba nunca —siempre caía en `SIN_MODELO`—
+            # (13-oct). Lo que impide inventar no es la temperatura: es el
+            # validador de citas de abajo.
         )
     except ModelProviderError as exc:
         log.warning(
