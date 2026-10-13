@@ -209,6 +209,14 @@ class Pedimento(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, SyntheticM
     is_simulation: Mapped[bool] = mapped_column(
         sa.Boolean, nullable=False, server_default=sa.false()
     )
+    rectifies_pedimento_id: Mapped[uuid.UUID | None] = mapped_column(
+        sa.ForeignKey(f"{_SCHEMA}.pedimentos.id", ondelete="RESTRICT"), nullable=True
+    )
+    """`NULL` = pedimento original. Si no lo es, apunta al original que
+    rectifica (§10 maestro) -- nunca se borra un original referenciado."""
+
+    rectification_number: Mapped[int | None] = mapped_column(sa.SmallInteger, nullable=True)
+    """1a, 2a... rectificación del mismo original. `NULL` en el original."""
 
 
 class PedimentoItem(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, SyntheticMixin, Base):
@@ -270,3 +278,10 @@ class PedimentoItem(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Synthe
         ARRAY(sa.String(16)), nullable=False, server_default="{}"
     )
     identifiers: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    net_weight_kg: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    """Peso neto de la partida, en kilogramos -- campo real del Anexo 22, no
+    antes modelado. `quantity`/`commercial_unit` declaran la UMC comercial
+    (p. ej. metro lineal de cable), que no siempre es kilogramo; sin este
+    campo, una cuota compensatoria fijada por kilogramo (ADR 0009, cable de
+    acero) no tiene de dónde sacar el importe -- queda como hallazgo sin
+    monto. `NULL` = no consta, nunca 0."""
