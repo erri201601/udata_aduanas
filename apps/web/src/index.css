@@ -1592,6 +1592,37 @@ code {
 }
 
 .subir__accion { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+
+/* Tres entradas, una a la vista: pegar texto, PDF o imagen. */
+.subir__entradas { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.8rem; }
+.subir__entrada {
+  padding: 0.3rem 0.8rem;
+  font: inherit;
+  font-size: 0.8rem;
+  border: 1px solid var(--borde);
+  border-radius: 999px;
+  background: var(--fondo);
+  color: inherit;
+  cursor: pointer;
+}
+.subir__entrada--activa { border-color: var(--acento); color: var(--acento); font-weight: 600; }
+.subir__texto { display: grid; gap: 0.7rem; }
+.subir__texto textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  background: var(--fondo);
+  color: inherit;
+  font: inherit;
+  font-size: 0.84rem;
+  resize: vertical;
+}
+.subir__no-vigente { color: var(--mal) !important; }
+
+/* El localizador va antes que el id: es lo que quien revisa quiere leer. */
+.evidencia__donde { display: block; font-size: 0.78rem; line-height: 1.4; overflow-wrap: anywhere; }
 .subir__pista { margin: 0; font-size: 0.78rem; color: var(--tenue); line-height: 1.5; flex: 1 1 18rem; }
 
 .subir__estado {

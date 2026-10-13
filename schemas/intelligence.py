@@ -102,6 +102,10 @@ class ProductAttributeBase(DataOriginFields):
     status: AttributeStatus
     confidence: Decimal | None = Field(default=None, ge=0, le=1)
     evidence_reference: uuid.UUID | None = None
+    locator: str | None = None
+    """Dónde está el dato dentro del documento de `evidence_reference`: «[p.3]
+    Especificaciones». Lo lee la pantalla de Product DNA, en la columna de
+    evidencia."""
 
 
 class ProductAttributeCreate(ProductAttributeBase):

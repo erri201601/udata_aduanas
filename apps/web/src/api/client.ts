@@ -98,51 +98,79 @@ export async function fetchProductDna(
   return pedir<ProductDnaDetail>(`/products/${productId}/dna`, signal)
 }
 
-export interface DnaDesdeImagen {
-  product_dna_id: string
-  version: number
-  atributos: number
-  summary: string | null
-  missing_information: string[]
-  minio_key: string
-  content_hash: string
-}
+/** Lo que devuelven las tres entradas del Product DNA: texto, PDF e imagen. */
+export type DnaExtraido = components['schemas']['DnaExtraido']
 
 /**
- * Sube una imagen y extrae de ella el Product DNA (§16).
+ * Manda una entrada de Product DNA y devuelve lo extraído (§16).
  *
- * No usa `pedir()` porque manda `multipart/form-data` y, sobre todo, porque
- * aquí el CUERPO DEL ERROR importa: el 503 de «no hay proveedor de visión
- * configurado» dice cuál falta, y perder ese texto dejaría al usuario con un
- * «La API respondió 503» que no le sirve para nada.
+ * No usa `pedir()` porque aquí el CUERPO DEL ERROR importa: el 503 de «no hay
+ * proveedor configurado» dice cuál falta, y el 422 de un PDF escaneado dice
+ * «sin texto extraíble». Perder ese texto dejaría al usuario con un «La API
+ * respondió 422» que no le sirve para nada.
  */
-export async function extraerDnaDeImagen(
+async function enviarFicha(
   productId: string,
-  imagen: File,
+  ruta: 'from-text' | 'from-pdf' | 'from-image',
+  cuerpo: BodyInit,
   signal?: AbortSignal,
-): Promise<DnaDesdeImagen> {
-  const cuerpo = new FormData()
-  cuerpo.append('imagen', imagen)
-
-  const respuesta = await fetch(`${API_BASE_URL}/products/${productId}/dna/from-image`, {
+  json = false,
+): Promise<DnaExtraido> {
+  const respuesta = await fetch(`${API_BASE_URL}/products/${productId}/dna/${ruta}`, {
     method: 'POST',
     body: cuerpo,
     signal,
-    headers: { Accept: 'application/json' },
+    headers: json
+      ? { Accept: 'application/json', 'Content-Type': 'application/json' }
+      : { Accept: 'application/json' },
   })
 
   if (!respuesta.ok) {
     let detalle = `La API respondió ${respuesta.status}`
     try {
-      const json = (await respuesta.json()) as { detail?: string }
-      if (json.detail) detalle = json.detail
+      const datos = (await respuesta.json()) as { detail?: unknown }
+      if (typeof datos.detail === 'string') detalle = datos.detail
+      // Un 422 de validación trae una lista; se enseña el primer mensaje.
+      else if (Array.isArray(datos.detail) && datos.detail[0]?.msg)
+        detalle = String(datos.detail[0].msg)
     } catch {
       // Un error sin cuerpo JSON: se queda el genérico, que es mejor que nada.
     }
     throw new ApiError(detalle, respuesta.status)
   }
 
-  return (await respuesta.json()) as DnaDesdeImagen
+  return (await respuesta.json()) as DnaExtraido
+}
+
+/** Extrae el Product DNA de una imagen. */
+export async function extraerDnaDeImagen(
+  productId: string,
+  imagen: File,
+  signal?: AbortSignal,
+): Promise<DnaExtraido> {
+  const cuerpo = new FormData()
+  cuerpo.append('imagen', imagen)
+  return enviarFicha(productId, 'from-image', cuerpo, signal)
+}
+
+/** Extrae el Product DNA de una ficha técnica en PDF. */
+export async function extraerDnaDePdf(
+  productId: string,
+  pdf: File,
+  signal?: AbortSignal,
+): Promise<DnaExtraido> {
+  const cuerpo = new FormData()
+  cuerpo.append('pdf', pdf)
+  return enviarFicha(productId, 'from-pdf', cuerpo, signal)
+}
+
+/** Extrae el Product DNA de una ficha técnica pegada como texto. */
+export async function extraerDnaDeTexto(
+  productId: string,
+  texto: string,
+  signal?: AbortSignal,
+): Promise<DnaExtraido> {
+  return enviarFicha(productId, 'from-text', JSON.stringify({ texto }), signal, true)
 }
 
 async function pedir<T>(ruta: string, signal?: AbortSignal): Promise<T> {
