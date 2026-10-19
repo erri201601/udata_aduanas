@@ -101,6 +101,14 @@ Mismo resultado que CBP: no hay nada que un `httpx.get()` pueda leer.
 4. **WCO**: confirmado que no se tocó nada — contenido con licencia,
    `LICENSE_REVIEW_REQUIRED` tal cual dice el maestro, cero scraping.
 
-## Decisión de Persona 1
+## Decisión de Persona 1 (13-oct, escrita el 19-oct)
 
-Pendiente -- este documento es el reconocimiento, no la carga.
+1. **No se monta un navegador headless ni se contrata un servicio** para CBP
+   CROSS o EBTI por ahora. Queda aparcado hasta que el §19 lo necesite en
+   un caso real: hoy ninguna métrica ni ningún cliente depende de rulings.
+2. **El camino que queda abierto es el manual**: un clasificador que cite un
+   ruling o un BTI concreto lo registra como evidencia `COMPARABLE`, con su
+   URL y su fecha. No se crea la tabla `ComparableCase`.
+3. **Nunca se convierte una HTS o una CN en una fracción TIGIE** de forma
+   automática (regla del maestro): un comparable orienta, no fundamenta.
+4. **WCO**: sigue en `LICENSE_REVIEW_REQUIRED`.
