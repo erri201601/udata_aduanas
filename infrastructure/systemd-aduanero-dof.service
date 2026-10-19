@@ -1,14 +1,28 @@
 [Unit]
 Description=ADUANERO OS — vigilante del DOF (sumario del día → regulatory_events)
 Documentation=file:///home/udata/Documentos/udata_aduanas/ingestion/dof/watcher_cli.py
-After=docker.service network-online.target
+After=docker.service
+# Reintentos: hasta 6 en 3 horas. Más allá, el fallo se queda en el journal.
+StartLimitIntervalSec=3h
+StartLimitBurst=6
 
 [Service]
 Type=oneshot
 WorkingDirectory=/home/udata/Documentos/udata_aduanas
+# ESPERAR A LA RED, EXPLÍCITAMENTE (19-oct)
+#
+# `After=network-online.target` no sirve en una unidad de usuario: el gestor de
+# usuario no ve ese target del sistema. El 18-oct la laptop despertó, el timer
+# disparó la pasada atrasada antes de que hubiera red, el DNS falló y no hubo
+# segundo intento. Se espera hasta 5 minutos a que resuelva el DOF.
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 30); do getent hosts dof.gob.mx >/dev/null && exit 0; sleep 10; done; echo "sin red tras 5 min"; exit 1'
 # `--target local` es la base del equipo en este servidor (5433). Idempotente
 # por source_url: correr dos veces el mismo día no duplica eventos.
 ExecStart=/home/udata/Documentos/udata_aduanas/.venv/bin/python -m ingestion.dof.watcher_cli --target local
+# Si aun así falla (DOF caído, red intermitente), otro intento en 15 minutos:
+# el sumario sólo enseña la edición del día, y lo que no se lee hoy se pierde.
+Restart=on-failure
+RestartSec=15min
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=aduanero-dof

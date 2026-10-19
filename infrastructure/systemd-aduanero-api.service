@@ -4,6 +4,11 @@ Documentation=file:///home/udata/Documentos/udata_aduanas/README.md
 After=network-online.target tailscaled.service
 Wants=network-online.target
 
+# Van en [Unit]: en [Service] systemd ignora StartLimitIntervalSec, y el
+# límite de reinicios nunca se aplicaba (detectado el 19-oct).
+StartLimitBurst=10
+StartLimitIntervalSec=120
+
 [Service]
 Type=exec
 WorkingDirectory=/home/udata/Documentos/udata_aduanas
@@ -20,8 +25,6 @@ ExecStart=/home/udata/Documentos/udata_aduanas/.venv/bin/uvicorn apps.api.main:a
 Restart=on-failure
 RestartSec=5s
 # Si Tailscale tarda en levantar, el bind falla; reintentar sin rendirse.
-StartLimitBurst=10
-StartLimitIntervalSec=120
 
 StandardOutput=journal
 StandardError=journal

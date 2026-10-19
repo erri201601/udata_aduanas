@@ -12,6 +12,7 @@ Uso:
     python -m ingestion.banxico.cli --target local
     python -m ingestion.banxico.cli --target local  --start 2026-01-01 --end 2026-10-06
     python -m ingestion.banxico.cli --target shared --raw-only
+    python -m ingestion.banxico.cli --target shared --fix-gaps
 """
 
 from __future__ import annotations
@@ -80,11 +81,29 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         action="store_true",
         help="Solo sube y verifica el RAW en --target; no toca la base.",
     )
+    parser.add_argument(
+        "--fix-gaps",
+        action="store_true",
+        help=(
+            "Repara filas ya cargadas con valid_to=NULL que no son la más "
+            "reciente de su moneda (bug de backfill fuera de orden, "
+            "13-oct-2026). No descarga nada nuevo; ignora --start/--end."
+        ),
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
+    if args.fix_gaps:
+        engine = create_engine(_database_url(args.target))
+        with Session(engine) as session:
+            n = load.cerrar_vigencias_huerfanas(session)
+            session.commit()
+        print(f"OK ({args.target}): {n} vigencias huérfanas corregidas.")
+        log.info("banxico.cli.fix_gaps", target=args.target, corregidas=n)
+        return 0
+
     end = args.end or date.today()
     start = args.start or (end - timedelta(days=7))
     if start > end:
