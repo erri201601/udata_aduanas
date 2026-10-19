@@ -1,0 +1,82 @@
+{
+  "_leeme": [
+    "Preguntas para medir la búsqueda jurídica (§39). Qué artículo responde cada una es una afirmación jurídica: NO se escribe de memoria (regla 1).",
+    "Para que una pregunta cuente: rellena `esperado` con [{documento, articulo}] comprobados contra el texto cargado, o pon `sin_corpus: true` si la base no tiene con qué responder, y firma en `validado_por`.",
+    "Sin `validado_por`, la pregunta NO entra en ninguna medida: el reporte dice cuántas esperan etiqueta.",
+    "Estado al 13-oct-2026: NINGUNA etiquetada. HUMAN_REVIEW_REQUIRED."
+  ],
+  "preguntas": [
+    {
+      "id": "valor-en-aduana-base",
+      "pregunta": "¿Cuál es la base gravable del impuesto general de importación?",
+      "fecha": "2026-08-04",
+      "esperado": [],
+      "sin_corpus": false,
+      "validado_por": null,
+      "nota": null
+    },
+    {
+      "id": "despacho-definicion",
+      "pregunta": "¿Qué se entiende por despacho de mercancías?",
+      "fecha": "2026-08-04",
+      "esperado": [],
+      "sin_corpus": false,
+      "validado_por": null,
+      "nota": null
+    },
+    {
+      "id": "pedimento-documentos",
+      "pregunta": "¿Qué documentos deben acompañar al pedimento de importación?",
+      "fecha": "2026-08-04",
+      "esperado": [],
+      "sin_corpus": false,
+      "validado_por": null,
+      "nota": null
+    },
+    {
+      "id": "obligaciones-importador",
+      "pregunta": "¿Qué obligaciones tienen quienes importan mercancías?",
+      "fecha": "2026-08-04",
+      "esperado": [],
+      "sin_corpus": false,
+      "validado_por": null,
+      "nota": null
+    },
+    {
+      "id": "agente-aduanal-responsabilidad",
+      "pregunta": "¿De qué responde el agente aduanal respecto de la clasificación arancelaria declarada?",
+      "fecha": "2026-08-04",
+      "esperado": [],
+      "sin_corpus": false,
+      "validado_por": null,
+      "nota": null
+    },
+    {
+      "id": "fraccion-cable-reglas",
+      "pregunta": "¿Qué normas sostienen la clasificación en la fracción 7312.10.05?",
+      "fecha": "2026-08-04",
+      "esperado": [],
+      "sin_corpus": false,
+      "validado_por": null,
+      "nota": "Pone a prueba el grafo: la ley no nombra la fracción."
+    },
+    {
+      "id": "prosec-sin-corpus",
+      "pregunta": "¿Qué sectores PROSEC permiten importar la fracción 7312.10.05 con arancel preferencial?",
+      "fecha": "2026-08-04",
+      "esperado": [],
+      "sin_corpus": false,
+      "validado_por": null,
+      "nota": "Candidata a sin_corpus: true si los decretos PROSEC siguen sin cargar. Confirmarlo contra corpus_consultado antes de firmar."
+    },
+    {
+      "id": "regla-octava-sin-corpus",
+      "pregunta": "¿Cuándo procede la Regla 8ª para una importación?",
+      "fecha": "2026-08-04",
+      "esperado": [],
+      "sin_corpus": false,
+      "validado_por": null,
+      "nota": "Candidata a sin_corpus: true si la Regla 8ª sigue sin cargar."
+    }
+  ]
+}
