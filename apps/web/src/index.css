@@ -1934,3 +1934,14 @@ code {
 .redaccion__falta ul { margin: 0.3rem 0 0; padding-left: 1.1rem; }
 .redaccion__fuentes { margin: 0.7rem 0 0; font-size: 0.78rem; display: flex; flex-wrap: wrap; gap: 0.3rem 0.8rem; }
 .pasaje__n { color: var(--acento); margin-right: 0.2rem; }
+
+/* Un pasaje que llegó porque el grafo lo sugirió. No es una fuente distinta:
+   su texto sale de Postgres como cualquier otro. */
+.pasaje__grafo {
+  font-size: 0.68rem;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--acento);
+  border-radius: 999px;
+  color: var(--acento);
+  white-space: nowrap;
+}

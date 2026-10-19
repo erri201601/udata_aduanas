@@ -37,6 +37,7 @@ rellena en silencio.
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -198,3 +199,42 @@ class PostgresChunkStore:
 
         filas = self._session.execute(consulta.limit(limit)).all()
         return [_row_to_chunk(fila, document=titulo, distancia=d) for fila, titulo, d in filas]
+
+    def por_reglas(
+        self,
+        rule_ids: Sequence[str],
+        *,
+        on_date: date,
+        limit: int = 10,
+        solo_fundamentables: bool = True,
+    ) -> Sequence[LegalChunk]:
+        """Los chunks vigentes de esas reglas, en el orden en que se piden.
+
+        Usa `ix_legal_chunks_legal_rule_id`. Los ids llegan como texto —así los
+        guarda el grafo— y uno que no sea un UUID se descarta: viene de fuera
+        de esta base y no se le pasa a SQL sin comprobar.
+        """
+        ids: list[uuid.UUID] = []
+        for r in rule_ids:
+            try:
+                ids.append(uuid.UUID(str(r)))
+            except ValueError:
+                continue
+        if not ids:
+            return []
+
+        condiciones = [_vigentes(on_date), LegalChunkRecord.legal_rule_id.in_(ids)]
+        if solo_fundamentables:
+            condiciones.append(LegalChunkRecord.data_origin.in_(ORIGENES_QUE_FUNDAMENTAN))
+        filas = self._session.execute(
+            sa.select(LegalChunkRecord, LegalDocument.title, sa.null().label("distancia"))
+            .join(LegalDocument, LegalChunkRecord.legal_document_id == LegalDocument.id)
+            .where(*condiciones)
+            .limit(limit * 3)
+        ).all()
+        orden = {str(r): i for i, r in enumerate(ids)}
+        chunks = sorted(
+            (_row_to_chunk(fila, document=titulo, distancia=d) for fila, titulo, d in filas),
+            key=lambda c: orden.get(str(c.legal_rule_id), len(orden)),
+        )
+        return chunks[:limit]

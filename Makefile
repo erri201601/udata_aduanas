@@ -3,7 +3,7 @@
 SHELL := /bin/bash
 VENV  := .venv/bin
 
-.PHONY: help venv install up down logs ps api test lint fmt migrate revision reset-db health smoke service-status service-restart service-logs backup backup-list backup-timer merge antes-de-la-demo
+.PHONY: help venv install up down logs ps api test lint fmt migrate revision reset-db health smoke service-status service-restart service-logs backup backup-list backup-timer merge graph antes-de-la-demo
 
 help: ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -41,6 +41,9 @@ service-restart: ## Reinicia la API tras cambiar código
 service-logs: ## Logs en vivo de la API
 	journalctl --user -u aduanero-api -f
 
+
+graph: ## Proyecta Postgres al Knowledge Graph dos veces y compara (idempotencia, §28)
+	$(VENV)/python -m graph.proyectar --target local --dos-veces
 
 test: ## Ejecuta los tests
 	$(VENV)/pytest

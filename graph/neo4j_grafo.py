@@ -39,6 +39,24 @@ class Neo4jGrafo:
     def __init__(self, driver: Any, *, database: str | None = None) -> None:
         self._driver = driver
         self._database = database
+        self._unicas: set[tuple[str, str]] = set()
+
+    def _asegurar_unicidad(self, etiqueta: str, clave: str) -> None:
+        """Restricción de unicidad sobre la clave del `MERGE` (19-oct).
+
+        Sin ella Neo4j no tiene índice sobre `id`: cada `MERGE`/`MATCH` por
+        clave recorría la etiqueta entera, y enlazar ~6 400 decisiones con
+        ~32 000 evidencias tardaba más de 15 minutos con Neo4j al 100 %. La
+        restricción crea el índice y, de paso, garantiza que la proyección no
+        duplique un nodo. `IF NOT EXISTS`: se puede repetir.
+        """
+        if (etiqueta, clave) in self._unicas:
+            return
+        self._correr(
+            f"CREATE CONSTRAINT {etiqueta.lower()}_{clave}_unica IF NOT EXISTS "
+            f"FOR (n:{etiqueta}) REQUIRE n.{clave} IS UNIQUE"
+        )
+        self._unicas.add((etiqueta, clave))
 
     def _correr(self, consulta: str, **parametros: Any) -> list[Any]:
         with self._driver.session(database=self._database) as sesion:
@@ -59,6 +77,7 @@ class Neo4jGrafo:
         etiqueta, clave = _valida(etiqueta), _valida(clave)
         if not filas:
             return 0
+        self._asegurar_unicidad(etiqueta, clave)
         consulta = f"UNWIND $filas AS f MERGE (n:{etiqueta} {{{clave}: f.{clave}}}) SET n += f"
         for i in range(0, len(filas), LOTE):
             self._correr(consulta, filas=list(filas[i : i + LOTE]))
