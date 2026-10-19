@@ -59,6 +59,7 @@ from core.shadow.types import (
     Divergence,
     ExpectedItem,
     ShadowComparison,
+    SourceRef,
     default_severity,
 )
 
@@ -70,6 +71,7 @@ __all__ = [
     "DivergenceType",
     "ExpectedItem",
     "ShadowComparison",
+    "SourceRef",
     "compare",
     "compare_item",
     "comprobaciones_posibles",

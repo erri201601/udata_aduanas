@@ -31,7 +31,11 @@ if TYPE_CHECKING:
 PROMPT_ID = "product_dna.extract"
 #: Fijar la versión es deliberado: un cambio de prompt cambia las salidas, y
 #: subir de versión sin querer haría irreproducible todo lo extraído antes.
-PROMPT_VERSION = "0.1"
+#:
+#: 0.2 (13-oct): el localizador cita la página `[p.N]` cuando el texto viene de
+#: un PDF. Sin eso, en un datasheet de veinte páginas «dónde está el dato» era
+#: volver a leerlo entero.
+PROMPT_VERSION = "0.2"
 
 
 class _AtributoLLM(BaseModel):

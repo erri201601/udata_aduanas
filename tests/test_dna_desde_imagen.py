@@ -9,6 +9,7 @@ impedir.
 from __future__ import annotations
 
 import uuid
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -68,10 +69,21 @@ class _Captura:
 def _borrador() -> ProductDnaDraft:
     return ProductDnaDraft(
         attributes=(
-            ExtractedAttribute(name="material", value="acero inoxidable", status="EXTRACTED"),
+            ExtractedAttribute(
+                name="materials",
+                value="acero inoxidable",
+                status="EXTRACTED",
+                locator="etiqueta, esquina inferior",
+            ),
+            # Sin localizador: el motor tiene que bajarlo a INFERRED.
+            ExtractedAttribute(
+                name="dimensions",
+                value="28 cm",
+                status="EXTRACTED",
+                confidence=Decimal("0.6"),
+            ),
         ),
         summary="Sartén de acero inoxidable.",
-        missing_information=("diametro_cm",),
         input_kinds=("image",),
     )
 
@@ -118,9 +130,17 @@ def _cliente(monkeypatch: pytest.MonkeyPatch, *, extractor: type = _ExtractorFal
 class _DnaFalso:
     id = uuid.uuid4()
     version = 2
+    is_current = True
+    evidence_id = None
 
 
-def _guardar_dna_falso(*_a: Any, **_k: Any) -> Any:
+#: Lo que llegó a `guardar_dna` en la última llamada, para afirmar sobre ello.
+GUARDADO: dict[str, Any] = {}
+
+
+def _guardar_dna_falso(_sesion: Any, borrador: Any, **k: Any) -> Any:
+    GUARDADO.clear()
+    GUARDADO.update(k, borrador=borrador)
     return _DnaFalso()
 
 
@@ -165,8 +185,30 @@ def test_extrae_y_devuelve_donde_quedo_el_crudo(monkeypatch: pytest.MonkeyPatch)
     cuerpo = r.json()
     assert cuerpo["minio_key"] == "product-dna/77777777/abc123"
     assert cuerpo["content_hash"] == "abc123"
-    assert cuerpo["atributos"] == 1
-    assert cuerpo["missing_information"] == ["diametro_cm"]
+    assert cuerpo["atributos"] == 2
+    assert "materials" not in cuerpo["missing_information"]
+    assert cuerpo["vigente"] is True
+
+
+def test_la_imagen_pasa_por_el_motor_no_solo_por_el_extractor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Hasta el 13-oct la imagen se saltaba `engine.extract` y sus reglas.
+
+    Un EXTRACTED sin localizador no se extrajo de ningún sitio verificable: el
+    motor lo baja a INFERRED. Y el catálogo sale completo, con lo que no se
+    encontró en MISSING.
+    """
+    cliente = _cliente(monkeypatch)
+
+    with cliente as c:
+        _subir(c)
+
+    borrador = GUARDADO["borrador"]
+    assert borrador.get("materials").status == "EXTRACTED"
+    assert borrador.get("dimensions").status == "INFERRED"
+    assert len(borrador.attributes) == 18
+    assert borrador.get("voltage").status == "MISSING"
 
 
 # ── Lo que se rechaza ───────────────────────────────────────────────────────

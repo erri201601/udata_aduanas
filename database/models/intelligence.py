@@ -167,6 +167,12 @@ class ProductAttribute(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Bas
     evidence_reference: Mapped[uuid.UUID | None] = mapped_column(
         sa.ForeignKey(f"{_SCHEMA}.evidence_records.id", ondelete="SET NULL"), nullable=True
     )
+    # Dónde está el dato DENTRO del documento al que apunta `evidence_reference`:
+    # «[p.3] Especificaciones», «etiqueta, esquina inferior». El motor ya lo
+    # exige para OBSERVED y EXTRACTED (`core/product_dna/engine.py`) y hasta el
+    # 13-oct se perdía al guardar: la evidencia decía de qué archivo salió la
+    # ficha, pero no en qué parte de él estaba cada dato.
+    locator: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
 
 
 class ClassificationDecision(
@@ -394,6 +400,11 @@ class RiskFinding(
     #: `impact_calculation IS NULL` deja de distinguir «sin cálculo» —262 filas
     #: el 13-oct, todas sin monto, que una consulta contaba como calculadas—.
     impact_calculation: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
+    #: Las filas que sostienen el hallazgo (§21 `source_ids`): tabla, fila,
+    #: documento, URL, hash y vigencia de cada una (`core.shadow.SourceRef`).
+    #: `[]` = no se registró ninguna: lo normal en filas anteriores al 13-oct,
+    #: y en las nuevas un hueco que se explica.
+    sources: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
     is_simulation: Mapped[bool] = mapped_column(
         sa.Boolean, nullable=False, server_default=sa.false()
     )

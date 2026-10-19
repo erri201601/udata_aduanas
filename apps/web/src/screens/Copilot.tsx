@@ -5,14 +5,14 @@
  * nombre del §32 del maestro y renombrarlo tocaría el contrato de la API sin
  * que el usuario gane nada. Lo que se llama AduLex es la pantalla.
  *
- * ESTA PANTALLA NO REDACTA LA RESPUESTA, Y ES UNA DECISIÓN
+ * LA RESPUESTA VA ENCIMA DE LOS PASAJES, NO EN SU LUGAR (ADR 0010, 13-oct)
  *
  * Un asistente que parafrasea la ley es la forma más eficiente de producir
- * una cita inventada. La manera de cumplir el «nunca inventar citas» del
- * maestro no es pedirle al modelo que se porte bien: es no ponerlo en
- * posición de inventar. Aquí se enseñan los PASAJES —artículo, texto,
- * vigencia, procedencia— y quien lee saca la conclusión sobre la norma, no
- * sobre un resumen de ella.
+ * una cita inventada. Hasta el 13-oct esta pantalla no redactaba por eso.
+ * Ahora sí, pero cada oración cita un pasaje como [n], el servidor descarta la
+ * redacción entera si cita uno que no existe, y los pasajes siguen debajo
+ * —enteros— para que cada [n] se pueda comprobar contra el texto de la norma.
+ * Cada [n] es un enlace a su pasaje.
  *
  * LA FECHA NO ES UN FILTRO, ES LA PREGUNTA
  *
@@ -42,13 +42,100 @@ function hoyISO(): string {
   return `${d.getFullYear()}-${mes}-${dia}`
 }
 
+/** El texto de `answer` con cada [n] convertido en enlace a su pasaje. */
+function ConCitas({ texto }: { texto: string }) {
+  const partes = texto.split(/(\[\d+(?:\s*,\s*\d+)*\])/g)
+  return (
+    <>
+      {partes.map((parte, i) => {
+        const cita = parte.match(/^\[([\d,\s]+)\]$/)
+        if (!cita) return <span key={i}>{parte}</span>
+        const numeros = cita[1].split(',').map((n) => n.trim())
+        return (
+          <span key={i} className="cita">
+            [
+            {numeros.map((n, j) => (
+              <span key={n}>
+                {j > 0 && ', '}
+                <a href={`#pasaje-${n}`}>{n}</a>
+              </span>
+            ))}
+            ]
+          </span>
+        )
+      })}
+    </>
+  )
+}
+
+/** La redacción del §31: respuesta, de qué se fía y qué le falta. */
+function Redaccion({ datos }: { datos: RespuestaCopilot }) {
+  const confianza = Number(datos.confidence)
+  return (
+    <div className={`redaccion${datos.requires_human_review ? ' redaccion--revisar' : ''}`}>
+      <p className="redaccion__texto">
+        {datos.redacta_respuesta ? <ConCitas texto={datos.answer} /> : <strong>{datos.answer}</strong>}
+      </p>
+
+      <dl className="redaccion__meta">
+        <div>
+          <dt>Oraciones con cita</dt>
+          {/* Es lo que mide `confidence` (ADR 0010): no la seguridad que el
+              modelo dice tener, que no está calibrada. */}
+          <dd>{Math.round(confianza * 100)} %</dd>
+        </div>
+        <div>
+          <dt>Revisión humana</dt>
+          <dd>{datos.requires_human_review ? 'requerida' : 'no requerida'}</dd>
+        </div>
+        {datos.prompt_version && (
+          <div>
+            <dt>Prompt</dt>
+            <dd>
+              {datos.prompt_id} v{datos.prompt_version}
+            </dd>
+          </div>
+        )}
+      </dl>
+
+      {datos.missing_information.length > 0 && (
+        <div className="redaccion__falta">
+          <strong>Lo que la pregunta necesita y los pasajes no traen</strong>
+          <ul>
+            {datos.missing_information.map((m) => (
+              <li key={m}>{m}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {datos.sources.length > 0 && (
+        <p className="redaccion__fuentes">
+          Citado:{' '}
+          {datos.sources.map((f) => (
+            <a key={f.n} href={`#pasaje-${f.n}`} className="redaccion__fuente">
+              [{f.n}] {f.documento}
+              {f.articulo ? `, art. ${f.articulo}` : ''}
+            </a>
+          ))}
+        </p>
+      )}
+    </div>
+  )
+}
+
 function Resultado({ pasaje, total }: { pasaje: Pasaje; total: number }) {
   const casados = pasaje.terminos_coincidentes.length
   return (
-    <li className={`pasaje ${pasaje.puede_fundamentar ? '' : 'pasaje--sin-fundamento'}`}>
+    <li
+      id={`pasaje-${pasaje.n}`}
+      className={`pasaje ${pasaje.puede_fundamentar ? '' : 'pasaje--sin-fundamento'}`}
+    >
       <header className="pasaje__cabecera">
         <div>
-          <strong className="pasaje__cita">{pasaje.cita}</strong>
+          <strong className="pasaje__cita">
+            <span className="pasaje__n">[{pasaje.n}]</span> {pasaje.cita}
+          </strong>
           {pasaje.encabezado && <span className="pasaje__encabezado">{pasaje.encabezado}</span>}
         </div>
         <div className="pasaje__marcas">
@@ -186,6 +273,8 @@ export function Copilot() {
         </div>
       )}
 
+      {datos && <Redaccion datos={datos} />}
+
       {datos && !datos.hay_fundamento && (
         <div className="alerta" role="note">
           <strong>{datos.sin_evidencia}</strong>
@@ -236,9 +325,9 @@ export function Copilot() {
           </ul>
 
           <p className="tablero__pie">
-            AduLex no redacta la respuesta: enseña la norma. Parafrasear la ley es como se
-            producen las citas inventadas, y aquí se prefiere que quien lee saque la conclusión
-            sobre el texto — no sobre un resumen de él.
+            La respuesta de arriba sólo puede citar estos pasajes, y cada [n] lleva a su texto.
+            Si citara uno que no está aquí, el servidor la descarta entera: una cita inventada
+            invalida todo lo demás.
           </p>
         </>
       )}

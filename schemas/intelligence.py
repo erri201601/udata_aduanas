@@ -7,7 +7,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from schemas.base import (
     AIDecisionFields,
@@ -102,6 +102,10 @@ class ProductAttributeBase(DataOriginFields):
     status: AttributeStatus
     confidence: Decimal | None = Field(default=None, ge=0, le=1)
     evidence_reference: uuid.UUID | None = None
+    locator: str | None = None
+    """Dónde está el dato dentro del documento de `evidence_reference`: «[p.3]
+    Especificaciones». Lo lee la pantalla de Product DNA, en la columna de
+    evidencia."""
 
 
 class ProductAttributeCreate(ProductAttributeBase):
@@ -256,6 +260,15 @@ class RiskFindingBase(DataOriginFields, AIDecisionFields, SyntheticFields):
     """
     impact_calculation: dict[str, Any] | None = None
     """Cómo se llegó a `impact_amount` (§22). `None` sin monto."""
+    sources: list[dict[str, Any]] = Field(default_factory=list)
+    """Las filas que sostienen el hallazgo (§21)."""
+
+    @field_validator("sources", mode="before")
+    @classmethod
+    def _sin_fuentes_es_lista_vacia(cls, valor: Any) -> Any:
+        # Una fila aún no guardada no tiene el `[]` del servidor.
+        return [] if valor is None else valor
+
     is_simulation: bool = False
     evidence_id: uuid.UUID | None = None
 

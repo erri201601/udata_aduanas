@@ -1,8 +1,9 @@
 """Lectura de productos y su Product DNA (§16).
 
-Sólo lectura. La escritura la hará el orquestador cuando persista lo que
-produce el Product DNA Engine; exponerla aquí antes invitaría a saltarse el
-motor y a escribir atributos sin estado ni evidencia.
+Escribe por tres puertas —texto pegado, PDF e imagen— y las tres pasan por el
+Product DNA Engine (`core.product_dna.engine.extract`) y por `guardar_dna`: no
+hay forma de escribir atributos sin estado, sin evidencia o sin el crudo
+guardado antes.
 
 Los esquemas salen de `schemas/`, tal cual los definió Persona 2. No se
 declaran formas nuevas: si un campo faltara, se acuerda con él en vez de
@@ -12,20 +13,32 @@ inventar una variante que después no cuadre con la tabla.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from datetime import date
 from decimal import Decimal
-from typing import TYPE_CHECKING, Annotated, cast
+from typing import TYPE_CHECKING, Annotated, Any, cast
 
 import sqlalchemy as sa
+from core.evidence.builder import model_output
+from core.evidence.types import DocumentRef
 from core.llm.errors import ProviderNotConfiguredError, ProviderResponseError
 from core.llm.registry import get_default_provider
+from core.product_dna.engine import extract as extraer_dna
+from core.product_dna.llm_extractor import LlmExtractor
+from core.product_dna.pdf import MAXIMO_CARACTERES as MAXIMO_CARACTERES_PDF
+from core.product_dna.pdf import (
+    PdfDemasiadoLargoError,
+    PdfIlegibleError,
+    SinTextoExtraibleError,
+    texto_con_paginas,
+)
 from core.product_dna.types import SourceDocument
 from core.product_dna.vision import MEDIA_TYPES, VisionExtractor
 from database.models import Product, ProductAttribute, ProductDna
 from database.repositories import save_classification
 from database.repositories.product_dna import guardar_dna
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
-from ingestion.snice.raw import content_hash, local_target, store_raw_bytes
+from ingestion.snice.raw import RawCapture, content_hash, local_target, store_raw_bytes
 from pydantic import BaseModel, Field
 from rag import (
     MODO_SEMANTICO,
@@ -37,10 +50,15 @@ from schemas.operational import ProductRead
 
 from apps.api.clasificacion import clasificar_borrador
 from apps.api.db import SessionDep
+from apps.api.dna import cargar_borrador, version_vigente
+from apps.api.logging import get_logger
 
 if TYPE_CHECKING:
+    from core.evidence.types import Evidence
     from core.llm.base import ModelProvider
-from apps.api.dna import cargar_borrador, version_vigente
+    from core.llm.types import CallMetadata
+
+log = get_logger("apps.api.products")
 
 router = APIRouter(prefix="/products", tags=["products"])
 
@@ -222,26 +240,263 @@ def _consulta_juridica(terminos_producto: list[str]) -> str:
     return " ".join([*CONCEPTOS_DE_CLASIFICACION, *terminos_producto[:3]])
 
 
-#: Lo más grande que se acepta subir. No es una cifra de rendimiento: una
 #: imagen de más de esto casi nunca es una foto de producto, y el proveedor de
 #: visión la rechazaría después de habernos costado el viaje.
 MAXIMO_IMAGEN_BYTES = 8 * 1024 * 1024
 
+#: Una ficha técnica en PDF rara vez pasa de unos pocos MB. Más es un manual o
+#: un catálogo escaneado, y lo segundo no tiene texto que leer.
+MAXIMO_PDF_BYTES = 15 * 1024 * 1024
 
-class DnaDesdeImagenResponse(BaseModel):
-    """Lo que se extrajo de la imagen, y de dónde salió."""
+#: Cómo se nombra cada entrada en la evidencia, para quien la lea después.
+_ENTRADA: dict[str, str] = {
+    "text": "texto pegado",
+    "pdf": "PDF",
+    "image": "imagen",
+}
+
+
+class DnaExtraido(BaseModel):
+    """Lo que se extrajo, de dónde salió y si sustituyó a la ficha vigente."""
 
     product_dna_id: uuid.UUID
     version: int
     atributos: int
+    """Los atributos que el documento SÍ aportó. Los MISSING no cuentan: el
+    motor devuelve siempre los 18 del catálogo."""
     summary: str | None = None
     missing_information: list[str] = Field(default_factory=list)
 
+    vigente: bool
+    """¿Esta versión es ahora la ficha del producto?
+
+    `False` cuando la extracción no encontró nada: se guarda, porque el intento
+    ocurrió y consta, pero no sustituye a la ficha que había (`guardar_dna`).
+    Sin decirlo, quien sube un escaneo vería «versión 7» y creería que el
+    producto se quedó sin datos."""
+
+    evidence_id: uuid.UUID | None = None
+    """La evidencia MODEL_OUTPUT de la extracción, a la que apuntan la ficha y
+    cada atributo. `None` sólo si el extractor no dejó metadata de la llamada."""
+
     minio_key: str
-    """Dónde quedó el crudo. Sin esto no se puede volver a la imagen."""
+    """Dónde quedó el crudo. Sin esto no se puede volver al archivo."""
     content_hash: str
     """El hash del archivo TAL COMO SE RECIBIÓ. Es lo que prueba, meses
-    después, que el atributo salió de esa foto y no de otra."""
+    después, que el atributo salió de ese archivo y no de otro."""
+
+
+class TextoDeFicha(BaseModel):
+    """Una ficha técnica pegada como texto."""
+
+    texto: str = Field(min_length=20, max_length=MAXIMO_CARACTERES_PDF)
+    """El texto tal cual. Menos de 20 caracteres no describe una mercancía."""
+    nombre: str | None = Field(default=None, max_length=200)
+    """De dónde se copió, si se sabe: «datasheet del fabricante, rev. B»."""
+
+
+def _producto(session: SessionDep, product_id: uuid.UUID) -> Product:
+    producto = session.get(Product, product_id)
+    if producto is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "producto no encontrado")
+    return producto
+
+
+def _guardar_crudo(product_id: uuid.UUID, datos: bytes, nombre: str) -> RawCapture:
+    """El archivo, entero y con su hash, ANTES de leerlo (§12, regla 7).
+
+    Si el orden fuera el otro, un fallo del proveedor dejaría atributos sin
+    documento del que dijeran venir. Lo único irreversible es el crudo.
+    """
+    return store_raw_bytes(
+        datos,
+        source_url=f"upload://producto/{product_id}/{nombre}",
+        minio_key=f"product-dna/{product_id}/{content_hash(datos)}",
+        target=local_target(),
+    )
+
+
+def _evidencia(
+    metadata: CallMetadata | None, crudo: RawCapture, documento: SourceDocument, nombre: str
+) -> Evidence | None:
+    """La evidencia de la extracción: qué modelo, con qué prompt, sobre qué archivo.
+
+    `MODEL_OUTPUT`, nunca fundamento jurídico: describe la mercancía, no la
+    clasifica. El hash y la clave de MinIO van en `document_refs` (Persona 1,
+    13-oct), que es lo que permite volver al archivo exacto.
+    """
+    if metadata is None:
+        return None
+    evidencia = model_output(
+        summary=f"Product DNA extraído de {_ENTRADA.get(documento.kind, documento.kind)}: {nombre}",
+        model_provider=metadata.model_provider,
+        model_name=metadata.model_name,
+        prompt_id=metadata.prompt_id or "",
+        prompt_version=metadata.prompt_version or "",
+    )
+    return evidencia.model_copy(
+        update={
+            "document_ref": DocumentRef(
+                document=f"{_ENTRADA.get(documento.kind, documento.kind)} subido: {nombre}",
+                url=crudo.minio_key,
+                content_hash=crudo.content_hash,
+            ),
+            "content_hash": crudo.content_hash,
+        }
+    )
+
+
+def _extraer_y_guardar(
+    session: SessionDep,
+    producto: Product,
+    *,
+    crudo: RawCapture,
+    documento: SourceDocument,
+    nombre: str,
+    nuevo_extractor: Callable[[], Any],
+) -> DnaExtraido:
+    """Lo común a las tres entradas, una vez el crudo está guardado.
+
+    PASA POR EL MOTOR, NO SÓLO POR EL EXTRACTOR
+
+    Hasta el 13-oct la imagen llamaba a `extractor.extract()` directamente y se
+    saltaba `core.product_dna.engine.extract`: las reglas de saneamiento —un
+    OBSERVED o EXTRACTED sin localizador baja a INFERRED, una inferencia sin
+    confianza es MISSING— no se aplicaban a lo que entraba por foto. Ahora las
+    tres entradas pasan por el motor, que es donde viven esas reglas.
+
+    EL ORIGEN LO HEREDA DEL PRODUCTO
+
+    El DNA de un producto sintético es `SYNTHETIC` aunque el archivo y el
+    modelo sean reales. Un sexto valor para «lo que subió un usuario» rompería
+    los cinco cerrados del §9.
+    """
+    try:
+        extractor = nuevo_extractor()
+        borrador = extraer_dna(documento, extractor=extractor)
+    except ProviderNotConfiguredError as exc:
+        # El crudo YA está guardado y eso no se deshace: el archivo existe y su
+        # hash consta, aunque no hayamos podido leerlo. Se dice cuál falta.
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            f"no hay proveedor de modelo configurado: {exc}",
+        ) from exc
+    except ProviderResponseError as exc:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            f"el proveedor de modelo no devolvió algo utilizable: {exc}",
+        ) from exc
+
+    metadata = getattr(extractor, "last_metadata", None)
+    dna = guardar_dna(
+        session,
+        borrador,
+        product_id=producto.id,
+        data_origin=producto.data_origin,
+        evidencia=_evidencia(metadata, crudo, documento, nombre),
+        telemetria=metadata,
+    )
+    session.commit()
+
+    log.info(
+        "product_dna.guardado",
+        product_id=str(producto.id),
+        entrada=documento.kind,
+        version=dna.version,
+        vigente=dna.is_current,
+        atributos=len(borrador.known()),
+        content_hash=crudo.content_hash,
+    )
+    return DnaExtraido(
+        product_dna_id=dna.id,
+        version=dna.version,
+        atributos=len(borrador.known()),
+        summary=borrador.summary,
+        missing_information=list(borrador.missing_information),
+        vigente=bool(dna.is_current),
+        evidence_id=dna.evidence_id,
+        minio_key=crudo.minio_key,
+        content_hash=crudo.content_hash,
+    )
+
+
+@router.post(
+    "/{product_id}/dna/from-text",
+    status_code=status.HTTP_201_CREATED,
+    summary="Extrae el Product DNA de una ficha técnica pegada como texto (§16)",
+)
+def dna_desde_texto(
+    product_id: uuid.UUID, peticion: TextoDeFicha, session: SessionDep
+) -> DnaExtraido:
+    """El texto también se guarda crudo: es el documento del que dirán venir los
+    atributos, y sin su hash nadie podría comprobar después qué se pegó."""
+    producto = _producto(session, product_id)
+    nombre = peticion.nombre or "texto.txt"
+    crudo = _guardar_crudo(product_id, peticion.texto.encode("utf-8"), nombre)
+    return _extraer_y_guardar(
+        session,
+        producto,
+        crudo=crudo,
+        documento=SourceDocument(text=peticion.texto, kind="text", reference=crudo.minio_key),
+        nombre=nombre,
+        nuevo_extractor=lambda: LlmExtractor(cast("ModelProvider", get_default_provider())),
+    )
+
+
+@router.post(
+    "/{product_id}/dna/from-pdf",
+    status_code=status.HTTP_201_CREATED,
+    summary="Extrae el Product DNA de una ficha técnica en PDF (§16, §48)",
+)
+def dna_desde_pdf(
+    product_id: uuid.UUID,
+    session: SessionDep,
+    pdf: Annotated[UploadFile, File(description="Ficha técnica o datasheet en PDF")],
+) -> DnaExtraido:
+    """El primer eslabón del §48 dice «ficha técnica + imagen». Ésta es la ficha.
+
+    Se saca la capa de texto con `[p.N]` delante de cada página y se pasa por el
+    extractor de texto. Sin capa de texto —un escaneo— la respuesta es 422 «sin
+    texto extraíble»: no hay OCR, y no se guarda ninguna ficha. El crudo sí
+    queda guardado, porque se subió y consta.
+    """
+    producto = _producto(session, product_id)
+
+    datos = pdf.file.read()
+    if not datos:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "el PDF llegó vacío")
+    if len(datos) > MAXIMO_PDF_BYTES:
+        raise HTTPException(
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            f"el PDF pesa {len(datos)} bytes y el máximo son {MAXIMO_PDF_BYTES}",
+        )
+    # Por la firma y no por el `content_type`: el navegador lo deduce de la
+    # extensión, y un .pdf renombrado no es un PDF.
+    if not datos.startswith(b"%PDF-"):
+        raise HTTPException(
+            status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "el archivo no es un PDF (no empieza por %PDF-)"
+        )
+
+    nombre = pdf.filename or "ficha.pdf"
+    crudo = _guardar_crudo(product_id, datos, nombre)
+
+    try:
+        texto = texto_con_paginas(datos)
+    except SinTextoExtraibleError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    except PdfIlegibleError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    except PdfDemasiadoLargoError as exc:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, str(exc)) from exc
+
+    return _extraer_y_guardar(
+        session,
+        producto,
+        crudo=crudo,
+        documento=SourceDocument(text=texto, kind="pdf", reference=crudo.minio_key),
+        nombre=nombre,
+        nuevo_extractor=lambda: LlmExtractor(cast("ModelProvider", get_default_provider())),
+    )
 
 
 @router.post(
@@ -253,26 +508,9 @@ def dna_desde_imagen(
     product_id: uuid.UUID,
     session: SessionDep,
     imagen: Annotated[UploadFile, File(description="Foto o ficha del producto")],
-) -> DnaDesdeImagenResponse:
-    """Cierra el primer eslabón del §48: «usuario carga ficha técnica + imagen».
-
-    EL CRUDO SE GUARDA ANTES DE MIRARLO (§12, regla 7)
-
-    La imagen sube a MinIO con su `content_hash` ANTES de pasar por el modelo.
-    Si el orden fuera el otro, un fallo del proveedor dejaría atributos sin
-    documento del que dijeran venir, y esa es exactamente la situación que el
-    pipeline existe para que no ocurra: lo único irreversible es el crudo.
-
-    EL ORIGEN LO HEREDA DEL PRODUCTO
-
-    El DNA de un producto sintético es `SYNTHETIC` aunque la foto sea real y el
-    modelo real. Inventar un sexto valor para «lo que subió un usuario»
-    rompería los cinco cerrados del §9, y el dato que describe no cambia de
-    naturaleza por cómo se extrajo.
-    """
-    producto = session.get(Product, product_id)
-    if producto is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "producto no encontrado")
+) -> DnaExtraido:
+    """La imagen del primer eslabón del §48: «ficha técnica + imagen»."""
+    producto = _producto(session, product_id)
 
     datos = imagen.file.read()
     if not datos:
@@ -291,56 +529,23 @@ def dna_desde_imagen(
             f"admitidos: {', '.join(sorted(MEDIA_TYPES))}",
         )
 
-    capture = store_raw_bytes(
-        datos,
-        source_url=f"upload://producto/{product_id}/{imagen.filename or 'imagen'}",
-        minio_key=f"product-dna/{product_id}/{content_hash(datos)}",
-        target=local_target(),
-    )
-
-    try:
-        # `cast` por lo mismo que en `apps/evaluacion/hs_accuracy.py`: el
-        # protocolo declara `name` como variable de instancia y los
-        # proveedores la traen de clase. Es estructuralmente compatible.
-        extractor = VisionExtractor(
-            cast("ModelProvider", get_default_provider()), image=datos, media_type=tipo
-        )
-        # `text` vacío y no la descripción del producto: lo que se le pide al
-        # modelo es que lea LA IMAGEN. Colarle el texto que ya teníamos le
-        # dejaría repetirlo como si lo hubiera visto en la foto.
-        borrador = extractor.extract(
-            SourceDocument(text="", kind="image", reference=capture.minio_key)
-        )
-    except ProviderNotConfiguredError as exc:
-        # El crudo YA está guardado y eso no se deshace: la imagen existe y su
-        # hash consta, aunque no hayamos podido leerla. Se dice cuál falta.
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            f"no hay proveedor de visión configurado: {exc}",
-        ) from exc
-    except ProviderResponseError as exc:
-        raise HTTPException(
-            status.HTTP_502_BAD_GATEWAY,
-            f"el proveedor de visión no devolvió algo utilizable: {exc}",
-        ) from exc
-
-    dna = guardar_dna(
+    nombre = imagen.filename or "imagen"
+    crudo = _guardar_crudo(product_id, datos, nombre)
+    # `text` vacío y no la descripción del producto: lo que se le pide al
+    # modelo es que lea LA IMAGEN. Colarle el texto que ya teníamos le dejaría
+    # repetirlo como si lo hubiera visto en la foto.
+    return _extraer_y_guardar(
         session,
-        borrador,
-        product_id=product_id,
-        data_origin=producto.data_origin,
-        telemetria=extractor.last_metadata,
-    )
-    session.commit()
-
-    return DnaDesdeImagenResponse(
-        product_dna_id=dna.id,
-        version=dna.version,
-        atributos=len(borrador.attributes),
-        summary=borrador.summary,
-        missing_information=list(borrador.missing_information),
-        minio_key=capture.minio_key,
-        content_hash=capture.content_hash,
+        producto,
+        crudo=crudo,
+        documento=SourceDocument(text="", kind="image", reference=crudo.minio_key),
+        nombre=nombre,
+        # `cast` por lo mismo que en `apps/evaluacion/hs_accuracy.py`: el
+        # protocolo declara `name` como variable de instancia y los proveedores
+        # la traen de clase. Es estructuralmente compatible.
+        nuevo_extractor=lambda: VisionExtractor(
+            cast("ModelProvider", get_default_provider()), image=datos, media_type=tipo
+        ),
     )
 
 
