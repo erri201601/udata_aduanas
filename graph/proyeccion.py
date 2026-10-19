@@ -465,9 +465,26 @@ def _relaciones(session: Session) -> list[tuple[str, str, str, list[tuple[str, s
             "TariffFraction",
             _pares(
                 session,
-                sa.select(
-                    ClassificationDecision.id, ClassificationDecision.tariff_fraction_id
-                ).where(ClassificationDecision.tariff_fraction_id.isnot(None)),
+                # POR CÓDIGO Y VIGENCIA, NO POR `tariff_fraction_id` (19-oct)
+                #
+                # Las decisiones guardan `fraction_code` y nunca el id: de 2 357
+                # con fracción, 1 lo tenía. Con el id, el grafo tenía 1 arista
+                # CLASSIFIED_AS para 6 414 decisiones, y la búsqueda no podía
+                # sugerir ni una norma. Se une a la versión de la fracción
+                # vigente en la fecha de la operación de la decisión.
+                sa.select(ClassificationDecision.id, TariffFraction.id)
+                .join(
+                    TariffFraction,
+                    sa.and_(
+                        TariffFraction.code == ClassificationDecision.fraction_code,
+                        TariffFraction.valid_from <= ClassificationDecision.operation_date,
+                        sa.or_(
+                            TariffFraction.valid_to.is_(None),
+                            TariffFraction.valid_to >= ClassificationDecision.operation_date,
+                        ),
+                    ),
+                )
+                .where(ClassificationDecision.fraction_code.isnot(None)),
             ),
         ),
         (
