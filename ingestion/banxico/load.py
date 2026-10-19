@@ -58,23 +58,26 @@ def get_or_create_banxico_source(session: Session) -> LegalSource:
 
 
 def _close_previous_rate_versions(session: Session, *, currency: str, new_valid_from: date) -> None:
-    """Cierra cualquier versión de `currency` que siga abierta antes de
-    `new_valid_from`. No toca una versión que ya empieza en o después de
-    esa fecha -- eso lo revienta la propia `UniqueConstraint`, el
-    comportamiento correcto ante una recarga accidental con la misma
-    fecha."""
-    anteriores = (
+    """Acorta la versión de `currency` inmediatamente anterior a `new_valid_from`.
+
+    No sólo si está abierta: un backfill puede caer ENTRE dos filas ya
+    cerradas (19-oct, revisión del #250). Con el 2 cerrado al 9 y el 10 ya
+    cargados, cargar el 5 tiene que dejar el 2 hasta el 4; si sólo se cerraban
+    las abiertas, el 2 y el 5 se solapaban del 5 al 9 y `tasa_vigente`
+    lanzaba `MultipleResultsFound`.
+
+    No toca una versión que ya empieza en o después de esa fecha -- eso lo
+    revienta la propia `UniqueConstraint`, el comportamiento correcto ante una
+    recarga accidental con la misma fecha."""
+    anterior = (
         session.query(ExchangeRate)
-        .filter(
-            ExchangeRate.currency == currency,
-            ExchangeRate.valid_to.is_(None),
-            ExchangeRate.valid_from < new_valid_from,
-        )
-        .all()
+        .filter(ExchangeRate.currency == currency, ExchangeRate.valid_from < new_valid_from)
+        .order_by(ExchangeRate.valid_from.desc())
+        .first()
     )
-    for anterior in anteriores:
-        anterior.valid_to = new_valid_from - timedelta(days=1)
-    if anteriores:
+    cierre = new_valid_from - timedelta(days=1)
+    if anterior is not None and (anterior.valid_to is None or anterior.valid_to > cierre):
+        anterior.valid_to = cierre
         session.flush()
 
 

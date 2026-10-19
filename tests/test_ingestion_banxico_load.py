@@ -195,3 +195,32 @@ def test_data_origin_y_content_hash(pg_session: Session) -> None:
     assert fila.source_id is not None
     assert isinstance(fila.retrieved_at, datetime)
     assert fila.retrieved_at.tzinfo is not None
+
+
+def test_un_backfill_en_medio_de_dos_cerradas_no_deja_solapes(pg_session: Session) -> None:
+    """La fecha que llega tarde puede caer ENTRE dos filas ya cerradas.
+
+    Con 2099-07-02 (cerrada al 9) y 2099-07-10 ya cargadas, cargar el
+    2099-07-05 tiene que acortar la del 2 al 4. Si sólo se cerraban las
+    abiertas, la del 2 seguía vigente hasta el 9 y se solapaba con la nueva:
+    `tasa_vigente` del 5 al 9 lanzaba `MultipleResultsFound` (Persona 1,
+    revisión del #250, 19-oct).
+    """
+    load_exchange_rates(
+        pg_session,
+        rates=[_fila(date(2099, 7, 2), "26.000000"), _fila(date(2099, 7, 10), "26.200000")],
+        content_hash=HASH,
+    )
+    load_exchange_rates(pg_session, rates=[_fila(date(2099, 7, 5), "26.100000")], content_hash=HASH)
+
+    vigencias = [
+        (f.valid_from, f.valid_to)
+        for f in pg_session.query(ExchangeRate)
+        .filter(ExchangeRate.currency == DIVISA, ExchangeRate.valid_from >= date(2099, 7, 1))
+        .order_by(ExchangeRate.valid_from)
+    ]
+    assert vigencias == [
+        (date(2099, 7, 2), date(2099, 7, 4)),
+        (date(2099, 7, 5), date(2099, 7, 9)),
+        (date(2099, 7, 10), None),
+    ]
