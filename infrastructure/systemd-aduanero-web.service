@@ -1,0 +1,40 @@
+[Unit]
+Description=ADUANERO OS — consola web (Vite)
+Documentation=file:///home/udata/Documentos/udata_aduanas/docs/ARRANQUE_EN_OTRA_MAQUINA.md
+After=network-online.target aduanero-api.service
+Wants=network-online.target
+
+# Van en [Unit]: en [Service] systemd ignora StartLimitIntervalSec, y el
+# límite de reinicios nunca se aplicaba (detectado el 19-oct).
+StartLimitBurst=10
+StartLimitIntervalSec=120
+
+[Service]
+Type=exec
+WorkingDirectory=/home/udata/Documentos/udata_aduanas/apps/web
+
+# node viene de nvm, que no está en el PATH de systemd: se pone la ruta
+# completa. Si algún día se actualiza la versión de node, esto hay que
+# tocarlo — es el precio de no depender de que el shell cargue nvm.
+Environment=PATH=/home/udata/.nvm/versions/node/v24.16.0/bin:/usr/local/bin:/usr/bin:/bin
+
+# Escucha SÓLO en 127.0.0.1 a propósito. `apps/api/main.py` admite exactamente
+# dos orígenes —localhost:5173 y 127.0.0.1:5173— así que servirla en otra
+# dirección deja todas las pantallas vacías: el navegador bloquea las llamadas
+# sin decir por qué. Comprobado el 23-sep.
+ExecStart=/home/udata/.nvm/versions/node/v24.16.0/bin/npm run dev -- --port 5173 --host 127.0.0.1
+
+Restart=on-failure
+RestartSec=5s
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aduanero-web
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/udata/Documentos/udata_aduanas
+ProtectHome=false
+
+[Install]
+WantedBy=default.target
