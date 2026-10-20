@@ -23,8 +23,9 @@ Entre paso y paso hay decisiones que ningún motor puede tomar solo:
 from __future__ import annotations
 
 import uuid
-from typing import TYPE_CHECKING, Final, Protocol
+from typing import TYPE_CHECKING, Final, Protocol, runtime_checkable
 
+from core.classification.nico_por_medida import medidas_de, nico_por_medida
 from core.classification.result import ClassificationOutcome
 from core.evidence import EvidenceError, builder, contract, questions
 from core.product_dna import PROMPT_ID, PROMPT_VERSION
@@ -32,8 +33,9 @@ from core.rgi_engine import ClassificationContext, ProductFact, RGIStatus, class
 from core.taxation import compute_divergence, compute_taxes
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
     from datetime import date
+    from decimal import Decimal
 
     from core.evidence import Evidence, LegalRef
     from core.product_dna import ProductDnaDraft
@@ -50,15 +52,34 @@ class NicoCatalog(Protocol):
     def nicos(self, *, on_date: date, fraction_code: str) -> tuple[str, ...] | None: ...
 
 
-def nico_de(nicos: NicoCatalog, *, on_date: date, fraction_code: str) -> tuple[str | None, str]:
+@runtime_checkable
+class NicoTexts(Protocol):
+    """Los NICO vigentes con su texto, para la regla de medidas (ADR 0016).
+    Mismas tres respuestas que `NicoCatalog.nicos`."""
+
+    def nicos_con_texto(
+        self, *, on_date: date, fraction_code: str
+    ) -> tuple[tuple[str, str], ...] | None: ...
+
+
+def nico_de(
+    nicos: NicoCatalog,
+    *,
+    on_date: date,
+    fraction_code: str,
+    medidas: Mapping[str, Decimal] | None = None,
+) -> tuple[str | None, str]:
     """El NICO de una fracción ya decidida, y por qué (§19).
 
-    Sólo se elige cuando no hay elección: un único NICO vigente en la LIGIE.
-    Medido el 13-oct contra los veredictos de César: en las fracciones de un
-    solo NICO, 14 de 14 coinciden con el que firmó. Con varios no se elige —el
-    NICO distingue por materia, uso o presentación, y ninguna regla medida lo
-    hace todavía—. Misma disciplina que la RGI 6: resolver sólo cuando queda
-    uno.
+    Dos reglas, cada una medida sola:
+
+    1. Un único NICO vigente en la LIGIE: no hay elección (ADR 0013). Medido el
+       13-oct: 14 de 14 con los veredictos de César.
+    2. Varios, distinguidos SÓLO por rangos de medidas que la ficha trae
+       observadas (`nico_por_medida`, ADR 0016). Si algún NICO distingue por
+       materia, uso o presentación, no se elige.
+
+    Sin `medidas`, o con un catálogo sin textos, sólo se aplica la primera.
     """
     vigentes = nicos.nicos(on_date=on_date, fraction_code=fraction_code)
     if vigentes is None:
@@ -67,11 +88,25 @@ def nico_de(nicos: NicoCatalog, *, on_date: date, fraction_code: str) -> tuple[s
         return None, f"la fracción {fraction_code} no tiene NICO cargados"
     if len(vigentes) == 1:
         return vigentes[0], f"único NICO vigente de la fracción {fraction_code} en la LIGIE"
+    varios = (
+        f"la fracción {fraction_code} tiene {len(vigentes)} NICO vigentes ({', '.join(vigentes)})"
+    )
+    if medidas is not None and isinstance(nicos, NicoTexts):
+        textos = nicos.nicos_con_texto(on_date=on_date, fraction_code=fraction_code)
+        if textos:
+            elegido, motivo = nico_por_medida(textos, medidas)
+            if elegido is not None:
+                return elegido, f"{varios}; por medidas: {motivo}"
+            return None, f"{varios}; no se elige: {motivo}"
     return None, (
-        f"la fracción {fraction_code} tiene {len(vigentes)} NICO vigentes "
-        f"({', '.join(vigentes)}); elegir uno exige distinguir por materia, uso o "
+        f"{varios}; elegir uno exige distinguir por materia, uso o "
         "presentación, y no se elige sin una regla que lo sostenga"
     )
+
+
+def medidas_de_la_ficha(dna: ProductDnaDraft) -> dict[str, Decimal]:
+    """Las medidas observadas o extraídas de la ficha. Lo inferido no cuenta."""
+    return medidas_de([(a.name, a.value) for a in dna.solid()])
 
 
 def classify_product(
@@ -143,7 +178,10 @@ def classify_product(
     motivo_nico: str | None = None
     if nicos is not None and bloqueo is None and traza.resolved_code:
         nico, motivo_nico = nico_de(
-            nicos, on_date=operation_date, fraction_code=traza.resolved_code
+            nicos,
+            on_date=operation_date,
+            fraction_code=traza.resolved_code,
+            medidas=medidas_de_la_ficha(dna),
         )
 
     return ClassificationOutcome(

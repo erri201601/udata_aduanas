@@ -73,6 +73,7 @@ from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
 from core.classification import nico_de
+from core.classification.nico_por_medida import medidas_de
 from core.evaluation.intervalos import wilson
 from database.repositories.tariff import TariffCatalogRepository
 
@@ -233,6 +234,15 @@ _CON_FRACCION_FIABLE = sa.text(
              LIMIT 1
            ) AS dictamen_nico,
            i.declared_nico_code AS declarada_nico,
+           -- Las medidas que el clasificador ve: lo observado o extraído de la
+           -- ficha vigente, igual que `medidas_de_la_ficha` (ADR 0016).
+           (
+             SELECT jsonb_object_agg(a.name, a.value)
+             FROM intelligence.product_attributes a
+             JOIN intelligence.product_dnas dn ON dn.id = a.product_dna_id
+             WHERE dn.product_id = i.product_id AND dn.is_current
+               AND a.status IN ('OBSERVED', 'EXTRACTED')
+           ) AS atributos_solidos,
            ped.operation_date AS fecha,
            COALESCE((
              SELECT h.fraction_code IS NULL
@@ -362,7 +372,13 @@ def _medir_nico(salida: Resultado, fila: Any, nicos: NicoCatalog) -> None:
     if not verdad:
         salida.nico_sin_verdad += 1
         return
-    entregado, _ = nico_de(nicos, on_date=fila.fecha, fraction_code=fila.propuesta)
+    atributos = getattr(fila, "atributos_solidos", None) or {}
+    entregado, _ = nico_de(
+        nicos,
+        on_date=fila.fecha,
+        fraction_code=fila.propuesta,
+        medidas=medidas_de(list(atributos.items())),
+    )
     if entregado is None:
         salida.nico_se_abstuvo += 1
     elif entregado == verdad:
@@ -423,9 +439,9 @@ def informe(r: Resultado) -> str:
 
     lineas += [
         "",
-        "NICO  sólo donde la fracción acertó; se entrega cuando la LIGIE da uno único",
+        "NICO  sólo donde la fracción acertó; se entrega con un único NICO o por medidas (ADR 0016)",
         f"  contestó {r.nico_contestadas} de {r.nico_medibles}: acertó {r.nico_acerto},"
-        f" falló {r.nico_fallo}, se abstuvo {r.nico_se_abstuvo} (varios NICO)",
+        f" falló {r.nico_fallo}, se abstuvo {r.nico_se_abstuvo} (varios NICO sin regla)",
         f"  sin NICO de verdad contra el que medir: {r.nico_sin_verdad}",
     ]
     if r.nico_contestadas:

@@ -59,8 +59,10 @@ from __future__ import annotations
 from core.classification.orchestrator import (
     FUNDAMENTAN_CLASIFICACION,
     NicoCatalog,
+    NicoTexts,
     classify_product,
     fundamenta_clasificacion,
+    medidas_de_la_ficha,
     nico_de,
     with_money_impact,
 )
@@ -70,8 +72,10 @@ __all__ = [
     "FUNDAMENTAN_CLASIFICACION",
     "ClassificationOutcome",
     "NicoCatalog",
+    "NicoTexts",
     "classify_product",
     "fundamenta_clasificacion",
+    "medidas_de_la_ficha",
     "nico_de",
     "with_money_impact",
 ]

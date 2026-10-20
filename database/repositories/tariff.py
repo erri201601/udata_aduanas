@@ -545,6 +545,26 @@ class TariffCatalogRepository:
         ).all()
         return tuple(filas)
 
+    def nicos_con_texto(
+        self, *, on_date: date, fraction_code: str
+    ) -> tuple[tuple[str, str], ...] | None:
+        """Los NICO vigentes con su descripción de la LIGIE, para la regla de
+        medidas (ADR 0016). Mismas tres respuestas que `nicos`."""
+        if self.nicos(on_date=on_date, fraction_code=fraction_code) is None:
+            return None
+        filas = self._session.execute(
+            sa.select(Nico.code, Nico.description)
+            .join(TariffFraction, TariffFraction.id == Nico.tariff_fraction_id)
+            .where(
+                _vigentes(on_date),
+                TariffFraction.code == fraction_code,
+                Nico.valid_from <= on_date,
+                sa.or_(Nico.valid_to.is_(None), Nico.valid_to >= on_date),
+            )
+            .order_by(Nico.code)
+        ).tuples()
+        return tuple((codigo, descripcion or "") for codigo, descripcion in filas)
+
     def fraccion_existe(self, *, on_date: date, code: str) -> bool:
         """¿La fracción de 8 dígitos está en la TIGIE vigente ese día?
 
