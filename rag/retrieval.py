@@ -31,7 +31,7 @@ from pydantic import BaseModel, ConfigDict
 from rag.types import LegalChunk
 
 if TYPE_CHECKING:
-    from rag.ports import ChunkStore, Embedder
+    from rag.ports import ChunkStore, Embedder, Expansor
 
 #: Cuántos chunks se recuperan por consulta. Más no mejora la respuesta: la
 #: diluye, y alarga el prompt hasta que el modelo pierde el hilo.
@@ -49,6 +49,12 @@ class Recuperacion(BaseModel):
     """Coincidían, pero no regían ese día."""
     descartados_por_origen: int = 0
     """Regían, pero no pueden fundamentar: fixtures, o fuentes no oficiales."""
+
+    via_grafo: tuple[str, ...] = ()
+    """`content_hash` de los chunks que llegaron porque el grafo los sugirió."""
+    grafo: str | None = None
+    """Cómo se usó el grafo en esta recuperación, o por qué no. `None` si no se
+    le preguntó."""
 
     @property
     def hay_fundamento(self) -> bool:
@@ -80,6 +86,7 @@ def recuperar(
     embedder: Embedder | None = None,
     limit: int = LIMITE_POR_DEFECTO,
     permitir_no_fundamentables: bool = False,
+    expansor: Expansor | None = None,
 ) -> Recuperacion:
     """Recupera normas vigentes en una fecha.
 
@@ -92,6 +99,15 @@ def recuperar(
 
     Un `embedder` que devuelve vacío NO es un fallo: es la degradación
     prevista de `rag.embedder`, y se sigue por término y vigencia.
+
+    TEXTO + VECTOR + GRAFO (§27)
+
+    Con `expansor`, el grafo sugiere reglas relacionadas —por ejemplo, las que
+    citan las decisiones que clasifican la fracción por la que se pregunta— y
+    sus chunks se leen DEL ALMACÉN, con el mismo filtro de vigencia y
+    procedencia. Ocupan como mucho un tercio del límite y van delante: son lo
+    más específico de la pregunta. Lo que el grafo sugiere y no rige ese día,
+    no entra.
     """
     # Un embedder puede devolver vacío a propósito: es como `rag.embedder`
     # señala que el proveedor falló y que hay que seguir por término. Indexar
@@ -119,11 +135,36 @@ def recuperar(
     else:
         admitidos = [c for c in vigentes if c.puede_fundamentar]
 
+    via_grafo: list[LegalChunk] = []
+    nota_grafo: str | None = None
+    if expansor is not None:
+        cupo = max(1, limit // 3)
+        reglas = list(expansor.reglas_relacionadas(consulta, on_date=on_date, limit=cupo))
+        if reglas:
+            sugeridos = store.por_reglas(
+                reglas,
+                on_date=on_date,
+                limit=cupo,
+                solo_fundamentables=not permitir_no_fundamentables,
+            )
+            via_grafo = [
+                c
+                for c in sugeridos
+                if c.vigente_en(on_date) and (permitir_no_fundamentables or c.puede_fundamentar)
+            ][:cupo]
+        nota_grafo = expansor.nota
+
+    # Los del grafo delante; sin repetir lo que la búsqueda ya había traído.
+    vistos = {c.content_hash for c in via_grafo}
+    juntos = via_grafo + [c for c in admitidos if c.content_hash not in vistos]
+
     return Recuperacion(
-        chunks=tuple(admitidos[:limit]),
+        chunks=tuple(juntos[:limit]),
         on_date=on_date,
         descartados_por_vigencia=len(candidatos) - len(vigentes),
         descartados_por_origen=len(vigentes) - len(admitidos),
+        via_grafo=tuple(c.content_hash for c in via_grafo),
+        grafo=nota_grafo,
     )
 
 

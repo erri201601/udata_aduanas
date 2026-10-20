@@ -104,6 +104,9 @@ def save_review(
                 impact_calculation=(
                     hallazgo.calculation.model_dump(mode="json") if hallazgo.calculation else None
                 ),
+                # De qué filas sale (§21). Sin esto «fracción equivocada» no
+                # decía contra qué texto de la LIGIE, ni de qué fecha.
+                sources=[f.model_dump(mode="json") for f in divergencia.sources],
                 is_simulation=hallazgo.is_simulation,
                 data_origin=data_origin,
             )

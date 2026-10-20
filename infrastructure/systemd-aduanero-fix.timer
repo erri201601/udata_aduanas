@@ -1,0 +1,12 @@
+[Unit]
+Description=ADUANERO OS — tipo de cambio FIX, cada día hábil
+
+[Timer]
+# El FIX se determina al mediodía y el DOF lo publica al día hábil siguiente.
+# Una pasada por la tarde lo recoge; los 7 días de ventana cubren los huecos.
+OnCalendar=Mon..Fri 14:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

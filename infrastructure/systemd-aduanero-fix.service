@@ -1,0 +1,22 @@
+[Unit]
+Description=ADUANERO OS — tipo de cambio FIX del DOF (últimos 7 días → exchange_rates)
+Documentation=file:///home/udata/Documentos/udata_aduanas/ingestion/banxico/cli.py
+After=docker.service
+StartLimitIntervalSec=3h
+StartLimitBurst=6
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/udata/Documentos/udata_aduanas
+# Mismo motivo que el vigilante del DOF: en una unidad de usuario no hay
+# network-online.target; se espera a que resuelva el DOF.
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 30); do getent hosts dof.gob.mx >/dev/null && exit 0; sleep 10; done; echo "sin red tras 5 min"; exit 1'
+# Por omisión pide los últimos 7 días y salta los ya cargados: una semana con
+# la máquina apagada se recupera sola en la siguiente pasada.
+ExecStart=/home/udata/Documentos/udata_aduanas/.venv/bin/python -m ingestion.banxico.cli --target local
+Restart=on-failure
+RestartSec=15min
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aduanero-fix
+Nice=10

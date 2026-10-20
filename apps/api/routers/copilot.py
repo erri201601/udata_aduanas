@@ -1,17 +1,17 @@
-"""Copilot (§32) — consulta al corpus jurídico, con vigencia y procedencia.
+"""Copilot (§31, §32) — consulta al corpus jurídico, con vigencia y procedencia.
 
-LO QUE ESTE COPILOT NO HACE: REDACTAR LA RESPUESTA
+REDACTA, PERO NO APORTA (ADR 0010, 13-oct)
 
-Un asistente jurídico que parafrasea la ley es la forma más eficiente de
-producir una cita inventada. El maestro lo dice justo antes del §32 —«nunca
-inventar citas»— y la manera de cumplirlo no es pedirle al modelo que se
-porte bien: es no ponerlo en posición de inventar. Aquí se devuelven los
-PASAJES, con su artículo, su vigencia, su procedencia y su hash. Quien lee
-saca la conclusión sobre el texto de la norma, no sobre un resumen de ella.
+Hasta el 13-oct este Copilot no redactaba: devolvía los PASAJES, porque
+parafrasear la ley es la forma más eficiente de producir una cita inventada.
+Desde el ADR 0010 cumple el §31 sin renunciar a eso: el modelo explica los
+pasajes ya recuperados citando cada uno como `[n]`, y código —no otro modelo—
+comprueba las citas. Una cita a un pasaje que no se entregó descarta la
+redacción entera. La lógica vive en `core.copilot`; aquí se conecta.
 
-El día que haya llave y se quiera redactar, la síntesis se apoya sobre esto
-mismo: los pasajes ya recuperados son el fundamento, y lo que no salga de
-ellos no se escribe. No hay que rehacer nada.
+Los pasajes se siguen devolviendo enteros (`evidence`, con su alias
+`pasajes`): quien lee tiene que poder comprobar cada `[n]` contra el texto de
+la norma.
 
 QUÉ SÍ HACE, Y QUE NO ES POCO
 
@@ -39,12 +39,23 @@ cuya tesis es no anunciar estados falsos no puede permitirse eso.
 from __future__ import annotations
 
 from datetime import date
-from typing import Annotated, Final
+from decimal import Decimal
+from typing import TYPE_CHECKING, Annotated, Final, cast
 
 import sqlalchemy as sa
+from core.copilot import (
+    PROMPT_ID,
+    PROMPT_VERSION,
+    PasajeParaRedactar,
+    faltantes_deterministas,
+    redactar,
+    requiere_revision,
+)
+from core.llm.registry import get_default_provider
 from database.models.regulatory import LegalChunkRecord, LegalDocument
 from database.repositories.chunks import PostgresChunkStore
 from fastapi import APIRouter
+from graph.busqueda import expansor_opcional
 from pydantic import BaseModel, Field
 from rag import (
     MODO_SEMANTICO,
@@ -58,6 +69,9 @@ from rag import (
 from rag.retrieval import LIMITE_POR_DEFECTO
 
 from apps.api.db import SessionDep
+
+if TYPE_CHECKING:
+    from core.llm.base import ModelProvider
 
 router = APIRouter(prefix="/copilot", tags=["copilot"])
 
@@ -95,6 +109,9 @@ class Pasaje(BaseModel):
     la condición que hacía que no aplicara.
     """
 
+    n: int = 0
+    """El número con el que `answer` lo cita como `[n]`. Empieza en 1."""
+    source_id: str | None = None
     documento: str
     articulo: str | None = None
     encabezado: str | None = None
@@ -108,6 +125,8 @@ class Pasaje(BaseModel):
     """`False` = sirve para orientarse, no para sostener nada ante nadie."""
     url: str | None = None
     content_hash: str | None = None
+    via_grafo: bool = False
+    """¿Llegó porque el grafo lo sugirió? Su texto sale igual de Postgres."""
     distancia: float | None = None
     """Distancia del coseno a la pregunta. `None` si se buscó por término.
 
@@ -125,13 +144,49 @@ class Pasaje(BaseModel):
     lea como pertinencia."""
 
 
+class Fuente(BaseModel):
+    """Una fuente CITADA en `answer` (ADR 0010, punto 3).
+
+    Se construye desde las citas que el código validó, nunca desde lo que el
+    modelo diga que usó.
+    """
+
+    n: int
+    source_id: str | None = None
+    documento: str
+    articulo: str | None = None
+    valid_from: date
+    valid_to: date | None = None
+    url: str | None = None
+    content_hash: str | None = None
+
+
 class Respuesta(BaseModel):
     """Lo que el corpus tiene sobre la pregunta, y qué se puede hacer con ello."""
 
     pregunta: str
     fecha: date
 
+    # ── §31 (ADR 0010) ───────────────────────────────────────────────────
+    answer: str = ""
+    """La respuesta, con cada oración citando `[n]`. O el texto literal de
+    «sin evidencia», o el de «sin redacción» si el modelo no estaba."""
+    confidence: Decimal = Decimal("0.00")
+    """Oraciones con cita válida ÷ oraciones de `answer`. La calcula el código;
+    el modelo no la declara (ADR 0010, punto 4)."""
+    sources: list[Fuente] = Field(default_factory=list)
+    """Sólo lo CITADO en `answer`, no todo lo recuperado."""
+    evidence: list[Pasaje] = Field(default_factory=list)
+    """Los pasajes recuperados, con el `n` con el que se citan."""
+    missing_information: list[str] = Field(default_factory=list)
+    requires_human_review: bool = True
+    """Por omisión `True`: pasar a `False` exige una redacción entregada, sin
+    oraciones sin cita y sin nada que falte (ADR 0010, punto 6)."""
+    prompt_id: str | None = None
+    prompt_version: str | None = None
+
     pasajes: list[Pasaje] = Field(default_factory=list)
+    """Alias de `evidence` mientras la consola migra (ADR 0010, punto 1)."""
 
     hay_fundamento: bool = False
     """¿Hay al menos un pasaje que pueda sostener una afirmación jurídica?"""
@@ -147,6 +202,10 @@ class Respuesta(BaseModel):
     """Coincidían con la pregunta, pero no regían esa fecha."""
     descartados_por_origen: int = 0
     """Regían, pero no pueden fundamentar: fixtures o fuentes no oficiales."""
+
+    grafo: str | None = None
+    """Cómo se usó el grafo (§27) en esta consulta, o por qué no. `None` si no
+    hay Neo4j configurado. Lo que el grafo sugiere se lee de Postgres."""
 
     terminos_buscados: list[str] = Field(default_factory=list)
     """Con qué se buscó realmente. Las palabras vacías no cuentan."""
@@ -196,12 +255,10 @@ class Respuesta(BaseModel):
     chunks_totales: int = 0
 
     redacta_respuesta: bool = False
-    """Siempre `false`, y es una decisión, no una carencia.
+    """¿`answer` lo redactó el modelo en ESTA consulta y se entrega?
 
-    Parafrasear la ley es como se producen las citas inventadas. Se devuelven
-    los pasajes para que quien lee saque la conclusión sobre el texto de la
-    norma, no sobre un resumen de ella.
-    """
+    `False` sin pasajes que fundamenten, con el modelo caído o cuando la
+    redacción se descartó por citar un pasaje inexistente."""
 
 
 def _coincidencias(texto: str, terminos: tuple[str, ...]) -> list[str]:
@@ -235,9 +292,12 @@ def _reordenar(pasajes: list[Pasaje], *, uso_vectores: bool) -> list[Pasaje]:
     """
     if uso_vectores:
         return pasajes
+    # Lo que sugirió el grafo va delante: casa pocos términos precisamente
+    # porque la norma no nombra la fracción, y el recorte posterior a `limite`
+    # lo tiraría.
     return sorted(
         pasajes,
-        key=lambda p: (-len(p.terminos_coincidentes), -p.valid_from.toordinal()),
+        key=lambda p: (not p.via_grafo, -len(p.terminos_coincidentes), -p.valid_from.toordinal()),
     )
 
 
@@ -286,9 +346,9 @@ def _corpus_consultado(session: SessionDep, on_date: date) -> list[str]:
 
 @router.post("/consultas", summary="Pregunta al corpus jurídico")
 def consultar(consulta: Consulta, session: SessionDep) -> Respuesta:
-    """Recupera los pasajes vigentes que hablan de la pregunta.
+    """Recupera los pasajes vigentes y redacta sobre ellos, citándolos (§31).
 
-    No redacta una respuesta: devuelve la norma. Ver el módulo para el porqué.
+    Ver el módulo y el ADR 0010 para qué se entrega y qué se descarta.
     """
     # `date.today()` sin zona a propósito: es una fecha de vigencia, no un
     # instante.
@@ -319,6 +379,9 @@ def consultar(consulta: Consulta, session: SessionDep) -> Respuesta:
         store=PostgresChunkStore(session),
         embedder=embedder,
         limit=candidatos,
+        # Texto + vector + grafo (§27). Sin Neo4j configurado es `None` y la
+        # búsqueda sigue como antes.
+        expansor=expansor_opcional(),
     )
 
     # Se pregunta DESPUÉS de recuperar: hasta que no se intentó vectorizar no
@@ -340,28 +403,88 @@ def consultar(consulta: Consulta, session: SessionDep) -> Respuesta:
             content_hash=c.content_hash,
             distancia=c.distancia,
             terminos_coincidentes=_coincidencias(c.text, terminos),
+            via_grafo=c.content_hash in recuperacion.via_grafo,
+            source_id=str(c.source_id) if c.source_id is not None else None,
         )
         for c in recuperacion.chunks
     ]
     pasajes = _reordenar(pasajes, uso_vectores=uso_vectores)[: consulta.limite]
+    # El número se pone DESPUÉS de reordenar y recortar: es el que ve quien lee.
+    pasajes = [p.model_copy(update={"n": i}) for i, p in enumerate(pasajes, 1)]
+
+    corpus = _corpus_consultado(session, on_date)
+    degradado_por = None if uso_vectores else _porque_no_vectores(embedder)
+
+    # Al modelo, SÓLO lo que puede fundamentar (ADR 0010, punto 2). Sin nada
+    # así, `redactar` no lo llama y devuelve el texto literal del §31.
+    redaccion = redactar(
+        consulta.pregunta,
+        fecha=on_date,
+        pasajes=[
+            PasajeParaRedactar(n=p.n, cita=p.cita, texto=p.texto)
+            for p in pasajes
+            if p.puede_fundamentar
+        ],
+        proveedor=lambda: cast("ModelProvider", get_default_provider()),
+    )
+    if redaccion.modelo_no_disponible:
+        degradado_por = "; ".join(
+            filter(None, [degradado_por, f"redacción: {redaccion.modelo_no_disponible}"])
+        )
+
+    faltan = list(
+        dict.fromkeys(
+            [
+                *redaccion.missing_information,
+                *faltantes_deterministas(
+                    consulta.pregunta,
+                    corpus_consultado=corpus,
+                    degradado_por=None if uso_vectores else _porque_no_vectores(embedder),
+                ),
+            ]
+        )
+    )
+    por_n = {p.n: p for p in pasajes}
+    fuentes = [
+        Fuente(
+            n=n,
+            source_id=por_n[n].source_id,
+            documento=por_n[n].documento,
+            articulo=por_n[n].articulo,
+            valid_from=por_n[n].valid_from,
+            valid_to=por_n[n].valid_to,
+            url=por_n[n].url,
+            content_hash=por_n[n].content_hash,
+        )
+        for n in redaccion.citadas
+    ]
 
     return Respuesta(
         pregunta=consulta.pregunta,
         fecha=on_date,
+        answer=redaccion.answer,
+        confidence=redaccion.confidence,
+        sources=fuentes,
+        evidence=pasajes,
+        missing_information=faltan,
+        requires_human_review=requiere_revision(redaccion, faltan),
+        prompt_id=PROMPT_ID if redaccion.metadata else None,
+        prompt_version=PROMPT_VERSION if redaccion.metadata else None,
         pasajes=pasajes,
         hay_fundamento=recuperacion.hay_fundamento,
         sin_evidencia=None if recuperacion.hay_fundamento else recuperacion.sin_evidencia(),
         descartados_por_vigencia=recuperacion.descartados_por_vigencia,
         descartados_por_origen=recuperacion.descartados_por_origen,
-        corpus_consultado=_corpus_consultado(session, on_date),
+        grafo=recuperacion.grafo,
+        corpus_consultado=corpus,
         terminos_buscados=list(terminos),
         # El modo dice lo que pasó, no lo que el corpus permitiría.
         modo_busqueda=MODO_SEMANTICO if uso_vectores else MODO_TERMINO,
         busqueda_semantica_disponible=uso_vectores,
-        degradado_por=None if uso_vectores else _porque_no_vectores(embedder),
+        degradado_por=degradado_por,
         chunks_vectorizados=vectorizados,
         chunks_totales=totales,
-        redacta_respuesta=False,
+        redacta_respuesta=redaccion.redactada,
     )
 
 

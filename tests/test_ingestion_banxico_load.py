@@ -16,7 +16,7 @@ import pytest
 import sqlalchemy as sa
 from database.models.regulatory import ExchangeRate
 from ingestion.banxico.fix import ParsedExchangeRate
-from ingestion.banxico.load import load_exchange_rates
+from ingestion.banxico.load import cerrar_vigencias_huerfanas, load_exchange_rates
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
@@ -111,6 +111,80 @@ def test_desordenadas_igual_encadenan_bien(pg_session: Session) -> None:
     assert fila_2.valid_to == date(2099, 3, 4)
 
 
+def test_backfill_de_una_fecha_mas_vieja_en_otra_corrida_cierra_bien(
+    pg_session: Session,
+) -> None:
+    """Regresión real (13-oct-2026): dos corridas que no cubren el mismo
+    rango -- la primera carga la fecha más nueva, una corrida posterior
+    (backfill) carga una fecha más vieja que faltaba. La fila vieja tiene
+    que nacer YA cerrada contra la que ya existía, no con valid_to=NULL
+    como si fuera la más reciente."""
+    load_exchange_rates(
+        pg_session, rates=[_fila(date(2099, 5, 10), "24.000000")], content_hash=HASH
+    )
+
+    load_exchange_rates(pg_session, rates=[_fila(date(2099, 5, 6), "23.900000")], content_hash=HASH)
+
+    vieja = (
+        pg_session.query(ExchangeRate).filter_by(currency=DIVISA, valid_from=date(2099, 5, 6)).one()
+    )
+    nueva = (
+        pg_session.query(ExchangeRate)
+        .filter_by(currency=DIVISA, valid_from=date(2099, 5, 10))
+        .one()
+    )
+    assert vieja.valid_to == date(2099, 5, 9)
+    assert nueva.valid_to is None
+
+
+def test_cerrar_vigencias_huerfanas_repara_el_bug_ya_cargado(pg_session: Session) -> None:
+    """Simula el estado dañado (como si viniera de antes de este fix):
+    inserta las dos filas directo, sin pasar por `load_exchange_rates`,
+    con la vieja mal puesta en valid_to=NULL."""
+    pg_session.add_all(
+        [
+            ExchangeRate(
+                currency=DIVISA,
+                rate=Decimal("25.000000"),
+                data_origin="OFFICIAL",
+                valid_from=date(2099, 6, 10),
+                valid_to=None,
+                source_url="https://ejemplo.invalido/prueba",
+                content_hash=HASH,
+                retrieved_at=datetime.now(),
+            ),
+            ExchangeRate(
+                currency=DIVISA,
+                rate=Decimal("25.100000"),
+                data_origin="OFFICIAL",
+                valid_from=date(2099, 6, 6),
+                valid_to=None,  # el bug: debería ser 2099-06-09
+                source_url="https://ejemplo.invalido/prueba",
+                content_hash=HASH,
+                retrieved_at=datetime.now(),
+            ),
+        ]
+    )
+    pg_session.flush()
+
+    n = cerrar_vigencias_huerfanas(pg_session)
+
+    # >= 1, no == 1: esta misma base local todavía puede tener el bug real
+    # (USD, 2026-08-31) sin reparar -- este test corrige CUALQUIER moneda
+    # huérfana, y aquí sólo se pide la prueba de que la de ZZ sí entró.
+    assert n >= 1
+    vieja = (
+        pg_session.query(ExchangeRate).filter_by(currency=DIVISA, valid_from=date(2099, 6, 6)).one()
+    )
+    nueva = (
+        pg_session.query(ExchangeRate)
+        .filter_by(currency=DIVISA, valid_from=date(2099, 6, 10))
+        .one()
+    )
+    assert vieja.valid_to == date(2099, 6, 9)
+    assert nueva.valid_to is None  # la más reciente de verdad -- no se toca
+
+
 def test_data_origin_y_content_hash(pg_session: Session) -> None:
     load_exchange_rates(pg_session, rates=[_fila(date(2099, 4, 1), "23.000000")], content_hash=HASH)
     fila = (
@@ -121,3 +195,32 @@ def test_data_origin_y_content_hash(pg_session: Session) -> None:
     assert fila.source_id is not None
     assert isinstance(fila.retrieved_at, datetime)
     assert fila.retrieved_at.tzinfo is not None
+
+
+def test_un_backfill_en_medio_de_dos_cerradas_no_deja_solapes(pg_session: Session) -> None:
+    """La fecha que llega tarde puede caer ENTRE dos filas ya cerradas.
+
+    Con 2099-07-02 (cerrada al 9) y 2099-07-10 ya cargadas, cargar el
+    2099-07-05 tiene que acortar la del 2 al 4. Si sólo se cerraban las
+    abiertas, la del 2 seguía vigente hasta el 9 y se solapaba con la nueva:
+    `tasa_vigente` del 5 al 9 lanzaba `MultipleResultsFound` (Persona 1,
+    revisión del #250, 19-oct).
+    """
+    load_exchange_rates(
+        pg_session,
+        rates=[_fila(date(2099, 7, 2), "26.000000"), _fila(date(2099, 7, 10), "26.200000")],
+        content_hash=HASH,
+    )
+    load_exchange_rates(pg_session, rates=[_fila(date(2099, 7, 5), "26.100000")], content_hash=HASH)
+
+    vigencias = [
+        (f.valid_from, f.valid_to)
+        for f in pg_session.query(ExchangeRate)
+        .filter(ExchangeRate.currency == DIVISA, ExchangeRate.valid_from >= date(2099, 7, 1))
+        .order_by(ExchangeRate.valid_from)
+    ]
+    assert vigencias == [
+        (date(2099, 7, 2), date(2099, 7, 4)),
+        (date(2099, 7, 5), date(2099, 7, 9)),
+        (date(2099, 7, 10), None),
+    ]

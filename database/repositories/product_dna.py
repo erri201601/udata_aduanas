@@ -22,11 +22,12 @@ from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
 
-from database.models.intelligence import ProductAttribute, ProductDna
+from database.models.intelligence import EvidenceRecord, ProductAttribute, ProductDna
 
 if TYPE_CHECKING:
     import uuid
 
+    from core.evidence.types import Evidence
     from core.llm.types import CallMetadata
     from core.product_dna.types import ProductDnaDraft
     from sqlalchemy.orm import Session
@@ -38,7 +39,7 @@ def guardar_dna(
     *,
     product_id: uuid.UUID,
     data_origin: str,
-    evidence_id: uuid.UUID | None = None,
+    evidencia: Evidence | None = None,
     telemetria: CallMetadata | None = None,
 ) -> ProductDna:
     """Escribe una versión nueva del DNA de un producto. NO hace commit.
@@ -50,6 +51,15 @@ def guardar_dna(
     DNA de un producto sintético es sintético, por mucho que lo haya extraído
     un modelo de una imagen real. Inventar aquí un origen nuevo para «lo que
     subió un usuario» rompería los cinco valores cerrados del §9.
+
+    LA FICHA Y CADA ATRIBUTO APUNTAN A SU EVIDENCIA (13-oct)
+
+    `evidencia` es la de la extracción: `MODEL_OUTPUT`, con el hash y la clave
+    de MinIO del crudo. Se escribe una sola vez y la ficha (`evidence_id`) y
+    cada atributo (`evidence_reference`) apuntan a ella; el `locator` de cada
+    atributo dice en qué parte de ese documento está el dato. Hasta ahora las
+    fichas que salían de imagen no enlazaban nada, y el localizador que el
+    motor exige se perdía al guardar.
     """
     anterior = session.scalar(
         sa.select(sa.func.max(ProductDna.version)).where(ProductDna.product_id == product_id)
@@ -65,13 +75,20 @@ def guardar_dna(
     #
     # Se guarda igual, con su número y su trazabilidad, porque el intento
     # ocurrió y consta. Lo que no hace es quedarse como vigente.
-    aporta = bool(borrador.attributes or borrador.summary)
+    #
+    # Se miran los atributos CONOCIDOS, no todos: el motor devuelve siempre el
+    # catálogo completo del §16, con lo que no encontró en MISSING. Contar esos
+    # haría que una lectura vacía «aportara» 18 atributos.
+    aporta = bool(borrador.known())
     if aporta:
         session.execute(
             sa.update(ProductDna)
             .where(ProductDna.product_id == product_id, ProductDna.is_current.is_(True))
             .values(is_current=False)
         )
+
+    registro = _guardar_evidencia(session, evidencia, data_origin) if evidencia else None
+    evidence_id = registro.id if registro else None
 
     dna = ProductDna(
         product_id=product_id,
@@ -86,6 +103,8 @@ def guardar_dna(
     )
     session.add(dna)
     session.flush()
+    if registro is not None:
+        registro.subject_id = dna.id
 
     for atributo in borrador.attributes:
         session.add(
@@ -96,11 +115,30 @@ def guardar_dna(
                 unit=atributo.unit,
                 status=atributo.status,
                 confidence=atributo.confidence,
+                # Sólo lo que salió del documento apunta a él. Un MISSING no
+                # salió de ningún sitio: enlazarlo diría que el archivo lo
+                # respalda.
+                evidence_reference=evidence_id if atributo.is_known else None,
+                locator=atributo.locator,
                 data_origin=data_origin,
             )
         )
     session.flush()
     return dna
+
+
+def _guardar_evidencia(session: Session, evidencia: Evidence, data_origin: str) -> EvidenceRecord:
+    """La fila de la evidencia de la extracción, antes que la ficha que la cita.
+
+    `subject_id` se rellena después, cuando la ficha ya tiene id: el vínculo es
+    blando a propósito (ver `EvidenceRecord`) y aquí la evidencia nace primero.
+    """
+    campos = evidencia.to_record_fields()
+    origen = campos.pop("data_origin", None) or data_origin
+    fila = EvidenceRecord(subject_kind="product_dna", data_origin=origen, **campos)
+    session.add(fila)
+    session.flush()
+    return fila
 
 
 def _telemetria(metadata: CallMetadata | None) -> dict[str, object]:
