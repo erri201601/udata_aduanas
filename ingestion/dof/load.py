@@ -18,6 +18,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
+import sqlalchemy as sa
 import structlog
 from database.models.regulatory import (
     CustomsOffice,
@@ -28,6 +29,7 @@ from database.models.regulatory import (
     NonTariffRegulation,
     PedimentoClave,
     PedimentoIdentifier,
+    PedimentoIdentifierRequirement,
     RegulatoryEvent,
     UnitOfMeasure,
 )
@@ -38,6 +40,8 @@ from ingestion.dof.rgce import fracciones_de
 from ingestion.dof.sumario import clasificar_event_kind
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from sqlalchemy.orm import Session
 
     from ingestion.dof.anexo22 import (
@@ -47,6 +51,7 @@ if TYPE_CHECKING:
         ParsedPedimentoClave,
         ParsedUnitOfMeasure,
     )
+    from ingestion.dof.apendice_8_requisitos import ParsedIdentifierRequirement
     from ingestion.dof.rgce import ParsedRule
     from ingestion.dof.sumario import ParsedSumarioItem
 
@@ -636,3 +641,53 @@ def load_regulatory_events(
     session.flush()
     log.info("dof.regulatory_events.cargado", creados=creados, recibidos=len(items))
     return creados
+
+
+def load_identifier_requirements(
+    session: Session,
+    *,
+    requisitos: Sequence[ParsedIdentifierRequirement],
+    content_hash: str,
+    retrieved_at: datetime | None = None,
+) -> int:
+    """Carga `regulatory.pedimento_identifier_requirements` (ADR 0012).
+
+    Cada regla es «la clave de pedimento X exige el identificador Y en el
+    nivel G». Sólo entran las que ya pasaron
+    `apendice_8_requisitos.verificar_contra_el_documento`.
+
+    Idempotente por `(identifier_code, condition_kind, condition_value,
+    valid_from)`, la `UniqueConstraint` de la tabla. No reconcilia una fila ya
+    cargada.
+    """
+    retrieved_at = retrieved_at or datetime.now(UTC)
+    source = get_or_create_dof_source(session)
+    existentes = set(
+        session.execute(
+            sa.select(
+                PedimentoIdentifierRequirement.identifier_code,
+                PedimentoIdentifierRequirement.condition_kind,
+                PedimentoIdentifierRequirement.condition_value,
+                PedimentoIdentifierRequirement.valid_from,
+            )
+        ).tuples()
+    )
+    creadas = 0
+    for req in requisitos:
+        clave = (req.identifier_code, "PEDIMENTO_KEY", req.pedimento_key, ANEXO22_VALID_FROM)
+        if clave in existentes:
+            continue
+        existentes.add(clave)
+        session.add(
+            PedimentoIdentifierRequirement(
+                identifier_code=req.identifier_code,
+                identifier_level=req.identifier_level,
+                condition_kind="PEDIMENTO_KEY",
+                condition_value=req.pedimento_key,
+                scope_note=req.supuesto,
+                **_row_kwargs(source, content_hash=content_hash, retrieved_at=retrieved_at),
+            )
+        )
+        creadas += 1
+    session.flush()
+    return creadas
