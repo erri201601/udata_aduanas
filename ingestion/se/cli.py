@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import os
 import tempfile
+from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -302,7 +303,8 @@ def _anexo_2_4_1(args: argparse.Namespace) -> int:
     registrar(records=creadas, errors=len(omitidas), cerradas=cerradas)
     print(
         f"OK ({args.target}): {creadas} correlaciones insertadas; "
-        f"{cerradas} de la versión anterior cerradas al {load.VIGENCIA_2022_11}."
+        f"{cerradas} de la versión anterior cerradas al "
+        f"{load.VIGENCIA_2022_11 - timedelta(days=1)}."
     )
     return 0
 
