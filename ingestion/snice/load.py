@@ -39,9 +39,15 @@ if TYPE_CHECKING:
 SNICE_SLUG = "snice"
 LIGIE_SHORT_NAME = "LIGIE"
 
-# El original de la LIGIE 2022 (`LIGIE_2022_orig_07jun22`, diputados.gob.mx) —
-# fecha real, no supuesta: es el nombre del archivo que publica la Cámara.
-LIGIE_VALID_FROM = date(2022, 6, 7)
+# LA LIGIE 2022 SE PUBLICÓ EL 7-JUN-2022 Y RIGE DESDE EL 12-DIC-2022 (ADR 0018)
+#
+# Se usaba la publicación (`LIGIE_2022_orig_07jun22`) como inicio de vigencia.
+# El Transitorio Primero la hace entrar en vigor cuando el SAT declara listos
+# sus sistemas, y la Cuarta Resolución de Modificaciones a las RGCE 2022 (DOF
+# 5-dic-2022, punto SEGUNDO) fijó el 12-dic-2022. Lo cargado antes se corrige
+# con `ingestion.snice.corregir_vigencia`.
+LIGIE_PUBLISHED_AT = date(2022, 6, 7)
+LIGIE_VALID_FROM = date(2022, 12, 12)
 LIGIE_SOURCE_URL = "https://www.diputados.gob.mx/LeyesBiblio/ref/ligie_2022.htm"
 
 

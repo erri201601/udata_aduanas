@@ -198,10 +198,11 @@ def load_ley_aduanera_chunks(
 LIGIE_ARTICULO1_SOURCE_URL = "https://www.diputados.gob.mx/LeyesBiblio/pdf/LIGIE_2022.pdf"
 LIGIE_ARTICULO1_SOURCE_DOCUMENT = "LIGIE 2022, Texto Vigente (DOF, última reforma 29-dic-2025)"
 # "Nueva Ley publicada en el Diario Oficial de la Federación el 7 de junio
-# de 2022" -- misma fecha que `ingestion.snice.load.LIGIE_VALID_FROM`: es
-# la misma ley, aunque este archivo (Texto Vigente de Diputados) sea un PDF
-# distinto del que publica SNICE, con su propio content_hash.
-LIGIE_ARTICULO1_VALID_FROM = date(2022, 6, 7)
+# de 2022", en vigor desde el 12-dic-2022 -- misma fecha que
+# `ingestion.snice.load.LIGIE_VALID_FROM` (ADR 0018): es la misma ley, aunque
+# este archivo (Texto Vigente de Diputados) sea un PDF distinto del que publica
+# SNICE, con su propio content_hash.
+LIGIE_ARTICULO1_VALID_FROM = date(2022, 12, 12)
 
 # REGRESIÓN REAL (2026-09-23, hallazgo de Persona 2 al verificar el supuesto
 # de Ulises sobre la edición del Sistema Armonizado): ni el preámbulo ni el
