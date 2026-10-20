@@ -155,6 +155,8 @@ def _get_or_create_client(
         legal_name=ped.importer_name,
         rfc=ped.importer_rfc,
         address={"texto": ped.importer_address},
+        # `None` cuando el corpus no lo dice: «no consta» no es «ninguno».
+        prosec_sector_codes=list(ped.importer_prosec_sectors) or None,
         data_origin=DATA_ORIGIN,
         synthetic_scenario_id=scenario.id,
         seed=scenario.seed,

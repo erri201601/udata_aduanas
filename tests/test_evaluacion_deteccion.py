@@ -203,7 +203,15 @@ def test_el_mapeo_cubre_el_vocabulario_de_los_dos_lados() -> None:
     assert set(DETECTOR_POR_ERROR) | SIN_DETECTOR == set(ERROR_TYPE), (
         "hay tipos de error que no están ni mapeados ni declarados sin detector"
     )
-    assert set(DETECTOR_POR_ERROR.values()) <= {d.value for d in DivergenceType}
+    # Los detectores son divergencias del Espejo, salvo las oportunidades del
+    # Opportunity Finder (ADR 0011), que llevan el prefijo OPPORTUNITY_ y un
+    # tipo de `OpportunityKind`.
+    from core.opportunity import OpportunityKind
+
+    validos = {d.value for d in DivergenceType} | {
+        f"OPPORTUNITY_{k.value}" for k in OpportunityKind
+    }
+    assert set(DETECTOR_POR_ERROR.values()) <= validos
 
 
 def test_no_se_empareja_por_nombre_de_campo() -> None:

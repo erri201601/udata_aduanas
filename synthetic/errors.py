@@ -40,6 +40,8 @@ if TYPE_CHECKING:
 IDENTIFICADOR_INCORRECTO = "IDENTIFICADOR_INCORRECTO"
 SKU_CLASIFICADO_INCONSISTENTE = "SKU_CLASIFICADO_INCONSISTENTE"
 INCREMENTABLE_FALTANTE = "INCREMENTABLE_FALTANTE"
+NOM_FALTANTE = "NOM_FALTANTE"
+PROSEC_NO_APROVECHADO = "PROSEC_NO_APROVECHADO"
 
 
 @dataclass(frozen=True)
@@ -110,3 +112,23 @@ def fraccion_alternativa_misma_mercancia(product_id: str) -> str:
     correcta = PRODUCT_CATALOG[product_id].fraction_code
     alternativas = sorted(FRACCIONES_CUOTA_CABLE_ACERO - {correcta})
     return alternativas[0]
+
+
+def nom_faltante(*, nom: str) -> AnomalySpec:
+    """La fracción declarada exige `nom` (Anexo 2.4.1, sin acotación) y la
+    partida no la declara."""
+    return AnomalySpec(code=NOM_FALTANTE, field="applied_nom_codes", expected=nom, observed="")
+
+
+def prosec_no_aprovechado(
+    *, sector: str, tasa_general: Decimal, tasa_prosec: Decimal
+) -> AnomalySpec:
+    """El importador opera en un sector PROSEC cuya tasa para la fracción es
+    menor, y pagó la general. Es una OPORTUNIDAD, no un error del pedimento:
+    se detecta en `opportunity_findings`, no en `risk_findings`."""
+    return AnomalySpec(
+        code=PROSEC_NO_APROVECHADO,
+        field="igi_rate",
+        expected=f"{tasa_prosec} (PROSEC sector {sector})",
+        observed=str(tasa_general),
+    )

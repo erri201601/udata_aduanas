@@ -763,7 +763,9 @@ def _construir_espejo(
         return ExpectedItem(
             line_number=partida.line_number,
             is_resolved=False,
-            required_nom_codes=None,
+            # Sin clasificar, la fracción DECLARADA sigue exigiendo sus NOM: es
+            # coherencia del propio documento (20-oct, MISSING_NOM del §25).
+            required_nom_codes=_nom_exigidas(session, fecha, partida.declared_fraction_code)[0],
             required_identifiers=None,
             **documental,
         )
@@ -836,7 +838,12 @@ def _construir_espejo(
         # Desde el 4-oct el Anexo 2.4.1 está cargado: ya se puede decir qué NOM
         # exige una fracción. Las acotadas van aparte, a la vista de una
         # persona — ver `_nom_exigidas`.
-        required_nom_codes=_nom_exigidas(session, fecha, codigo)[0],
+        # Si el motor no llega a una fracción, las NOM de la DECLARADA: lo que
+        # el documento declara exige su NOM, sea o no la fracción correcta
+        # (20-oct). Con fracción esperada, las de la esperada, como antes.
+        required_nom_codes=_nom_exigidas(session, fecha, codigo or partida.declared_fraction_code)[
+            0
+        ],
         # Los identificadores se ponen en `revisar`, con las reglas del
         # pedimento entero (ADR 0012): dependen de su clave, que la partida no
         # conoce. Aquí `None` = no se sabe todavía.

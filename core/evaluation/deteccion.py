@@ -91,6 +91,10 @@ DETECTOR_POR_ERROR: Final[Mapping[str, str]] = {
     "MISSING_TECHNICAL_FIELD": "MISSING_TECHNICAL_FIELD",
     "INCONSISTENT_SKU_CLASSIFICATION": "INCONSISTENT_SKU_CLASSIFICATION",
     "MISSING_INCREMENTABLE": "MISSING_INCREMENTABLE",
+    # Una oportunidad, no un riesgo: la detecta el Opportunity Finder y vive en
+    # `opportunity_findings` (ADR 0011). `deteccion_26` la trae como hallazgo
+    # sólo cuando lleva monto: sin sector del importador es una hipótesis.
+    "MISSED_PROSEC": "OPPORTUNITY_PROSEC",
 }
 
 #: Tipos sembrados para los que el motor NO tiene detector hoy. No es lo mismo
@@ -98,7 +102,6 @@ DETECTOR_POR_ERROR: Final[Mapping[str, str]] = {
 SIN_DETECTOR: Final[frozenset[str]] = frozenset(
     {
         "INCONSISTENT_QUANTITY",
-        "MISSED_PROSEC",
         "MISSED_PREFERENCE",
     }
 )

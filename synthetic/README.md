@@ -162,3 +162,22 @@ ya existentes, que esta carga no cierra:
 
 Hasta que Persona 1 conteste estos 4 puntos, no corro `load_corpus` fuera
 de un test con rollback.
+
+
+## 20-oct: MISSING_NOM y MISSED_PROSEC (Persona 1)
+
+Con el Anexo 2.4.1 y el Decreto PROSEC ya cargados, dos de las tres anomalías
+diferidas se pueden generar sin inventar nada:
+
+- **`PED_SIM_021` — `MISSING_NOM`**: ficha nueva **P013** (estufa de gas,
+  7321.11.01), cuya fracción exige la NOM-025-ENER-2013 sin acotación; la
+  partida no la declara. Producto nuevo: no toca ninguna ficha dictaminada.
+- **`PED_SIM_022` — `MISSED_PROSEC`**: el importador opera en el sector PROSEC II
+  (`prosec_sectors`, que el cargador guarda en `clients.prosec_sector_codes`) e
+  importa el cable 7312.10.05 pagando el 35 % general, cuando el artículo 5 lo
+  deja exento para ese sector. Se detecta como **oportunidad con monto**, no
+  como hallazgo de riesgo.
+- **P006** declara ahora 73121005 NICO 02, el dictamen de César, no la
+  declaración del corpus original que él corrigió.
+
+`MISSED_PREFERENCE` sigue diferida: no hay tratados cargados.

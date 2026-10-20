@@ -386,7 +386,9 @@ def fuentes_de_la_partida(
     if esperada.country_of_origin:
         fuentes["country_of_origin"] = _proveedor(session, partida)
     if esperada.required_nom_codes:
-        fuentes["applied_nom_codes"] = _nom(session, fecha, esperada.fraction_code)
+        fuentes["applied_nom_codes"] = _nom(
+            session, fecha, esperada.fraction_code or partida.declared_fraction_code
+        )
     if esperada.missing_technical_fields:
         fuentes["missing_information"] = _ficha(session, partida.product_id)
     for campo, codigos in (
