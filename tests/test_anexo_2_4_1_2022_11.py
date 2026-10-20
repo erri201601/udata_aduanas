@@ -122,6 +122,18 @@ def test_carga_la_version_nueva_cierra_la_anterior_y_acota_por_nico(
 
     if not pg_session.scalar(sa.select(sa.func.count()).select_from(TariffFraction)):
         pytest.skip("sin tarifa cargada no hay contra qué validar las fracciones")
+    # Desde el 20-oct la versión nueva está cargada en la compartida: se retira
+    # y se reabre la anterior DENTRO de esta transacción, que se revierte.
+    pg_session.execute(
+        sa.delete(FractionNomRequirement).where(
+            FractionNomRequirement.valid_from == VIGENCIA_2022_11
+        )
+    )
+    pg_session.execute(
+        sa.update(FractionNomRequirement)
+        .where(FractionNomRequirement.source_url == FUENTE)
+        .values(valid_to=None)
+    )
     filas = parse_html(HTML)
     creadas, _, omitidas = cargar_version_2022_11(
         pg_session, filas, content_hash="0" * 64, minio_key="se/prueba.html"
