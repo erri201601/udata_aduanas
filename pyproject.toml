@@ -36,6 +36,9 @@ dependencies = [
     # «sin texto extraíble» (Persona 1, 13-oct). Con techo, por lo mismo que
     # python-multipart.
     "pypdf>=6,<7",
+    # Tablas de PDF con celdas reales (Decreto PROSEC, ADR 0011): el texto
+    # `-layout` mezcla la columna de acotación entre filas; las celdas no.
+    "pdfplumber>=0.11,<0.12",
 ]
 
 [project.optional-dependencies]

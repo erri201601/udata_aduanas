@@ -808,8 +808,16 @@ class ProsecRate(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Regulator
 
     __tablename__ = "prosec_rates"
     __table_args__ = (
+        # La acotación forma parte de la clave (20-oct): el decreto lista la
+        # misma fracción dos veces en un sector con acotaciones opuestas y
+        # tasas distintas («Únicamente: …» al 5 %, «Excepto: …» al 10 %).
         sa.UniqueConstraint(
-            "sector_code", "fraction_code", "valid_from", name="uq_prosec_rates_fila"
+            "sector_code",
+            "fraction_code",
+            "scope_note",
+            "valid_from",
+            name="uq_prosec_rates_fila",
+            postgresql_nulls_not_distinct=True,
         ),
         sa.Index("ix_prosec_rates_vigencia", "fraction_code", "valid_from", "valid_to"),
         {"schema": _SCHEMA},

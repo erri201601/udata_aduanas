@@ -115,3 +115,32 @@ El escenario `MISSED_PROSEC` necesita: un cliente con `prosec_sector_codes`, una
 fila de `prosec_rates` para la fracción de la partida con tasa menor a la
 LIGIE, y un pedimento que declare la tasa general. El ground truth (§26) es
 una oportunidad `PROSEC` en esa partida.
+
+## La carga (20-oct)
+
+Persona 2 localizó el documento en su reconocimiento (#247); Persona 1 lo cargó
+(`python -m ingestion.se.cli --target local --prosec` y `--regla-8a`).
+
+**PROSEC.** Compilación SNICE del Decreto, con reformas hasta el DOF 26-08-2024.
+Del artículo 5 salen **2 649 tasas** en 23 sectores (el XXIV, Fertilizantes, no
+tiene filas), **467 con acotación**. Se leen las celdas de las tablas del PDF
+(`pdfplumber`), no el texto: el texto repartía la acotación entre filas
+vecinas. Comprobado contra el texto del mismo PDF: 0 diferencias de tasa, y las
+895 fracciones distintas están vigentes en la LIGIE.
+
+- «Ex.» en el arancel es **exento** (tasa 0); «Únicamente:»/«Excepto:» en la
+  acotación es `is_partial`.
+- `valid_from` = 2024-08-26, la última reforma que incluye la compilación. Antes
+  de esa fecha no se afirma ninguna tasa. Reformas posteriores:
+  `NEEDS_VALIDATION`, las vigila el DOF Watcher.
+
+**Cambio de contrato:** la clave única pasa a ser
+`(sector_code, fraction_code, scope_note, valid_from)` con `NULLS NOT DISTINCT`
+(migración `a7c3e91b2d40`). El decreto lista la misma fracción dos veces en un
+sector con acotaciones opuestas y tasas distintas (46 casos: «Únicamente: …» al
+5 %, «Excepto: …» al 10 %). El consumo ya lo admitía: elige la menor tasa y lleva
+su acotación como condición.
+
+**Regla 8ª.** De la propia LIGIE: **24 fracciones 9802 con sector** (la
+Siderúrgica tiene dos: productores directos e indirectos, al 5 %). 14 no nombran
+programa sectorial (la .24 y de la .26 a la .38) y no se cargan.

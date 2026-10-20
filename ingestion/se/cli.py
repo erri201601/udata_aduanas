@@ -12,7 +12,12 @@ una tiene su propio flag. Por ahora sólo existe una: `--cable-acero-china`
 (`docs/RECONOCIMIENTO_CUOTAS_COMPENSATORIAS.md`) no tienen flag todavía
 porque no tienen resolución primaria verificada.
 
+También el Decreto PROSEC (`--prosec`, artículo 5) y la Regla 8ª
+(`--regla-8a`, desde las 9802 de la LIGIE ya cargada), ADR 0011.
+
 Uso:
+    python -m ingestion.se.cli --target local  --prosec
+    python -m ingestion.se.cli --target local  --regla-8a
     python -m ingestion.se.cli --target local  --cable-acero-china
     python -m ingestion.se.cli --target shared --cable-acero-china --raw-only
 """
@@ -21,14 +26,18 @@ from __future__ import annotations
 
 import argparse
 import os
+import tempfile
+from pathlib import Path
 from typing import TYPE_CHECKING
 
+import sqlalchemy as sa
 import structlog
 from apps.api.config import get_settings
+from database.models import ProsecRate, TariffFraction
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from ingestion.se import cuotas_compensatorias, load
+from ingestion.se import cuotas_compensatorias, load, prosec, regla_8a
 from ingestion.snice import raw
 
 if TYPE_CHECKING:
@@ -37,6 +46,7 @@ if TYPE_CHECKING:
 log = structlog.stdlib.get_logger("ingestion.se.cli")
 
 CABLE_ACERO_CHINA_MINIO_KEY = "se/cuota_compensatoria_cable_acero_china_ec32-24.html"
+PROSEC_MINIO_KEY = "se/decreto_prosec_20240826.pdf"
 
 
 def _database_url(target: str) -> str:
@@ -74,6 +84,19 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--prosec",
+        action="store_true",
+        help="Decreto PROSEC, artículo 5: tasas por sector y fracción (ADR 0011).",
+    )
+    parser.add_argument(
+        "--regla-8a",
+        action="store_true",
+        help=(
+            "Regla 8ª: qué 9802 corresponde a cada sector, leído de la LIGIE ya "
+            "cargada. Requiere --prosec cargado antes (los nombres de sector)."
+        ),
+    )
+    parser.add_argument(
         "--raw-only",
         action="store_true",
         help="Solo sube y verifica el RAW en --target; no toca la base.",
@@ -83,8 +106,14 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
+    if args.prosec:
+        return _prosec(args)
+    if args.regla_8a:
+        return _regla_8a(args)
     if not args.raw_only and not args.cable_acero_china:
-        raise SystemExit("--cable-acero-china es obligatorio salvo con --raw-only")
+        raise SystemExit(
+            "--cable-acero-china, --prosec o --regla-8a es obligatorio salvo con --raw-only"
+        )
 
     database_url = None if args.raw_only else _database_url(args.target)
     minio_target = _minio_target(args.target)
@@ -122,6 +151,76 @@ def main(argv: list[str] | None = None) -> int:
         f"OK ({args.target}): {n_insertadas} cuotas compensatorias insertadas (de {len(filas)} leídas)."
     )
     log.info("se.cli.done", target=args.target, parseadas=len(filas), insertadas=n_insertadas)
+    return 0
+
+
+def _prosec(args: argparse.Namespace) -> int:
+    """RAW → PARSED → DATABASE del artículo 5 del Decreto PROSEC."""
+    minio_target = _minio_target(args.target)
+    pdf_bytes = raw.fetch(prosec.SOURCE_URL)
+    capture = raw.store_raw_bytes(
+        pdf_bytes, source_url=prosec.SOURCE_URL, minio_key=PROSEC_MINIO_KEY, target=minio_target
+    )
+    raw.verify_stored(target=minio_target, minio_key=PROSEC_MINIO_KEY)
+    if args.raw_only:
+        print(f"RAW OK ({args.target}): {capture.minio_key}  sha256={capture.content_hash}")
+        return 0
+
+    with tempfile.TemporaryDirectory(prefix="prosec_") as tmp:
+        ruta = Path(tmp) / "prosec.pdf"
+        ruta.write_bytes(pdf_bytes)
+        filas = prosec.parse_prosec(str(ruta))
+    print(
+        f"Parseado: {len(filas)} tasas del artículo 5 en "
+        f"{len({f.sector_code for f in filas})} sectores "
+        f"({sum(f.is_partial for f in filas)} con acotación)."
+    )
+    engine = create_engine(_database_url(args.target))
+    with Session(engine) as session:
+        creadas, omitidas = load.cargar_prosec(
+            session,
+            filas,
+            content_hash=capture.content_hash,
+            minio_key=PROSEC_MINIO_KEY,
+            retrieved_at=capture.retrieved_at,
+        )
+        session.commit()
+    for motivo in omitidas:
+        print(f"NO SE CARGA: {motivo}")
+    print(f"OK ({args.target}): {creadas} tasas PROSEC insertadas.")
+    log.info("se.prosec.cli.done", target=args.target, creadas=creadas, omitidas=len(omitidas))
+    return 0
+
+
+def _regla_8a(args: argparse.Namespace) -> int:
+    """Las 9802 de la LIGIE cargada → su sector PROSEC (sin descarga: el texto
+    oficial ya está en `tariff_fractions`)."""
+    engine = create_engine(_database_url(args.target))
+    with Session(engine) as session:
+        sectores = dict(
+            session.execute(
+                sa.select(ProsecRate.sector_code, ProsecRate.sector_name).distinct()
+            ).tuples()
+        )
+        if not sectores:
+            raise SystemExit("No hay sectores PROSEC cargados: corre antes --prosec.")
+        nueve_ocho = session.execute(
+            sa.select(TariffFraction.code, TariffFraction.description).where(
+                TariffFraction.code.like("9802%"), TariffFraction.valid_to.is_(None)
+            )
+        ).tuples()
+        fracciones, sin_sector = regla_8a.fracciones_regla_8a(list(nueve_ocho), sectores)
+        creadas = load.cargar_regla_8a(session, fracciones)
+        session.commit()
+    for motivo in sin_sector:
+        print(f"SIN SECTOR: {motivo}")
+    print(
+        f"OK ({args.target}): {creadas} fracciones de la Regla 8ª insertadas "
+        f"({len(fracciones)} con sector, {len(sin_sector)} sin)."
+    )
+    log.info(
+        "se.regla_8a.cli.done", target=args.target, creadas=creadas, sin_sector=len(sin_sector)
+    )
     return 0
 
 
