@@ -41,6 +41,8 @@ class PartidaPlan:
     #: concepto incluido y `observed` sin él.
     incrementables_correcto_mxn: Decimal | None = None
     net_weight_kg: Decimal | None = None
+    applied_nom_codes: tuple[str, ...] = ()
+    """Las NOM declaradas en la partida. Vacío = no declara ninguna."""
     identifiers: dict[str, str] | None = None
     anomalies: tuple[AnomalySpec, ...] = ()
 
@@ -95,6 +97,7 @@ def _construir_partida(sec: int, plan: PartidaPlan) -> tuple[dict[str, object], 
         "iva_base_mxn": float(montos.iva_base_mxn),
         "iva_mxn": float(montos.iva_mxn),
         "pais_origen": plan.pais_origen,
+        "applied_nom_codes": list(plan.applied_nom_codes),
     }
     if plan.partida.sku_override is not None:
         observado["sku_override"] = plan.partida.sku_override
@@ -167,6 +170,11 @@ def construir_pedimento(
             "rfc": importador.rfc,
             "name": importador.name,
             "address": importador.address,
+            **(
+                {"prosec_sectors": list(importador.prosec_sectors)}
+                if importador.prosec_sectors
+                else {}
+            ),
         },
         "provider": {
             "name": proveedor.name,

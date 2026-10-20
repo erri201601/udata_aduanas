@@ -34,7 +34,8 @@ def test_parsea_sin_romper_el_contrato_existente() -> None:
 
     corpus = parse_corpus(raw)
 
-    assert len(corpus.pedimentos) == 5
+    # 5 del 13-oct + MISSING_NOM y MISSED_PROSEC del 20-oct.
+    assert len(corpus.pedimentos) == 7
     assert {p.id for p in corpus.product_specs.values()} == set(PRODUCT_CATALOG)
 
 
@@ -138,3 +139,30 @@ def test_las_partidas_de_cable_traen_peso_neto() -> None:
             if parte.product_id in {"P005", "P006", "P007"}:
                 assert parte.observed.get("net_weight_kg") is not None
                 assert parte.observed["net_weight_kg"] > 0
+
+
+def test_missing_nom_declara_la_estufa_sin_su_nom() -> None:
+    corpus = parse_corpus(construir_corpus_nuevo(tasa_de_cambio=_tasa_fija))
+    ped = next(p for p in corpus.pedimentos if p.document_id == "PED_SIM_021")
+    (parte,) = ped.parts
+    assert parte.product_id == "P013"
+    assert parte.observed["applied_nom_codes"] == []
+    (anomalia,) = parte.anomalies
+    assert anomalia.code == "NOM_FALTANTE"
+    assert anomalia.expected == "NOM-025-ENER-2013"
+
+
+def test_missed_prosec_el_importador_opera_en_el_sector_ii() -> None:
+    corpus = parse_corpus(construir_corpus_nuevo(tasa_de_cambio=_tasa_fija))
+    ped = next(p for p in corpus.pedimentos if p.document_id == "PED_SIM_022")
+    assert ped.importer_prosec_sectors == ("II",)
+    (parte,) = ped.parts
+    assert parte.observed["fraccion"] == "73121005", "la del dictamen de César"
+    (anomalia,) = parte.anomalies
+    assert anomalia.code == "PROSEC_NO_APROVECHADO"
+
+
+def test_el_corpus_original_sigue_sin_sectores() -> None:
+    corpus = parse_corpus(construir_corpus_nuevo(tasa_de_cambio=_tasa_fija))
+    otros = [p for p in corpus.pedimentos if p.document_id != "PED_SIM_022"]
+    assert all(p.importer_prosec_sectors == () for p in otros)

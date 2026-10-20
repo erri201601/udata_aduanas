@@ -66,6 +66,7 @@ from core.shadow import VALUE_TOLERANCE
 from database.models import (
     ClassificationDecision,
     GroundTruthRecord,
+    OpportunityFinding,
     Pedimento,
     PedimentoItem,
     Product,
@@ -444,6 +445,26 @@ def consulta_de_hallazgos() -> sa.Select[Any]:
     )
 
 
+def consulta_de_oportunidades():  # type: ignore[no-untyped-def]
+    """Las oportunidades PROSEC con monto de la revisión vigente de cada pedimento."""
+    ultima = (
+        sa.select(ShadowReview.id)
+        .where(ShadowReview.pedimento_id == OpportunityFinding.pedimento_id)
+        .order_by(ShadowReview.created_at.desc())
+        .limit(1)
+        .correlate(OpportunityFinding)
+        .scalar_subquery()
+    )
+    return sa.select(
+        OpportunityFinding.pedimento_item_id, OpportunityFinding.opportunity_type
+    ).where(
+        OpportunityFinding.pedimento_item_id.isnot(None),
+        OpportunityFinding.opportunity_type == "PROSEC",
+        OpportunityFinding.estimated_saving_amount.isnot(None),
+        OpportunityFinding.shadow_review_id == ultima,
+    )
+
+
 def recolectar(
     session: Session, *, escenario: uuid.UUID | None = None
 ) -> tuple[list[Evento], list[Hallazgo], list[str], set[tuple[str, str]]]:
@@ -512,6 +533,18 @@ def recolectar(
         Hallazgo(partida_id=str(f.pedimento_item_id), finding_type=f.finding_type)
         for f in session.scalars(consulta_de_hallazgos()).all()
         if f.pedimento_item_id in partidas
+    ]
+    # LAS OPORTUNIDADES PROSEC CON MONTO (20-oct)
+    #
+    # MISSED_PROSEC no es un error del pedimento: es dinero que no se
+    # aprovechó, y lo encuentra el Opportunity Finder. Sólo cuenta la que lleva
+    # monto —se sabe el sector del importador—: una sin monto es una hipótesis
+    # con condiciones, y contarla como falso positivo sería medir lo que el
+    # §23 manda no afirmar.
+    hallazgos += [
+        Hallazgo(partida_id=str(item_id), finding_type=f"OPPORTUNITY_{tipo}")
+        for item_id, tipo in session.execute(consulta_de_oportunidades()).all()
+        if item_id in partidas
     ]
     sembradas = {
         e.pedimento_item_id

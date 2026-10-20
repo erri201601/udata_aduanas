@@ -57,6 +57,8 @@ ANOMALY_MAP: dict[str, tuple[str, str | None]] = {
     "INCREMENTABLE_FALTANTE": ("MISSING_INCREMENTABLE", None),
     "IDENTIFICADOR_INCORRECTO": ("WRONG_IDENTIFIER", None),
     "SKU_CLASIFICADO_INCONSISTENTE": ("INCONSISTENT_SKU_CLASSIFICATION", None),
+    "NOM_FALTANTE": ("MISSING_NOM", None),
+    "PROSEC_NO_APROVECHADO": ("MISSED_PROSEC", None),
 }
 
 #: Las 6 anomalías de cantidad son INDETECTABLES a propósito (hallazgo de
@@ -134,6 +136,8 @@ class ParsedPedimento:
     #: Flete que la factura cobra aparte, en la divisa del proveedor. `None`
     #: en el corpus original, que no lo traía: no es cero, es «no consta».
     invoice_freight_amount: Decimal | None = None
+    #: Sectores PROSEC del importador (ADR 0011). Vacío en el corpus original.
+    importer_prosec_sectors: tuple[str, ...] = ()
     #: Identificadores de nivel G declarados en el pedimento (ADR 0012).
     identifiers: dict[str, str] = field(default_factory=dict)
 
@@ -206,6 +210,7 @@ def _parse_pedimento(raw: dict[str, Any]) -> ParsedPedimento:
         importer_rfc=importador["rfc"],
         importer_name=importador["name"],
         importer_address=importador["address"],
+        importer_prosec_sectors=tuple(importador.get("prosec_sectors", ())),
         provider_name=proveedor["name"],
         provider_address=proveedor["address"],
         provider_country=proveedor["country"],

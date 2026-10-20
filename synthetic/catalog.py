@@ -246,6 +246,28 @@ PRODUCT_CATALOG: dict[str, ProductFicha] = {
         fraction_code="73231001",
         nico_code="00",
     ),
+    # P013 (20-oct): la primera ficha que no viene del corpus original. Hacía
+    # falta una mercancía cuya fracción exija una NOM SIN acotación para
+    # sembrar MISSING_NOM: ninguna de las 12 la tiene. 7321.11.01 exige la
+    # NOM-025-ENER-2013 (Anexo 2.4.1) y tiene un solo NICO. Producto nuevo:
+    # no toca ninguna ficha con veredicto de César.
+    "P013": ProductFicha(
+        id="P013",
+        name="Estufa de gas doméstica",
+        description=(
+            "ESTUFA DE GAS PARA USO DOMESTICO, 4 QUEMADORES Y HORNO, CUERPO DE ACERO "
+            "ESMALTADO, PARA GAS L.P. Y NATURAL"
+        ),
+        spec={
+            "material": "acero esmaltado",
+            "funcion": "cocinar",
+            "combustible": "gas L.P. y natural",
+            "quemadores": 4,
+            "uso": "domestico",
+        },
+        fraction_code="73211101",
+        nico_code="00",
+    ),
 }
 
 #: Las fracciones de la cuota compensatoria del cable de acero de China

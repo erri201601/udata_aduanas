@@ -18,6 +18,9 @@ class CompanyFicha:
     rfc: str
     name: str
     address: str
+    #: Sectores del Decreto PROSEC en que OPERA (no que esté inscrito), ADR
+    #: 0011. Vacío = no consta, que es lo que tiene el corpus original.
+    prosec_sectors: tuple[str, ...] = ()
 
 
 _PREFIJO_RFC = "SIM260101"

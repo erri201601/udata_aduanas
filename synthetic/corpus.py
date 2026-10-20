@@ -23,11 +23,13 @@ from datetime import date
 from decimal import Decimal
 
 from synthetic.catalog import PRODUCT_CATALOG
-from synthetic.company_generator import generar_importador
+from synthetic.company_generator import CompanyFicha, generar_importador
 from synthetic.errors import (
     fraccion_alternativa_misma_mercancia,
     identificador_incorrecto,
     incrementable_faltante,
+    nom_faltante,
+    prosec_no_aprovechado,
     sku_clasificado_inconsistente,
 )
 from synthetic.pedimento_generator import PartidaPlan, construir_pedimento
@@ -100,6 +102,14 @@ def construir_corpus_nuevo(*, tasa_de_cambio: ResolverFX) -> dict[str, object]:
     # ── PED_SIM_020: rectificación de PED_SIM_016 (§10) ────────────────
     ped20 = _pedimento_rectificacion(indices[4], fechas_entrada[4], tasa_de_cambio, original=ped16)
     pedimentos[ped20["document_id"]] = ped20  # type: ignore[index]
+
+    # ── PED_SIM_021: MISSING_NOM (20-oct) ──────────────────────────────
+    ped21 = _pedimento_nom_faltante(21, date(2026, 9, 18), tasa_de_cambio)
+    pedimentos[ped21["document_id"]] = ped21  # type: ignore[index]
+
+    # ── PED_SIM_022: MISSED_PROSEC (20-oct) ────────────────────────────
+    ped22 = _pedimento_prosec_no_aprovechado(22, date(2026, 9, 21), tasa_de_cambio)
+    pedimentos[ped22["document_id"]] = ped22  # type: ignore[index]
 
     return {
         "ground_truth": pedimentos,
@@ -245,4 +255,67 @@ def _pedimento_rectificacion(
         rectifies_pedimento_number=original["pedimento_number"],  # type: ignore[arg-type]
         rectification_number=1,
         identifiers={"V1": "corrige la rectificación"},
+    )
+
+
+def _pedimento_nom_faltante(
+    indice: int, fecha_entrada: date, tasa_de_cambio: ResolverFX
+) -> dict[str, object]:
+    """Una estufa de gas (7321.11.01) declarada sin la NOM-025-ENER-2013 que
+    su fracción exige sin acotación (Anexo 2.4.1)."""
+    importador = generar_importador(indice - 16, numero_laboratorio=indice)
+    proveedor = elegir_proveedor(1)
+    plan = PartidaPlan(
+        partida=generar_partida(PRODUCT_CATALOG["P013"]),
+        cantidad_umc=30,
+        umc="6",  # pieza
+        igi_rate=Decimal("0.35"),
+        pais_origen=proveedor.country,
+        applied_nom_codes=(),
+        anomalies=(nom_faltante(nom="NOM-025-ENER-2013"),),
+    )
+    return construir_pedimento(
+        document_id=f"PED_SIM_{indice:03d}",
+        pedimento_number=_numero_pedimento(indice),
+        importador=importador,
+        proveedor=proveedor,
+        date_entry=fecha_entrada.isoformat(),
+        date_payment=fecha_entrada.isoformat(),
+        exchange_rate=tasa_de_cambio(fecha_entrada),
+        partidas=[plan],
+    )
+
+
+def _pedimento_prosec_no_aprovechado(
+    indice: int, fecha_entrada: date, tasa_de_cambio: ResolverFX
+) -> dict[str, object]:
+    """Un importador del sector PROSEC II (Electrónica) importa el cable
+    7312.10.05 pagando el arancel general de la LIGIE (35 %), cuando el
+    artículo 5 del Decreto lo deja exento para ese sector (ADR 0011)."""
+    base = generar_importador(indice - 16, numero_laboratorio=indice)
+    importador = CompanyFicha(
+        rfc=base.rfc, name=base.name, address=base.address, prosec_sectors=("II",)
+    )
+    proveedor = elegir_proveedor(0)
+    plan = PartidaPlan(
+        partida=generar_partida(PRODUCT_CATALOG["P006"]),
+        cantidad_umc=40,
+        igi_rate=Decimal("0.35"),
+        pais_origen=proveedor.country,
+        net_weight_kg=Decimal(40) * _KG_POR_METRO_CABLE_18MM,
+        anomalies=(
+            prosec_no_aprovechado(
+                sector="II", tasa_general=Decimal("0.35"), tasa_prosec=Decimal("0")
+            ),
+        ),
+    )
+    return construir_pedimento(
+        document_id=f"PED_SIM_{indice:03d}",
+        pedimento_number=_numero_pedimento(indice),
+        importador=importador,
+        proveedor=proveedor,
+        date_entry=fecha_entrada.isoformat(),
+        date_payment=fecha_entrada.isoformat(),
+        exchange_rate=tasa_de_cambio(fecha_entrada),
+        partidas=[plan],
     )
