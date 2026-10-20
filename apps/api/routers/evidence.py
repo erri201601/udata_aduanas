@@ -68,6 +68,9 @@ class DossierRead(BaseModel):
     """Las diez respuestas, más lo que no se pudo responder."""
 
     decision_id: uuid.UUID
+    folio: str | None = None
+    """`AD-AAAA-NNNNNN` (§17): con lo que se cita la decisión fuera del sistema.
+    `None` sólo si la decisión todavía no se ha escrito."""
     what: str
     why: str
     which_rule: str
@@ -196,6 +199,7 @@ def obtener_dossier(decision_id: uuid.UUID, session: SessionDep) -> DossierRead:
 
     return DossierRead(
         decision_id=decision_id,
+        folio=decision.folio,
         what=dossier.what,
         why=dossier.why,
         which_rule=dossier.which_rule,

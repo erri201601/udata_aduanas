@@ -221,6 +221,16 @@ class ClassificationDecision(
         {"schema": _SCHEMA},
     )
 
+    # El folio de §17 (`AD-2026-000001`): lo que se dicta por teléfono y se cita
+    # en un dictamen; el UUID sigue siendo la clave. Lo asigna la base —una
+    # secuencia y el año de emisión— para que dos escrituras concurrentes nunca
+    # choquen (ADR 0015). Nunca se escribe desde Python.
+    folio: Mapped[str] = mapped_column(
+        sa.String(24),
+        nullable=False,
+        unique=True,
+        server_default=sa.text("intelligence.siguiente_folio_de_decision()"),
+    )
     product_id: Mapped[uuid.UUID | None] = mapped_column(
         sa.ForeignKey("operational.products.id", ondelete="SET NULL"), nullable=True
     )

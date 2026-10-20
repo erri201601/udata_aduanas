@@ -1945,3 +1945,7 @@ code {
   color: var(--acento);
   white-space: nowrap;
 }
+
+/* El folio de §17 (AD-2026-000001): discreto, pero copiable. */
+.folio { margin: 0 0 0.25rem; color: var(--tenue); font-size: 0.85rem; }
+.folio code { user-select: all; }

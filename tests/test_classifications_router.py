@@ -362,6 +362,7 @@ def test_una_decision_ya_dictaminada_lo_dice() -> None:
 
     veredicto = SimpleNamespace(
         id=uuid.uuid4(),
+        folio="AD-2026-000002",
         fraction_code="73053199",
         reasoning="Revisión humana de CESAR: corrige.",
         created_at=datetime(2026, 9, 28, tzinfo=UTC),
@@ -380,6 +381,7 @@ def test_una_decision_ya_dictaminada_lo_dice() -> None:
     assert cuerpo["dictamen"] is not None
     assert cuerpo["dictamen"]["fraction_code"] == "73053199"
     assert "CESAR" in cuerpo["dictamen"]["reasoning"]
+    assert cuerpo["dictamen"]["folio"] == "AD-2026-000002", "se cita por su folio (§17)"
 
 
 def test_un_dictamen_con_fraccion_fuera_de_catalogo_lo_declara() -> None:
@@ -397,6 +399,7 @@ def test_un_dictamen_con_fraccion_fuera_de_catalogo_lo_declara() -> None:
 
     veredicto = SimpleNamespace(
         id=uuid.uuid4(),
+        folio="AD-2026-000002",
         fraction_code="73239399",
         reasoning="Revisión humana de CESAR: corrige.",
         created_at=datetime(2026, 9, 28, tzinfo=UTC),
@@ -426,6 +429,7 @@ def test_un_dictamen_sin_fraccion_no_se_comprueba_contra_el_catalogo() -> None:
 
     veredicto = SimpleNamespace(
         id=uuid.uuid4(),
+        folio="AD-2026-000002",
         fraction_code=None,
         reasoning="Revisión humana de CESAR: confirma que no se puede determinar.",
         created_at=datetime(2026, 9, 28, tzinfo=UTC),
@@ -454,6 +458,7 @@ def test_sin_tarifa_cargada_en_catalogo_es_nulo_y_no_falso() -> None:
 
     veredicto = SimpleNamespace(
         id=uuid.uuid4(),
+        folio="AD-2026-000002",
         fraction_code="73239305",
         reasoning="Revisión humana de CESAR: corrige.",
         created_at=datetime(2026, 9, 28, tzinfo=UTC),

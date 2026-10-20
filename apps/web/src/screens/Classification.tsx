@@ -205,6 +205,12 @@ export function Classification({ decisionInicial = null }: Props = {}) {
         <>
           <ComoSeLeeUnCodigo />
 
+          {/* El folio de §17: con lo que se cita esta decisión fuera de la
+              consola —en un correo, en un dictamen, por teléfono—. */}
+          <p className="folio">
+            Decisión <code>{detalle.folio}</code>
+          </p>
+
           <div className={`veredicto veredicto--${detalle.status.toLowerCase()}`}>
             {detalle.fraction_code ? (
               <>
@@ -265,7 +271,7 @@ export function Classification({ decisionInicial = null }: Props = {}) {
               )}
 
               <p className="dictamen__pie">
-                Se conservan las dos respuestas —la del motor y la de la
+                Dictamen <code>{detalle.dictamen.folio}</code>. Se conservan las dos respuestas —la del motor y la de la
                 persona— a propósito: es lo único que permite medir en qué
                 porcentaje coinciden.
               </p>

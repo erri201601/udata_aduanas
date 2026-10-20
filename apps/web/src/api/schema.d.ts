@@ -1000,6 +1000,8 @@ export interface components {
             estimated_impact_amount?: string | null;
             /** Estimated Impact Amount Currency */
             estimated_impact_amount_currency?: string | null;
+            /** Folio */
+            folio: string;
             /** Candidates */
             candidates?: components["schemas"]["ClassificationCandidateRead"][];
             /** Evidences */
@@ -1262,6 +1264,8 @@ export interface components {
             estimated_impact_amount?: string | null;
             /** Estimated Impact Amount Currency */
             estimated_impact_amount_currency?: string | null;
+            /** Folio */
+            folio: string;
             /** Sku */
             sku?: string | null;
             /** Producto */
@@ -1277,6 +1281,8 @@ export interface components {
              * Format: uuid
              */
             decision_id: string;
+            /** Folio */
+            folio: string;
             /** Fraction Code */
             fraction_code?: string | null;
             /** Reasoning */
@@ -1396,6 +1402,8 @@ export interface components {
              * Format: uuid
              */
             decision_id: string;
+            /** Folio */
+            folio: string;
             /** What */
             what: string;
             /** Why */
@@ -2161,6 +2169,8 @@ export interface components {
             estimated_impact_amount?: string | null;
             /** Estimated Impact Amount Currency */
             estimated_impact_amount_currency?: string | null;
+            /** Folio */
+            folio: string;
             /** Producto */
             producto?: string | null;
             /** Sku */
@@ -3184,6 +3194,8 @@ export interface operations {
         parameters: {
             query?: {
                 product_id?: string | null;
+                /** @description El folio de §17 (`AD-2026-000001`), tal como se citó */
+                folio?: string | null;
                 /** @description Sólo la decisión vigente de cada caso (ADR 0008), primero las resueltas */
                 vigentes?: boolean;
                 limit?: number;

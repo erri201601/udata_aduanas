@@ -53,6 +53,7 @@ class DictamenRead(BaseModel):
     """Lo que una persona decidió sobre una decisión del motor."""
 
     decision_id: uuid.UUID
+    folio: str | None = None
     fraction_code: str | None = None
     """`None` cuando el revisor confirmó que tampoco él puede determinarla:
     coincidir en que no se puede es un resultado, no un hueco."""
@@ -127,6 +128,10 @@ class DecisionEnLista(ClassificationDecisionRead):
 def listar_decisiones(
     session: SessionDep,
     product_id: uuid.UUID | None = None,
+    folio: Annotated[
+        str | None,
+        Query(description="El folio de §17 (`AD-2026-000001`), tal como se citó"),
+    ] = None,
     vigentes_por_caso: Annotated[
         bool,
         Query(
@@ -154,6 +159,8 @@ def listar_decisiones(
     )
     if product_id is not None:
         sentencia = sentencia.where(ClassificationDecision.product_id == product_id)
+    if folio is not None:
+        sentencia = sentencia.where(ClassificationDecision.folio == folio.strip().upper())
 
     if vigentes_por_caso:
         vigente = vigentes()
@@ -247,6 +254,7 @@ def _dictamen(session: SessionDep, veredicto: ClassificationDecision | None) -> 
         return None
     return DictamenRead(
         decision_id=veredicto.id,
+        folio=veredicto.folio,
         fraction_code=veredicto.fraction_code,
         reasoning=veredicto.reasoning,
         created_at=veredicto.created_at,
