@@ -33,6 +33,7 @@ from database.models.operational import (
     SyntheticScenario,
 )
 from database.models.regulatory import (
+    ComparableRuling,
     CompensatoryDuty,
     CompensatoryDutyListing,
     CustomsOffice,
@@ -62,6 +63,7 @@ __all__ = [
     "ClassificationCandidate",
     "ClassificationDecision",
     "Client",
+    "ComparableRuling",
     "CompensatoryDuty",
     "CompensatoryDutyListing",
     "Cove",
