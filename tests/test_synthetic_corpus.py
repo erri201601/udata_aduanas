@@ -149,7 +149,7 @@ def test_missing_nom_declara_la_estufa_sin_su_nom() -> None:
     assert parte.observed["applied_nom_codes"] == []
     (anomalia,) = parte.anomalies
     assert anomalia.code == "NOM_FALTANTE"
-    assert anomalia.expected == "NOM-025-ENER-2013"
+    assert anomalia.expected_value == "NOM-025-ENER-2013"
 
 
 def test_missed_prosec_el_importador_opera_en_el_sector_ii() -> None:
