@@ -60,14 +60,16 @@ def test_carga_de_punta_a_punta_sin_romper_nada(pg_session: Session) -> None:
 
     reporte = load_corpus(pg_session, corpus, seed=20260921)
 
-    assert reporte.pedimentos_creados == 5
+    # 5 del 13-oct + MISSING_NOM y MISSED_PROSEC del 20-oct.
+    assert reporte.pedimentos_creados == 7
     assert reporte.pedimentos_saltados == 0
-    assert reporte.partidas_creadas == 5
+    assert reporte.partidas_creadas == 7
 
     pesos = pg_session.scalars(
         sa.select(PedimentoItem.net_weight_kg).where(PedimentoItem.net_weight_kg.is_not(None))
     ).all()
-    assert len(pesos) == 5
+    # Las 6 de cable; la estufa (P013) no lleva peso.
+    assert len(pesos) == 6
     assert all(p > 0 for p in pesos)
 
     rectificacion = pg_session.scalars(
@@ -102,6 +104,6 @@ def test_es_idempotente_no_duplica_si_se_corre_dos_veces(pg_session: Session) ->
     primera = load_corpus(pg_session, corpus, seed=20260921)
     segunda = load_corpus(pg_session, corpus, seed=20260921)
 
-    assert primera.pedimentos_creados == 5
+    assert primera.pedimentos_creados == 7
     assert segunda.pedimentos_creados == 0
-    assert segunda.pedimentos_saltados == 5
+    assert segunda.pedimentos_saltados == 7
