@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING, Final
 import sqlalchemy as sa
 import structlog
 from apps.api.config import get_settings
+from apps.api.logging import con_corrida, registrar
 from database.models import LegalChunkRecord, TariffFraction, TariffHeading
 from database.repositories.chunks import PostgresChunkStore
 from rag.types import LegalChunk, hash_contenido
@@ -205,10 +206,12 @@ def cargar(session: Session) -> int:
         if f.article not in ya
     ]
     creados = PostgresChunkStore(session).add(chunks)
+    registrar(records=creados)
     log.info("snice.tarifa_chunks.cargado", fragmentos=len(fragmentos), creados=creados)
     return creados
 
 
+@con_corrida("ingestion.snice.tarifa_chunks")
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", required=True, choices=["local"])

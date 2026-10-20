@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 from apps.api.config import get_settings
+from apps.api.logging import con_corrida, registrar
 from database.repositories.exchange import tasa_vigente
 from ingestion.sintetico import corpus_espejo, load
 from ingestion.snice import raw
@@ -60,6 +61,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+@con_corrida("synthetic")
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     if args.target == "shared":
@@ -91,6 +93,7 @@ def main(argv: list[str] | None = None) -> int:
 
         corpus = corpus_espejo.parse_corpus(datos)
         reporte = load.load_corpus(session, corpus, seed=SEED)
+        registrar(records=reporte.pedimentos_creados)
         print(
             f"Pedimentos: {reporte.pedimentos_creados} creados, "
             f"{reporte.pedimentos_saltados} ya estaban · partidas: {reporte.partidas_creadas} · "

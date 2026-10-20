@@ -97,6 +97,7 @@ from apps.api.clasificacion import clasificar_borrador
 from apps.api.db import SessionDep
 from apps.api.dna import cargar_borrador, version_vigente
 from apps.api.fuentes import fuentes_de_la_partida
+from apps.api.logging import registrar
 
 router = APIRouter(prefix="/pedimentos", tags=["pedimentos"])
 
@@ -273,6 +274,7 @@ def revisar(
         )
 
     revision = review_pedimento(lineas, sku_history=historial, client_sectors=sectores)
+    registrar(records=len(partidas), findings=len(revision.findings))
 
     corrida = save_review(
         session,
