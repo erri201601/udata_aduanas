@@ -13,7 +13,7 @@ from decimal import Decimal
 
 import sqlalchemy as sa
 from pgvector.sqlalchemy import Vector
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database.models.base import Base
@@ -784,6 +784,90 @@ class CompensatoryDuty(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Reg
     """Aclaración textual de la fila — por qué `exporter_name` es `NULL` en
     este caso concreto, u otra acotación de la resolución que no cabe en las
     columnas de arriba. Mismo criterio que `FractionNomRequirement.scope_note`."""
+
+
+class CompensatoryDutyListing(
+    UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base
+):
+    """Una fila del Anexo 2.5.1: dónde hay cuota compensatoria (ADR 0017).
+
+    UN ÍNDICE, NO UNA TARIFA
+
+    El anexo lista, por fracción, origen y exportador, las mercancías sujetas a
+    cuota compensatoria, con la cuota escrita en prosa. La regla 2.5.3 del
+    mismo Acuerdo dice que, si el anexo y la resolución discrepan, prevalece la
+    resolución. Por eso aquí la cuota es TEXTO (`duty_text`) y nunca un número:
+    el importe sale de `CompensatoryDuty`, que se carga desde la resolución
+    leída y verificada (ADR 0009). Esta tabla dice dónde mirar.
+
+    UNA FOTO DE NOVIEMBRE DE 2022
+
+    La versión vigente del anexo es la del DOF 25-nov-2022, en vigor desde el
+    12-dic-2022, y no se ha vuelto a actualizar aunque la regla 2.5.4 lo pida
+    cada seis meses. Una cuota eliminada o prorrogada después no se refleja
+    aquí (por ejemplo, las vajillas de China, eliminada en 2026).
+    `latest_resolution_date` es la fecha de la última resolución que el propio
+    anexo cita: quien consulte sabe lo vieja que es la referencia.
+    """
+
+    __tablename__ = "compensatory_duty_listings"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "fraction_code",
+            "origin_country",
+            "product_description",
+            "exporter_text",
+            "first_resolution_date",
+            "valid_from",
+            name="uq_compensatory_duty_listings_fila",
+            postgresql_nulls_not_distinct=True,
+        ),
+        sa.Index(
+            "ix_compensatory_duty_listings_consulta",
+            "origin_country",
+            "fraction_code",
+            "valid_from",
+            "valid_to",
+        ),
+        {"schema": _SCHEMA},
+    )
+
+    product_description: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    """La columna PRODUCTO, tal cual. La cuota sigue a la mercancía que
+    describe la resolución (regla 2.5.1), no sólo a la fracción."""
+
+    fraction_code: Mapped[str] = mapped_column(sa.String(8), nullable=False)
+    """Ocho dígitos, sin puntos. TIGIE 2022, como encabeza el anexo."""
+
+    origin_country: Mapped[str] = mapped_column(sa.String(2), nullable=False)
+    """ISO-2 del ORIGEN. «COREA EUA» en el anexo da dos filas."""
+
+    exporter_text: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    """La columna EMPRESAS, tal cual («TODAS LAS DEMÁS EXPORTADORAS», «STUPP
+    BROS., INC Y TODAS LAS DEMÁS EXPORTADORAS»…). No se normaliza aquí."""
+
+    applies_to_all_others: Mapped[bool] = mapped_column(sa.Boolean, nullable=False)
+    """El texto de empresas incluye «todas las (demás) exportadoras/empresas»:
+    la fila alcanza a un exportador que no se nombra. Si dice «excepto …», la
+    excepción está en `exporter_text`."""
+
+    duty_text: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    """La columna CUOTA COMPENSATORIA, verbatim. Porcentajes, dólares por
+    unidad, precios de referencia o «no se aplica»: no se convierte a número."""
+
+    scope_note: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    """El texto que el anexo pone antes de cualquier exportador: el alcance o
+    la condición del registro entero."""
+
+    resolution_history: Mapped[list[dict[str, str]]] = mapped_column(JSONB, nullable=False)
+    """Las resoluciones que el anexo cita, en orden: `{"tipo", "fecha"}`."""
+
+    first_resolution_date: Mapped[date | None] = mapped_column(sa.Date, nullable=True)
+    """La que originó la cuota. Distingue dos cuotas sobre la misma fracción y
+    origen (la tubería sin costura de China tiene una de 2011 y otra de 2014)."""
+
+    latest_resolution_date: Mapped[date | None] = mapped_column(sa.Date, nullable=True)
+    """La más reciente que cita el anexo. Lo que pasó después, no lo sabe."""
 
 
 class ProsecRate(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base):
