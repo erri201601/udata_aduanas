@@ -134,8 +134,15 @@ PRODUCT_CATALOG: dict[str, ProductFicha] = {
             "lubricado": True,
             "uso": "grua",
         },
-        fraction_code="73121099",
-        nico_code="06",
+        # EL DICTAMEN, NO LA DECLARACIÓN DEL CORPUS (20-oct)
+        #
+        # El corpus original declaraba 73121099 para este cable, y César lo
+        # dictaminó 73121005 NICO 02 en 15 partidas (un 6x36 no cumple «7
+        # alambres»). Tomar la declaración como «correcta» hacía que cada
+        # pedimento limpio generado con este cable saliera con un hallazgo
+        # cierto contado como falso positivo.
+        fraction_code="73121005",
+        nico_code="02",
     ),
     "P007": ProductFicha(
         id="P007",
