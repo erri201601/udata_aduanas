@@ -22,7 +22,7 @@ from core.evidence.errors import (
 from core.evidence.kinds import EvidenceKind
 from core.evidence.types import DocumentRef
 
-pytestmark = pytest.mark.unit
+pytestmark = [pytest.mark.unit, pytest.mark.contract]
 
 OPERACION = date(2024, 3, 15)
 

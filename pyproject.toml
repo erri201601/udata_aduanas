@@ -130,4 +130,6 @@ addopts = "-q --strict-markers"
 markers = [
     "integration: requiere servicios de docker compose levantados",
     "unit: no requiere infraestructura externa",
+    "data_quality: comprueba los datos de la base, no el código (§38)",
+    "contract: protege un contrato que otros consumen (§38)",
 ]
