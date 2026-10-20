@@ -226,3 +226,22 @@ def test_carga_regla_8a_con_la_procedencia_de_la_ligie(pg_session: Session) -> N
     fila = pg_session.query(Regla8aFraction).filter_by(fraction_code="98029999").one()
     assert fila.source_url == PROCEDENCIA["source_url"]
     assert fila.valid_from == date(2000, 1, 1)
+
+
+@pytest.mark.integration
+def test_una_contradiccion_del_decreto_no_se_carga_y_se_retira(pg_session: Session) -> None:  # noqa: F811
+    """El sector XV lista la 7419.80.02 al 5 % y exenta, sin acotación."""
+    from ingestion.se.load import cargar_prosec
+    from ingestion.se.prosec import FilaProsec
+
+    _fraccion(pg_session, "99990003")
+    una = FilaProsec("XV", "Industria del Transporte", "99990003", Decimal("0.05"), None, "x")
+    otra = FilaProsec("XV", "Industria del Transporte", "99990003", Decimal("0"), None, "x")
+    # Como pasó el 20-oct: primero entró una sola versión…
+    cargar_prosec(pg_session, [una], content_hash="a" * 64, minio_key="k")
+    # …y al cargar el decreto completo se ve la contradicción.
+    creadas, omitidas = cargar_prosec(pg_session, [una, otra], content_hash="a" * 64, minio_key="k")
+
+    assert creadas == 0
+    assert any("NEEDS_VALIDATION" in o and "99990003" in o for o in omitidas)
+    assert pg_session.query(ProsecRate).filter_by(fraction_code="99990003").count() == 0
