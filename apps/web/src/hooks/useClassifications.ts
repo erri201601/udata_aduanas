@@ -4,10 +4,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
   fetchClassification,
+  fetchComparables,
   fetchClassifications,
   fetchPrecisionClasificacion,
 } from '../api/client'
 import type {
+  ComparablesRead,
   DecisionEnLista,
   ClassificationDetail,
   PrecisionClasificacion,
@@ -120,4 +122,29 @@ export function usePrecisionClasificacion(): EstadoPrecision {
   }, [])
 
   return { precision, error }
+}
+
+/**
+ * Los casos comparables de la decisión. Un fallo aquí no tumba la pantalla:
+ * son contexto, no la decisión.
+ */
+export function useComparables(decisionId: string | null): ComparablesRead | null {
+  // El resultado va etiquetado con su decisión: al cambiar de decisión, el de
+  // la anterior deja de valer sin tener que vaciarlo dentro del efecto.
+  const [resultado, setResultado] = useState<{ para: string; datos: ComparablesRead } | null>(
+    null,
+  )
+
+  useEffect(() => {
+    if (!decisionId) return
+    const control = new AbortController()
+    fetchComparables(decisionId, control.signal)
+      .then((datos) => setResultado({ para: decisionId, datos }))
+      .catch(() => {
+        // Son contexto, no la decisión: sin comparables la pantalla sigue.
+      })
+    return () => control.abort()
+  }, [decisionId])
+
+  return resultado && resultado.para === decisionId ? resultado.datos : null
 }

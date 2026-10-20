@@ -74,3 +74,20 @@ Las resoluciones son obra del gobierno de EE. UU., de dominio público.
   8479, 8544, 7220, 7304, 7306). Son resoluciones reales y `PUBLIC`, así que se
   quedan. Que el alcance salga de las decisiones es deliberado: es lo que el
   sistema clasifica.
+
+## Actualización 2026-10-20 — en la consola
+
+`GET /classifications/{id}/comparables` toma la HS6 de la fracción de la
+decisión y devuelve hasta 5 resoluciones (`?limite=` hasta 25): primero las
+vigentes y después las más recientes, con el total. Cada una lleva un
+**extracto literal**: la frase en que CBP fija la subpartida, o el HOLDING, o
+el inicio de los hechos. Nunca es un resumen generado. La respuesta trae
+siempre el aviso «no fundamento», y la pantalla de Classification lo muestra en
+la sección «Casos comparables», después de «En qué se sostiene» y separada de
+ella.
+
+**Límite visto en el recorrido.** La HS6 agrupa mercancías que no se parecen:
+para una olla de presión (7615.10) salen una casa de hámster y unos braseros
+de aluminio. El orden es por vigencia y fecha, no por parecido. Ordenar por
+parecido con la ficha exige comparar textos en dos idiomas (fichas en español,
+resoluciones en inglés); es la siguiente mejora.

@@ -13,6 +13,7 @@
 
 import { useState } from 'react'
 
+import { CasosComparables } from '../components/CasosComparables'
 import { ComoSeLeeUnCodigo } from '../components/ComoSeLeeUnCodigo'
 import { DarVeredicto } from '../components/DarVeredicto'
 import { ContestarPregunta } from '../components/ContestarPregunta'
@@ -23,6 +24,7 @@ import { fundamenta } from '../components/evidenceKinds'
 import {
   useClassification,
   useClassifications,
+  useComparables,
   usePrecisionClasificacion,
 } from '../hooks/useClassifications'
 import type { PrecisionClasificacion } from '../api/client'
@@ -158,6 +160,7 @@ export function Classification({ decisionInicial = null }: Props = {}) {
   const [revisor, setRevisor] = useState('')
   const activa = elegida ?? decisionInicial ?? decisiones[0]?.id ?? null
   const { detalle, error, cargando } = useClassification(activa)
+  const comparables = useComparables(detalle?.fraction_code ? detalle.id : null)
 
   const candidatos = detalle?.candidates ?? []
   const descartados = candidatos.filter((c) => !c.is_selected)
@@ -514,6 +517,8 @@ export function Classification({ decisionInicial = null }: Props = {}) {
               )}
             </div>
           </div>
+
+          <CasosComparables datos={comparables} />
         </>
       )}
 

@@ -16,7 +16,7 @@ Sólo lectura. Persistir decisiones es del orquestador.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated
 
 import sqlalchemy as sa
@@ -334,3 +334,77 @@ def caso_vigente(decision_id: uuid.UUID, session: SessionDep) -> CasoVigente:
         decision=obtener_decision(vigente.id, session),
         dictamen_del_caso=_dictamen(session, dictamen_de(session, ficha.id)),
     )
+
+
+# ── Casos comparables (ADR 0019) ──────────────────────────────────────────────
+
+#: Lo que la pantalla tiene que decir siempre que enseña un comparable.
+AVISO_COMPARABLES = (
+    "Casos de otra aduana, no fundamento jurídico en México. Sólo coinciden los "
+    "seis dígitos del Sistema Armonizado; la fracción de EE. UU. no se traduce a "
+    "TIGIE."
+)
+
+
+class ComparableRead(BaseModel):
+    authority: str
+    ruling_number: str
+    ruling_date: date
+    subject: str
+    tariff_codes: list[str]
+    url: str
+    is_revoked: bool
+    revoked_by: list[str]
+    extracto: str
+    """Texto literal de la resolución, nunca generado (ADR 0019)."""
+    extracto_de: str
+    """`subpartida`, `holding`, `hechos` o `inicio`: de dónde salió el extracto."""
+    data_origin: str
+
+
+class ComparablesRead(BaseModel):
+    hs6: str | None
+    """`None` cuando la decisión no tiene fracción: sin subpartida no hay con
+    qué comparar."""
+    total: int = 0
+    comparables: list[ComparableRead] = Field(default_factory=list)
+    aviso: str = AVISO_COMPARABLES
+
+
+@router.get(
+    "/{decision_id}/comparables",
+    summary="Resoluciones de otras aduanas para la misma subpartida (no fundamento)",
+)
+def comparables(
+    decision_id: uuid.UUID,
+    session: SessionDep,
+    limite: Annotated[int, Query(ge=1, le=25)] = 5,
+) -> ComparablesRead:
+    from database.repositories.comparables import comparables_de, criterio_de
+
+    decision = session.get(ClassificationDecision, decision_id)
+    if decision is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "decisión no encontrada")
+    if not decision.fraction_code:
+        return ComparablesRead(hs6=None)
+    hs6 = decision.fraction_code[:6]
+    total, filas = comparables_de(session, hs6, limite=limite)
+    salida: list[ComparableRead] = []
+    for f in filas:
+        extracto, origen = criterio_de(f.full_text)
+        salida.append(
+            ComparableRead(
+                authority=f.authority,
+                ruling_number=f.ruling_number,
+                ruling_date=f.ruling_date,
+                subject=f.subject,
+                tariff_codes=list(f.tariff_codes),
+                url=f.source_url,
+                is_revoked=f.is_revoked,
+                revoked_by=list(f.revoked_by),
+                extracto=extracto,
+                extracto_de=origen,
+                data_origin=f.data_origin,
+            )
+        )
+    return ComparablesRead(hs6=hs6, total=total, comparables=salida)

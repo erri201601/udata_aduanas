@@ -16,6 +16,8 @@ export type AttributeStatus = ProductAttributeRead['status']
 export type DecisionEnLista = components['schemas']['DecisionEnLista']
 export type ClassificationDetail = components['schemas']['ClassificationDetail']
 export type CasoVigente = components['schemas']['CasoVigente']
+export type ComparablesRead = components['schemas']['ComparablesRead']
+export type ComparableRead = components['schemas']['ComparableRead']
 export type ClassificationCandidateRead = components['schemas']['ClassificationCandidateRead']
 export type EvidenceRecordRead = components['schemas']['EvidenceRecordRead']
 export type EvidenceKind = NonNullable<EvidenceRecordRead['evidence_kind']>
@@ -215,6 +217,18 @@ export async function fetchClassification(
   signal?: AbortSignal,
 ): Promise<ClassificationDetail> {
   return pedir<ClassificationDetail>(`/classifications/${decisionId}`, signal)
+}
+
+/**
+ * Resoluciones de otras aduanas (hoy, CBP) para la misma subpartida HS6.
+ * Casos comparables, nunca fundamento (ADR 0019): la respuesta trae el aviso
+ * que la pantalla tiene que enseñar.
+ */
+export async function fetchComparables(
+  decisionId: string,
+  signal?: AbortSignal,
+): Promise<ComparablesRead> {
+  return pedir<ComparablesRead>(`/classifications/${decisionId}/comparables`, signal)
 }
 
 /**
