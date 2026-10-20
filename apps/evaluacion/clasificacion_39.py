@@ -104,6 +104,15 @@ class Resultado:
     contra_declaracion: int = 0
     """Cuántas se midieron contra la fracción declarada en el pedimento."""
 
+    hs_acerto: int = 0
+    """Contestó y los 6 primeros dígitos (la subpartida del SA) son los de la
+    verdad (§39 «HS accuracy»): acierta el sistema armonizado aunque falle la
+    apertura nacional."""
+    hs_fallo: int = 0
+    revision_humana: int = 0
+    """De las medibles, cuántas mandó el motor a revisión humana (§39 «human
+    review rate»)."""
+
     nico_acerto: int = 0
     """Fracción acertada y NICO entregado igual al de la verdad."""
     nico_fallo: int = 0
@@ -141,6 +150,14 @@ class Resultado:
         return (Decimal(self.contestadas) / Decimal(self.medibles) * 100).quantize(Decimal("0.01"))
 
     @property
+    def tasa_revision_humana(self) -> Decimal | None:
+        if not self.medibles:
+            return None
+        return (Decimal(self.revision_humana) / Decimal(self.medibles) * 100).quantize(
+            Decimal("0.01")
+        )
+
+    @property
     def nico_contestadas(self) -> int:
         return self.nico_acerto + self.nico_fallo
 
@@ -161,6 +178,14 @@ _CON_FRACCION_FIABLE = sa.text(
              ORDER BY d.created_at DESC
              LIMIT 1
            ) AS propuesta,
+           (
+             SELECT d.requires_human_review
+             FROM intelligence.classification_decisions d
+             WHERE d.product_id = i.product_id
+               AND d.data_origin <> 'HUMAN_VALIDATED'
+             ORDER BY d.created_at DESC
+             LIMIT 1
+           ) AS revision_humana,
            -- EL DICTAMEN HUMANO DE LA MISMA FICHA, SI LO HAY
            --
            -- Se empareja por `product_dna_id` y no por partida: el criterio de
@@ -304,6 +329,8 @@ def medir(sesion: sa.orm.Session, nicos: NicoCatalog | None = None) -> Resultado
         if not fila.hubo_decision:
             salida.sin_decision += 1
             continue
+        if getattr(fila, "revision_humana", False):
+            salida.revision_humana += 1
         if fila.propuesta is None:
             salida.se_abstuvo += 1
             continue
@@ -314,6 +341,11 @@ def medir(sesion: sa.orm.Session, nicos: NicoCatalog | None = None) -> Resultado
         else:
             verdad, de_donde = fila.declarada, "declaración"
             salida.contra_declaracion += 1
+
+        if fila.propuesta[:6] == verdad[:6]:
+            salida.hs_acerto += 1
+        else:
+            salida.hs_fallo += 1
 
         if fila.propuesta == verdad:
             salida.acerto += 1
@@ -373,6 +405,21 @@ def informe(r: Resultado) -> str:
 
     if r.cobertura is not None:
         lineas.append(f"COBERTURA  {r.cobertura} % — cuántas veces se atrevió a contestar")
+    if r.contestadas:
+        lineas.append(
+            f"HS (6 dígitos)  {Decimal(r.hs_acerto * 100) / r.contestadas:.2f} % "
+            f"({r.hs_acerto} de {r.contestadas}) · margen al 95 %: "
+            f"±{wilson(r.hs_acerto, r.contestadas):.2f} puntos"
+        )
+    if r.tasa_revision_humana is not None:
+        lineas.append(
+            f"REVISIÓN HUMANA  {r.tasa_revision_humana} % de las medibles "
+            f"({r.revision_humana} de {r.medibles}) quedaron para una persona"
+        )
+        lineas.append(
+            "  (una abstención por INSUFFICIENT_INFORMATION pide un dato al importador,"
+            " no un revisor: no cuenta aquí)"
+        )
 
     lineas += [
         "",
