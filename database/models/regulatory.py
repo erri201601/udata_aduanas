@@ -1057,3 +1057,72 @@ class LegalChunkRecord(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Reg
     text: Mapped[str] = mapped_column(sa.Text, nullable=False)
     # NULL hasta que se calcule: un chunk se puede insertar antes de vectorizar.
     embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
+
+
+class ComparableRuling(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base):
+    """Una resolución de clasificación de otra aduana: un caso comparable (ADR 0019).
+
+    NO ES FUNDAMENTO JURÍDICO EN MÉXICO
+
+    El maestro (§11) la pide como «casos internacionales comparables:
+    producto → HS6 → razonamiento». Una resolución de CBP dice cómo clasificó
+    EE. UU. una mercancía en SU arancel. Sirve para ver qué se consideró y
+    cómo se razonó, pero nunca fundamenta una fracción mexicana. Por eso vive
+    aquí y no en `legal_chunks`: el RAG jurídico no la puede citar como ley.
+
+    NO SE CONVIERTE HTS10 A TIGIE
+
+    `tariff_codes` guarda los códigos tal como los escribe la autoridad
+    (HTSUS, CN/TARIC). Sólo `hs6_codes` se compara con México: los seis
+    primeros dígitos son del Sistema Armonizado, comunes a los dos países.
+    Más allá de la subpartida, cada país divide a su manera.
+    """
+
+    __tablename__ = "comparable_rulings"
+    __table_args__ = (
+        sa.UniqueConstraint("authority", "ruling_number", name="uq_comparable_rulings_fila"),
+        sa.Index("ix_comparable_rulings_hs6", "hs6_codes", postgresql_using="gin"),
+        sa.Index(
+            "ix_comparable_rulings_vigencia", "authority", "ruling_number", "valid_from", "valid_to"
+        ),
+        {"schema": _SCHEMA},
+    )
+
+    authority: Mapped[str] = mapped_column(sa.String(16), nullable=False)
+    """Quién resolvió: `CBP` (EE. UU.). `EBTI` (Unión Europea) cuando se cargue."""
+
+    ruling_number: Mapped[str] = mapped_column(sa.String(32), nullable=False)
+    collection: Mapped[str | None] = mapped_column(sa.String(16), nullable=True)
+    """En CBP, `ny` (New York, resoluciones de importación) o `hq` (Headquarters)."""
+
+    ruling_date: Mapped[date] = mapped_column(sa.Date, nullable=False)
+    subject: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    categories: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+
+    tariff_codes: Mapped[list[str]] = mapped_column(
+        ARRAY(sa.String(32)), nullable=False, server_default="{}"
+    )
+    """Tal como los escribe la autoridad: «7323.93.0030», «9903.88.03»…"""
+
+    hs6_codes: Mapped[list[str]] = mapped_column(
+        ARRAY(sa.String(6)), nullable=False, server_default="{}"
+    )
+    """Los seis dígitos del Sistema Armonizado de cada código, sin puntos.
+    Los capítulos 98 y 99 (disposiciones nacionales de EE. UU.) se excluyen:
+    no son Sistema Armonizado."""
+
+    full_text: Mapped[str] = mapped_column(sa.Text, nullable=False)
+
+    is_revoked: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.false())
+    """La autoridad la revocó o la dejó sin efecto. Se conserva: saber que un
+    criterio se abandonó también es información."""
+
+    revoked_by: Mapped[list[str]] = mapped_column(
+        ARRAY(sa.String(32)), nullable=False, server_default="{}"
+    )
+    modified_by: Mapped[list[str]] = mapped_column(
+        ARRAY(sa.String(32)), nullable=False, server_default="{}"
+    )
+    related_rulings: Mapped[list[str]] = mapped_column(
+        ARRAY(sa.String(32)), nullable=False, server_default="{}"
+    )
