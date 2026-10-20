@@ -1,7 +1,7 @@
 """prosec_rates: la acotación forma parte de la clave
 
 Revision ID: a7c3e91b2d40
-Revises: e4b8c1d2f5a6
+Revises: 67e3c2617b54
 Create Date: 2026-10-20 12:00:00.000000+00:00
 
 El Decreto PROSEC lista la misma fracción dos veces en un sector, con
@@ -18,7 +18,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "a7c3e91b2d40"
-down_revision: str | None = "e4b8c1d2f5a6"
+down_revision: str | None = "67e3c2617b54"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
