@@ -160,7 +160,9 @@ class ClassificationDecisionCreate(ClassificationDecisionBase):
 
 
 class ClassificationDecisionRead(ClassificationDecisionBase, IdentifiedRead):
-    pass
+    folio: str | None = None
+    """`AD-AAAA-NNNNNN` (§17). Lo asigna la base al escribir: no se crea ni se
+    actualiza. `None` sólo en una decisión que todavía no se ha escrito."""
 
 
 class ClassificationDecisionUpdate(CanonicalModel):
