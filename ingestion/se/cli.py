@@ -23,6 +23,7 @@ Uso:
     python -m ingestion.se.cli --target local  --regla-8a
     python -m ingestion.se.cli --target local  --cable-acero-china
     python -m ingestion.se.cli --target local  --anexo-2-5-1
+    python -m ingestion.se.cli --target local  --anexo-2-4-1
     python -m ingestion.se.cli --target shared --cable-acero-china --raw-only
 """
 
@@ -42,7 +43,7 @@ from database.models import ProsecRate, TariffFraction
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from ingestion.se import anexo_2_5_1, cuotas_compensatorias, load, prosec, regla_8a
+from ingestion.se import anexo_2_4_1, anexo_2_5_1, cuotas_compensatorias, load, prosec, regla_8a
 from ingestion.snice import raw
 
 if TYPE_CHECKING:
@@ -94,6 +95,14 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="Decreto PROSEC, artículo 5: tasas por sector y fracción (ADR 0011).",
     )
     parser.add_argument(
+        "--anexo-2-4-1",
+        action="store_true",
+        help=(
+            "Anexo 2.4.1 (NOM) en su versión del DOF 25-nov-2022, vigente desde el "
+            "12-dic-2022; cierra la versión anterior."
+        ),
+    )
+    parser.add_argument(
         "--anexo-2-5-1",
         action="store_true",
         help="Anexo 2.5.1: dónde hay cuota compensatoria, como índice y sin importe (ADR 0017).",
@@ -121,11 +130,14 @@ def main(argv: list[str] | None = None) -> int:
         return _prosec(args)
     if args.anexo_2_5_1:
         return _anexo_2_5_1(args)
+    if args.anexo_2_4_1:
+        return _anexo_2_4_1(args)
     if args.regla_8a:
         return _regla_8a(args)
     if not args.raw_only and not args.cable_acero_china:
         raise SystemExit(
-            "--cable-acero-china, --prosec, --anexo-2-5-1 o --regla-8a es obligatorio "
+            "--cable-acero-china, --prosec, --anexo-2-4-1, --anexo-2-5-1 o --regla-8a "
+            "es obligatorio "
             "salvo con --raw-only"
         )
 
@@ -248,6 +260,50 @@ def _anexo_2_5_1(args: argparse.Namespace) -> int:
     registrar(records=creadas, errors=len(omitidas))
     print(f"OK ({args.target}): {creadas} filas del Anexo 2.5.1 insertadas.")
     log.info("se.anexo_2_5_1.cli.done", target=args.target, creadas=creadas, omitidas=len(omitidas))
+    return 0
+
+
+def _anexo_2_4_1(args: argparse.Namespace) -> int:
+    """RAW → PARSED → DATABASE del Anexo 2.4.1, versión DOF 25-nov-2022.
+
+    Es la misma nota del DOF que el 2.5.1: el acuerdo reforma los dos anexos.
+    """
+    from apps.api.logging import registrar
+
+    minio_target = _minio_target(args.target)
+    datos = raw.fetch(load.FUENTE_2022_11)
+    clave = f"se/anexo_2_4_1_20221125_{raw.content_hash(datos)[:16]}.html"
+    capture = raw.store_raw_bytes(
+        datos, source_url=load.FUENTE_2022_11, minio_key=clave, target=minio_target
+    )
+    raw.verify_stored(target=minio_target, minio_key=clave)
+    if args.raw_only:
+        print(f"RAW OK ({args.target}): {capture.minio_key}  sha256={capture.content_hash}")
+        return 0
+
+    filas = anexo_2_4_1.parse_html(datos.decode("utf-8"))
+    print(
+        f"Parseado: {len(filas)} correlaciones fracción → NOM — "
+        f"{len({f.fraction_code for f in filas})} fracciones, "
+        f"{len({f.nom_code for f in filas})} NOM."
+    )
+    engine = create_engine(_database_url(args.target))
+    with Session(engine) as session:
+        creadas, cerradas, omitidas = load.cargar_version_2022_11(
+            session,
+            filas,
+            content_hash=capture.content_hash,
+            minio_key=clave,
+            retrieved_at=capture.retrieved_at,
+        )
+        session.commit()
+    for motivo in omitidas:
+        print(f"NO SE CARGA: {motivo}")
+    registrar(records=creadas, errors=len(omitidas), cerradas=cerradas)
+    print(
+        f"OK ({args.target}): {creadas} correlaciones insertadas; "
+        f"{cerradas} de la versión anterior cerradas al {load.VIGENCIA_2022_11}."
+    )
     return 0
 
 

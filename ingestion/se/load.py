@@ -13,7 +13,7 @@ dice.
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Final
 
@@ -23,6 +23,7 @@ from database.models import (
     CompensatoryDuty,
     CompensatoryDutyListing,
     FractionNomRequirement,
+    Nico,
     ProsecRate,
     Regla8aFraction,
     TariffFraction,
@@ -101,6 +102,125 @@ def cargar(
     session.flush()
     log.info("se.anexo241.cargado", creadas=creadas, recibidas=len(filas))
     return creadas
+
+
+#: La versión del Anexo 2.4.1 publicada en el DOF el 25-nov-2022 (ADR 0003,
+#: actualización del 20-oct-2026). Sustituye entera a la de `VIGENCIA` y rige
+#: desde el 12-dic-2022, el día en que entró en vigor la LIGIE 2022 (Cuarta
+#: Resolución de Modificaciones a las RGCE 2022, punto SEGUNDO; ADR 0017).
+VIGENCIA_2022_11: Final[date] = date(2022, 12, 12)
+PUBLICACION_2022_11: Final[date] = date(2022, 11, 25)
+FUENTE_2022_11: Final[str] = "https://dof.gob.mx/nota_detalle.php?codigo=5672457&fecha=25/11/2022"
+
+
+def cargar_version_2022_11(
+    session: Session,
+    filas: Sequence[FilaNom],
+    *,
+    content_hash: str,
+    minio_key: str,
+    retrieved_at: datetime | None = None,
+) -> tuple[int, int, list[str]]:
+    """Escribe la versión de noviembre de 2022 y cierra la anterior. Idempotente.
+
+    Si el anexo lista la NOM sólo para algunos NICO de la fracción, la fila
+    queda acotada («Sólo los NICO …»): las acotadas no alimentan
+    `MISSING_NOM`, y decir que toda la fracción exige la NOM acusaría a quien
+    importa otro NICO.
+
+    La versión anterior no se borra: una operación de mayo a diciembre de 2022
+    se evalúa con ella (regla 5). Se le pone `valid_to` = el día antes.
+
+    Devuelve `(creadas, cerradas, omitidas)`.
+    """
+    retrieved_at = retrieved_at or datetime.now(UTC)
+    desde = VIGENCIA_2022_11
+    en_vigor = sa.and_(
+        TariffFraction.valid_from <= desde,
+        sa.or_(TariffFraction.valid_to.is_(None), TariffFraction.valid_to >= desde),
+    )
+    vigentes = set(session.scalars(sa.select(TariffFraction.code).where(en_vigor)))
+    nicos_de: dict[str, set[str]] = {}
+    for codigo, nico in session.execute(
+        sa.select(TariffFraction.code, Nico.code)
+        .join(Nico, Nico.tariff_fraction_id == TariffFraction.id)
+        .where(
+            en_vigor,
+            Nico.valid_from <= desde,
+            sa.or_(Nico.valid_to.is_(None), Nico.valid_to >= desde),
+        )
+    ).tuples():
+        nicos_de.setdefault(codigo, set()).add(nico)
+
+    existentes = set(
+        session.execute(
+            sa.select(
+                FractionNomRequirement.fraction_code,
+                FractionNomRequirement.nom_code,
+                FractionNomRequirement.numeral,
+            ).where(FractionNomRequirement.valid_from == desde)
+        ).tuples()
+    )
+    creadas = 0
+    omitidas: list[str] = []
+    for fila in filas:
+        if fila.fraction_code not in vigentes:
+            omitidas.append(
+                f"{fila.fraction_code} {fila.nom_code}: no está en la LIGIE el {desde} "
+                "(NEEDS_VALIDATION)"
+            )
+            continue
+        clave = (fila.fraction_code, fila.nom_code, fila.numeral)
+        if clave in existentes:
+            continue
+        existentes.add(clave)
+        nota = fila.scope_note
+        catalogo = nicos_de.get(fila.fraction_code, set())
+        listados = set(fila.nicos_listados)
+        if listados and catalogo and listados < catalogo:
+            solo = f"Sólo los NICO {', '.join(sorted(listados))} de la fracción."
+            nota = f"{solo} {nota}" if nota else solo
+        session.add(
+            FractionNomRequirement(
+                fraction_code=fila.fraction_code,
+                nom_code=fila.nom_code,
+                numeral=fila.numeral,
+                scope_note=nota,
+                data_origin="OFFICIAL",
+                valid_from=desde,
+                published_at=PUBLICACION_2022_11,
+                source_url=FUENTE_2022_11,
+                source_document=(
+                    f"Anexo 2.4.1 del Acuerdo de Reglas de la SE, DOF 25-nov-2022 ({minio_key})"
+                ),
+                content_hash=content_hash,
+                retrieved_at=retrieved_at,
+            )
+        )
+        creadas += 1
+
+    anteriores = sa.and_(
+        FractionNomRequirement.valid_from < desde,
+        FractionNomRequirement.valid_to.is_(None),
+        FractionNomRequirement.source_url == FUENTE,
+    )
+    cerradas = session.scalar(
+        sa.select(sa.func.count()).select_from(FractionNomRequirement).where(anteriores)
+    )
+    session.execute(
+        sa.update(FractionNomRequirement)
+        .where(anteriores)
+        .values(valid_to=desde - timedelta(days=1))
+    )
+    session.flush()
+    log.info(
+        "se.anexo241.version_2022_11",
+        creadas=creadas,
+        cerradas=cerradas,
+        recibidas=len(filas),
+        omitidas=len(omitidas),
+    )
+    return creadas, cerradas or 0, omitidas
 
 
 def cargar_cuotas_compensatorias(

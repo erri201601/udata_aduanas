@@ -42,8 +42,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from datetime import date
-from html.parser import HTMLParser
 from typing import Final
+
+from ingestion.se.tablas_html import cuadricula, tablas
 
 SOURCE_URL: Final = "https://dof.gob.mx/nota_detalle.php?codigo=5672457&fecha=25/11/2022"
 SOURCE_DOCUMENT: Final = (
@@ -135,76 +136,6 @@ class ParsedListing:
 # ── HTML → cuadrícula ────────────────────────────────────────────────────────
 
 
-@dataclass
-class _Celda:
-    partes: list[str] = field(default_factory=list)
-    filas: int = 1
-    columnas: int = 1
-
-    @property
-    def texto(self) -> str:
-        crudo = re.sub(r"[ \t\xa0]+", " ", "".join(self.partes))
-        return "\n".join(linea.strip() for linea in crudo.split("\n") if linea.strip())
-
-
-class _Tablas(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
-        self.tablas: list[list[list[_Celda]]] = []
-        self._pila: list[list[list[_Celda]]] = []
-        self._celda: _Celda | None = None
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        a = dict(attrs)
-        if tag == "table":
-            self._pila.append([])
-        elif tag == "tr" and self._pila:
-            self._pila[-1].append([])
-        elif tag in ("td", "th") and self._pila and self._pila[-1]:
-            self._celda = _Celda(
-                filas=int(a.get("rowspan") or 1), columnas=int(a.get("colspan") or 1)
-            )
-        elif tag in ("br", "div", "p") and self._celda is not None:
-            self._celda.partes.append("\n")
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag in ("td", "th") and self._celda is not None and self._pila:
-            self._pila[-1][-1].append(self._celda)
-            self._celda = None
-        elif tag == "table" and self._pila:
-            self.tablas.append(self._pila.pop())
-
-    def handle_data(self, data: str) -> None:
-        if self._celda is not None:
-            self._celda.partes.append(data)
-
-
-def _cuadricula(filas: list[list[_Celda]]) -> list[list[str]]:
-    """Resuelve `rowspan`/`colspan`: cada fila sale con todas sus columnas."""
-    salida: list[list[str]] = []
-    pendientes: dict[int, tuple[str, int]] = {}
-    for fila in filas:
-        linea: list[str] = []
-        columna, k = 0, 0
-        while k < len(fila) or columna in pendientes:
-            if columna in pendientes:
-                texto, quedan = pendientes.pop(columna)
-                if quedan > 1:
-                    pendientes[columna] = (texto, quedan - 1)
-                linea.append(texto)
-                columna += 1
-                continue
-            celda = fila[k]
-            k += 1
-            for _ in range(celda.columnas):
-                linea.append(celda.texto)
-                if celda.filas > 1:
-                    pendientes[columna] = (celda.texto, celda.filas - 1)
-                columna += 1
-        salida.append(linea)
-    return salida
-
-
 def _es_encabezado(fila: list[str]) -> bool:
     return len(fila) == len(ENCABEZADO) and all(
         c.upper().startswith(e) for c, e in zip(fila, ENCABEZADO, strict=True)
@@ -217,9 +148,7 @@ def filas_del_anexo(html: str) -> list[list[str]]:
     El anexo empieza en la tabla cuyo encabezado es el de `ENCABEZADO` y sigue
     en las tablas de seis columnas inmediatamente posteriores.
     """
-    lector = _Tablas()
-    lector.feed(html)
-    cuadriculas = [_cuadricula(t) for t in lector.tablas]
+    cuadriculas = [cuadricula(t.filas) for t in tablas(html)]
     inicio = next((i for i, g in enumerate(cuadriculas) if g and _es_encabezado(g[0])), None)
     if inicio is None:
         raise AnexoIlegibleError("no se encontró la tabla con el encabezado del Anexo 2.5.1")

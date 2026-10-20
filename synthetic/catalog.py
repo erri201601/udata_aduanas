@@ -248,9 +248,12 @@ PRODUCT_CATALOG: dict[str, ProductFicha] = {
     ),
     # P013 (20-oct): la primera ficha que no viene del corpus original. Hacía
     # falta una mercancía cuya fracción exija una NOM SIN acotación para
-    # sembrar MISSING_NOM: ninguna de las 12 la tiene. 7321.11.01 exige la
-    # NOM-025-ENER-2013 (Anexo 2.4.1) y tiene un solo NICO. Producto nuevo:
-    # no toca ninguna ficha con veredicto de César.
+    # sembrar MISSING_NOM: ninguna de las 12 la tiene. 7321.11.01 tiene un
+    # solo NICO y, en el Anexo 2.4.1 vigente (DOF 25-nov-2022), exige sin
+    # acotación la NOM-010-SESH-2012; la NOM-025-ENER-2013 va con «Excepto:
+    # asadores y aparatos portátiles…» (ADR 0003, actualización 20-oct). Se
+    # eligió con la versión de mayo de 2022, que sólo pedía la NOM-025.
+    # Producto nuevo: no toca ninguna ficha con veredicto de César.
     "P013": ProductFicha(
         id="P013",
         name="Estufa de gas doméstica",

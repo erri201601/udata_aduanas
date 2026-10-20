@@ -709,8 +709,17 @@ def _nom_exigidas(
     ).all()
 
     exigidas = tuple(dict.fromkeys(f.nom_code for f in filas if not f.scope_note))
-    acotadas = tuple(f"{f.nom_code} — Únicamente: {f.scope_note}" for f in filas if f.scope_note)
+    acotadas = tuple(f"{f.nom_code} — {_acotacion(f.scope_note)}" for f in filas if f.scope_note)
     return exigidas, acotadas
+
+
+def _acotacion(nota: str) -> str:
+    """Desde la versión del 25-nov-2022 la acotación se guarda con su palabra
+    («Únicamente: …», «Excepto: …», «Sólo los NICO …»). Las filas de la versión
+    anterior sólo guardaban el texto de un «Únicamente»."""
+    if re.match(r"(?:[ÚU]nicamente|Excepto|Sólo)\b", nota):
+        return nota
+    return f"Únicamente: {nota}"
 
 
 def _nico_esperado(

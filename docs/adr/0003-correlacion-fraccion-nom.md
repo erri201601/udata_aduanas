@@ -176,3 +176,50 @@ reforma propia ni heredada — no se inventa una fecha.
   ese numeral.
 - Corrección de número (2.2.1 → 2.4.1) ya aplicada en los 9 sitios del
   repo que lo citaban mal (PR #162, 2026-09-30).
+
+## Actualización 2026-10-20 — la versión vigente es la del 25-nov-2022
+
+**Lo que estaba mal.** Se cargó el Anexo 2.4.1 del Acuerdo de Reglas en su
+versión de mayo de 2022 (`snice/anexo_2_4_1_noms_20220516.pdf`), vigente desde
+el 2022-05-16 y sin fecha de fin. El Acuerdo publicado en el DOF el
+**25-nov-2022** (`codigo=5672457`) sustituyó el anexo completo: su punto Único
+reforma «los Anexos 2.2.1, 2.2.2, 2.4.1 y 2.5.1». Esa versión rige desde el
+**12-dic-2022**, el día en que entró en vigor la LIGIE 2022 (ADR 0017). Así que
+toda operación posterior a esa fecha se evaluaba con un anexo derogado.
+
+Se notaba en los datos: 24 de las fracciones cargadas no existen en la LIGIE
+vigente. Eran códigos de la TIGIE 2020 (por ejemplo, 7321.11.02, que en 2022
+pasó a ser 7321.11.91).
+
+**Decisión.**
+
+1. **Se carga la versión del 25-nov-2022** desde el HTML del DOF
+   (`anexo_2_4_1.parse_html`). Es la fuente tabular que este ADR echaba de
+   menos: la celda de la NOM abarca la fracción y sus NICO, así que se puede
+   saber qué NICO la llevan. Resultado: 603 correlaciones, 434 fracciones y 75
+   NOM, todas en la LIGIE vigente.
+2. **La versión anterior no se borra, se cierra:** `valid_to = 2022-12-11`. Una
+   operación de mayo a diciembre de 2022 se sigue evaluando con ella (regla 5).
+3. **Cada NOM se queda con SU acotación**, que es el texto que la sigue hasta la
+   siguiente NOM de la celda. La lectura del PDF le pegaba a todas las NOM de
+   una celda la primera acotación. En 8528.59.01, NOM-001 salía con el texto de
+   NOM-019, y hay 114 celdas con varias NOM.
+4. **«Excepto:» también acota.** Antes sólo «Únicamente:» contaba como límite,
+   así que una NOM con «Excepto: …» se exigía a toda la fracción. Desde esta
+   versión la acotación se guarda con su palabra («Únicamente: …»,
+   «Excepto: …») y la lectura (`pedimentos._acotacion`) sólo le antepone
+   «Únicamente:» a las filas de la versión anterior.
+5. **NOM listada sólo para algunos NICO.** Si el anexo la lista para un
+   subconjunto de los NICO vigentes de la fracción, la fila queda acotada
+   («Sólo los NICO …»). Decir que toda la fracción la exige acusaría a quien
+   importa otro NICO.
+
+**Efecto en el corpus.** La estufa sintética P013 (7321.11.01) pasa de exigir
+NOM-025-ENER-2013 a exigir **NOM-010-SESH-2012**. La NOM-025 queda acotada
+(«Excepto: asadores y aparatos portátiles…»). El escenario `MISSING_NOM`
+declara la estufa sin ninguna NOM, así que sigue siendo un `MISSING_NOM`, sólo
+que con otra NOM. La medición está en el PR.
+
+**Deuda que sigue.** El numeral 3 (etiquetado) sigue fuera. Tampoco hay
+columna de NICO en `fraction_nom_requirements`: la precisión por NICO se
+expresa como acotación, no como clave.
