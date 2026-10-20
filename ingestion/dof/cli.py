@@ -27,7 +27,7 @@ from apps.api.config import get_settings
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from ingestion.dof import anexo22, load, rgce
+from ingestion.dof import anexo22, apendice_8_requisitos, load, rgce
 from ingestion.snice import raw
 
 if TYPE_CHECKING:
@@ -109,6 +109,16 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--apendice8-requisitos",
+        action="store_true",
+        help=(
+            "Carga regulatory.pedimento_identifier_requirements (ADR 0012): las "
+            "9 reglas «clave de pedimento → identificador» del Apéndice 8, cada "
+            "una comprobada contra el texto del PDF crudo antes de cargarse. "
+            "Idempotente."
+        ),
+    )
+    parser.add_argument(
         "--raw-only",
         action="store_true",
         help="Solo sube y verifica el RAW en --target; no toca la base.",
@@ -124,9 +134,11 @@ def main(argv: list[str] | None = None) -> int:
         and not args.rgce
         and not args.split_long_rules
         and not args.apendice8_texto
+        and not args.apendice8_requisitos
     ):
         raise SystemExit(
-            "--anexo22, --rgce, --split-long-rules o --apendice8-texto es "
+            "--anexo22, --rgce, --split-long-rules, --apendice8-texto o "
+            "--apendice8-requisitos es "
             "obligatorio salvo con --raw-only"
         )
     if args.chunks and not args.rgce:
@@ -183,6 +195,23 @@ def main(argv: list[str] | None = None) -> int:
             primera_pagina, ultima_pagina = anexo22.paginas_de_apendice(str(anexo22_path), 8)
             identificadores_texto = anexo22.parse_identifiers_con_texto(
                 str(anexo22_path), first_page=primera_pagina, last_page=ultima_pagina
+            )
+
+        requisitos = None
+        if args.apendice8_requisitos:
+            lineas_a22 = anexo22.extract_text(str(anexo22_path))
+            bloque_8 = anexo22.appendix_block(
+                lineas_a22, anexo22.find_appendix_headings(lineas_a22), 8
+            )
+            requisitos, sin_sostener = apendice_8_requisitos.verificar_contra_el_documento(
+                bloque_8, apendice_8_requisitos.requisitos_apendice_8()
+            )
+            for motivo in sin_sostener:
+                print(f"NO SE CARGA: {motivo}")
+            log.info(
+                "dof.apendice8_requisitos.verificado",
+                verificadas=len(requisitos),
+                sin_sostener=len(sin_sostener),
             )
 
         reglas = None
@@ -293,6 +322,16 @@ def main(argv: list[str] | None = None) -> int:
                 excluidas=[r.rule_number for r in excluidas],
                 chunks=n_chunks,
             )
+
+        if requisitos is not None:
+            n_req = load.load_identifier_requirements(
+                session,
+                requisitos=requisitos,
+                content_hash=anexo22_capture.content_hash,
+                retrieved_at=anexo22_capture.retrieved_at,
+            )
+            print(f"OK ({args.target}): --apendice8-requisitos: {n_req} reglas nuevas.")
+            log.info("dof.apendice8_requisitos.cli.done", target=args.target, creadas=n_req)
 
         if identificadores_texto is not None:
             creadas, enriquecidas = load.add_missing_identifier_text(

@@ -101,3 +101,23 @@ una.
 
 No cambia nada visible: la tabla está vacía y la laguna se mantiene, ahora con
 un texto que dice lo que falta de verdad.
+
+## La carga (19-oct)
+
+Persona 2 hizo el trabajo de fondo en el #242 (13-oct) y Persona 1 lo
+rehízo sobre esta tabla (`--apendice8-requisitos` del CLI del DOF):
+
+- **9 reglas, no 10**, todas de nivel `G` y `condition_kind = PEDIMENTO_KEY`.
+  `TD` exige la clave **K1**, no `TD` (el reconocimiento del 6-oct se
+  equivocaba); `AF` no nombra ninguna clave y no se carga.
+- El «Supuesto de aplicación» de esas claves **no estaba cargado** en
+  `pedimento_identifiers` (son las filas que el parser del 6-oct no pudo
+  leer). Por eso cada regla se comprueba al cargar contra el texto del PDF
+  crudo de MinIO (`verificar_contra_el_documento`): si la frase «clave de
+  documento X» no aparece en la fila del identificador, la regla no se carga.
+  La ventana acaba en la fila siguiente, para que la frase de la regla vecina
+  no valide una falsa.
+- `ME` y `VT` (categoría c, por fracción/NICO) quedan para otra carga.
+
+Con el corpus actual (16 pedimentos `A1`) ninguna regla aplica: el Espejo pasa
+de «no se sabe» a «ninguno de los estructurables», que es la respuesta correcta.
