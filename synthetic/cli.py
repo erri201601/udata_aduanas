@@ -42,7 +42,10 @@ log = structlog.stdlib.get_logger("synthetic.cli")
 #: Mismo escenario y semilla que el corpus original: es una ampliación, no otro
 #: corpus (plan de Persona 2, `synthetic/README.md`).
 SEED = 20260921
-JSON_KEY = "sintetico/corpus_espejo_v1_ampliacion_20261013.json"
+#: El nombre lleva el hash del contenido: un corpus regenerado es OTRO RAW, y
+#: con un nombre fijo sobrescribía el que ya sostenía los pedimentos cargados
+#: (§12: el RAW no se reescribe).
+JSON_KEY_PREFIJO = "sintetico/corpus_espejo_v1_ampliacion_"
 SOURCE_URL = "synthetic://corpus_espejo_v1/ampliacion_20261013"
 
 
@@ -79,10 +82,11 @@ def main(argv: list[str] | None = None) -> int:
 
         datos = construir_corpus_nuevo(tasa_de_cambio=fix)
         contenido = json.dumps(datos, ensure_ascii=False, sort_keys=True, indent=1).encode()
+        clave = f"{JSON_KEY_PREFIJO}{raw.content_hash(contenido)[:16]}.json"
         captura = raw.store_raw_bytes(
-            contenido, source_url=SOURCE_URL, minio_key=JSON_KEY, target=minio_target
+            contenido, source_url=SOURCE_URL, minio_key=clave, target=minio_target
         )
-        raw.verify_stored(target=minio_target, minio_key=JSON_KEY)
+        raw.verify_stored(target=minio_target, minio_key=clave)
         print(f"RAW OK: {captura.minio_key}  sha256={captura.content_hash}")
 
         corpus = corpus_espejo.parse_corpus(datos)
