@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 from apps.api.config import get_settings
+from apps.api.logging import con_corrida
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -90,6 +91,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+@con_corrida("ingestion.sintetico")
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     minio_target = _minio_target(args.target)

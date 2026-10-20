@@ -10,14 +10,14 @@ dev server de Persona 1.
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from apps.api.config import get_settings
 from apps.api.db import dispose_engine
-from apps.api.logging import configure_logging, get_logger
+from apps.api.logging import configure_logging, get_logger, registrar, run_context
 from apps.api.routers import (
     classifications,
     copilot,
@@ -87,6 +87,21 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.middleware("http")
+    async def corrida_por_peticion(request: Request, call_next: Any) -> Any:
+        """§37: cada operación que escribe o calcula es una corrida con `run_id`.
+
+        Las lecturas (GET) no: llenarían el log de corridas de pantallas que se
+        refrescan. El `run_id` viaja en el contexto, así que los logs de los
+        motores que la petición llama lo llevan sin saberlo.
+        """
+        if request.method in ("GET", "HEAD", "OPTIONS"):
+            return await call_next(request)
+        with run_context("api", method=request.method, path=request.url.path):
+            respuesta = await call_next(request)
+            registrar(status_code=respuesta.status_code, errors=int(respuesta.status_code >= 500))
+            return respuesta
 
     app.include_router(health.router)
     app.include_router(products.router)

@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 from apps.api.config import UrlCompartidaAusenteError, get_settings, url_de_postgres
+from apps.api.logging import con_corrida
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -75,6 +76,7 @@ def informe(resumen: Resumen, antes: dict[str, int], despues: dict[str, int]) ->
     return "\n".join(lineas)
 
 
+@con_corrida("graph.proyectar")
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(

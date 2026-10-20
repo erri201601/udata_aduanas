@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING
 import sqlalchemy as sa
 import structlog
 from apps.api.config import get_settings
+from apps.api.logging import con_corrida
 from core.llm.errors import ProviderResponseError
 from core.llm.registry import build_provider
 from database.models import LegalChunkRecord
@@ -135,6 +136,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+@con_corrida("rag.backfill_embeddings")
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     provider = build_provider(name="openai")
