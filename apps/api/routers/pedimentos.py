@@ -884,8 +884,12 @@ def _skus_de(session: SessionDep, partidas: Sequence[PedimentoItem]) -> dict[uui
     ids = [p.product_id for p in partidas if p.product_id is not None]
     if not ids:
         return {}
+    # `.all()` antes de `dict()`: un `Result` tiene `keys()` y `dict()` lo toma
+    # por un mapping e intenta indexarlo — TypeError en cada revisión (20-oct).
     por_producto = dict(
-        session.execute(sa.select(Product.id, Product.sku).where(Product.id.in_(ids))).tuples()
+        session.execute(sa.select(Product.id, Product.sku).where(Product.id.in_(ids)))
+        .tuples()
+        .all()
     )
     return {
         p.id: por_producto[p.product_id]
