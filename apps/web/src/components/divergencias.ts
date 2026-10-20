@@ -67,6 +67,11 @@ export const DIVERGENCIAS: Record<string, Divergencia> = {
     etiqueta: 'Unidad de medida',
     explica: 'La unidad declarada no existe en el Apéndice 7 del Anexo 22.',
   },
+  MISSING_INCREMENTABLE: {
+    etiqueta: 'Incrementables',
+    explica:
+      'Se declararon menos incrementables que el flete y el seguro que la factura cobra aparte.',
+  },
   INCONSISTENT_SKU_CLASSIFICATION: {
     etiqueta: 'SKU clasificado distinto',
     explica: 'El mismo SKU se clasificó de otra forma en operaciones anteriores.',

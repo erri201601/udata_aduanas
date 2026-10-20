@@ -64,7 +64,7 @@ class Client(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, SyntheticMixi
     prosec_sector_codes: Mapped[list[str] | None] = mapped_column(
         ARRAY(sa.String(8)), nullable=True
     )
-    """Sectores del Decreto PROSEC (art. 4) en que opera el importador (ADR 0011).
+    """Sectores del Decreto PROSEC (art. 4) en que opera el importador (ADR 0014).
 
     `None` = no se sabe; `[]` = consta que no opera en ninguno. No dice que
     esté INSCRITO en el programa: eso es una condición que se comprueba fuera
@@ -218,6 +218,13 @@ class Pedimento(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, SyntheticM
     is_simulation: Mapped[bool] = mapped_column(
         sa.Boolean, nullable=False, server_default=sa.false()
     )
+    rectifies_pedimento_id: Mapped[uuid.UUID | None] = mapped_column(
+        sa.ForeignKey(f"{_SCHEMA}.pedimentos.id", ondelete="RESTRICT"), nullable=True
+    )
+    """El pedimento original que éste rectifica (§10, ADR 0014). `NULL` en un
+    original. `RESTRICT`: un original rectificado no se borra."""
+    rectification_number: Mapped[int | None] = mapped_column(sa.SmallInteger, nullable=True)
+    """1, 2… en las rectificaciones sucesivas de un mismo original."""
     identifiers: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     """Identificadores declarados a nivel pedimento (nivel `G` del Apéndice 8),
     clave → complementos. Los de partida van en `pedimento_items.identifiers`."""
@@ -282,3 +289,10 @@ class PedimentoItem(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Synthe
         ARRAY(sa.String(16)), nullable=False, server_default="{}"
     )
     identifiers: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    net_weight_kg: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    """Peso neto de la partida, en kilogramos -- campo real del Anexo 22, no
+    antes modelado. `quantity`/`commercial_unit` declaran la UMC comercial
+    (p. ej. metro lineal de cable), que no siempre es kilogramo; sin este
+    campo, una cuota compensatoria fijada por kilogramo (ADR 0009, cable de
+    acero) no tiene de dónde sacar el importe -- queda como hallazgo sin
+    monto. `NULL` = no consta, nunca 0."""

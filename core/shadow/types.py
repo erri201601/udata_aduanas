@@ -75,6 +75,8 @@ class DeclaredItem(BaseModel):
     """Unidad de medida comercial declarada (clave del Apéndice 7, Anexo 22)."""
     igi_amount: Decimal | None = None
     vat_amount: Decimal | None = None
+    incrementables: Decimal | None = None
+    """Incrementables declarados en la partida (flete, seguro…), en MXN."""
     exchange_rate: Decimal | None = None
     """Tipo de cambio declarado en el PEDIMENTO (no en la partida) — se
     repite igual en cada línea, mismo patrón que las tasas de DTA/IVA que
@@ -139,6 +141,11 @@ class ExpectedItem(BaseModel):
 
     Las tasas las pasa quien llama; el motor no las inventa (§8.1).
     """
+
+    minimum_incrementables: Decimal | None = None
+    """Lo mínimo que la partida debería declarar de incrementables: su parte
+    del flete y el seguro que la factura cobra aparte, en MXN. `None` = la
+    factura no los cobra aparte o no está ligada, y no se puede comprobar."""
 
     sources: dict[str, tuple[SourceRef, ...]] = Field(default_factory=dict)
     """De dónde sale cada expectativa, por el `field` de la divergencia que

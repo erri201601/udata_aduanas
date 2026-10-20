@@ -62,6 +62,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal
 from typing import Any, Final
@@ -78,6 +79,7 @@ from database.models import (
     InvoiceItem,
     Pedimento,
     PedimentoItem,
+    Product,
     Supplier,
 )
 from database.repositories import save_review
@@ -206,6 +208,9 @@ def revisar(
         else None
     )
 
+    skus = _skus_de(session, partidas)
+    historial = _historial_de_skus(session, pedimento, set(skus.values()))
+
     for partida in partidas:
         esperada = _construir_espejo(session, partida, fecha, catalogo, peticion)
         if esperada is not None and reglas is not None:
@@ -252,6 +257,7 @@ def revisar(
                     partida,
                     exchange_rate=pedimento.exchange_rate,
                     document_identifiers=pedimento.identifiers,
+                    sku=skus.get(partida.id),
                 ),
                 expected=esperada,
                 transaction_value=valor,
@@ -266,7 +272,7 @@ def revisar(
             )
         )
 
-    revision = review_pedimento(lineas, client_sectors=sectores)
+    revision = review_pedimento(lineas, sku_history=historial, client_sectors=sectores)
 
     corrida = save_review(
         session,
@@ -288,6 +294,7 @@ def _declarada(
     *,
     exchange_rate: Decimal | None,
     document_identifiers: dict[str, Any] | None = None,
+    sku: str | None = None,
 ) -> DeclaredItem:
     """La partida tal como viene en el pedimento, sin interpretarla.
 
@@ -306,9 +313,11 @@ def _declarada(
         applied_nom_codes=tuple(partida.applied_nom_codes or ()),
         identifiers=dict(partida.identifiers or {}),
         document_identifiers=dict(document_identifiers or {}),
+        sku=sku,
         unit=partida.commercial_unit,
         igi_amount=partida.igi_amount,
         vat_amount=partida.vat_amount,
+        incrementables=partida.incrementables,
         exchange_rate=exchange_rate,
         cc_amount=partida.cc_amount,
     )
@@ -548,6 +557,60 @@ def _fiscal_esperado(
     return igi, iva, derivaciones
 
 
+def _incrementables_minimos(
+    session: SessionDep, partida: PedimentoItem, fecha: date
+) -> tuple[Decimal | None, str | None]:
+    """La parte de esta partida del flete y el seguro que su factura cobra aparte.
+
+    Art. 65 de la Ley Aduanera: el flete y el seguro hasta el lugar de
+    importación se suman al precio pagado cuando no están incluidos en él. Si
+    la factura los cobra APARTE, no lo están, y lo declarado como
+    incrementables no puede quedar por debajo.
+
+    Se reparte entre las partidas de la misma factura en proporción a su
+    precio pagado, y se convierte con el FIX de la fecha. `None` si la factura
+    no los trae (el corpus original no los tiene), si no hay precio pagado o si
+    falta el tipo de cambio: no se puede comprobar, que no es «está bien».
+    """
+    if partida.invoice_item_id is None or partida.price_paid is None:
+        return None, None
+    factura = session.scalar(
+        sa.select(Invoice)
+        .join(InvoiceItem, InvoiceItem.invoice_id == Invoice.id)
+        .where(InvoiceItem.id == partida.invoice_item_id)
+    )
+    if factura is None or (factura.freight_amount is None and factura.insurance_amount is None):
+        return None, None
+    cobrado = (factura.freight_amount or Decimal("0")) + (factura.insurance_amount or Decimal("0"))
+    moneda = (
+        factura.freight_amount_currency or factura.insurance_amount_currency or factura.currency
+    )
+    if moneda == "MXN":
+        tasa = Decimal("1")
+    else:
+        tasa_fix = tasa_vigente(session, on_date=fecha, currency=moneda)
+        if tasa_fix is None:
+            return None, None
+        tasa = tasa_fix
+    total_partidas = session.scalar(
+        sa.select(sa.func.sum(PedimentoItem.price_paid))
+        .join(InvoiceItem, InvoiceItem.id == PedimentoItem.invoice_item_id)
+        .where(
+            InvoiceItem.invoice_id == factura.id,
+            PedimentoItem.pedimento_id == partida.pedimento_id,
+        )
+    )
+    if not total_partidas:
+        return None, None
+    parte = partida.price_paid / total_partidas
+    minimo = (cobrado * tasa * parte).quantize(_CENTAVOS)
+    derivacion = (
+        f"(flete + seguro de la factura {factura.invoice_number}: {cobrado} {moneda}) × "
+        f"FIX {tasa} × parte de la partida ({partida.price_paid} / {total_partidas}) = {minimo}"
+    )
+    return minimo, derivacion
+
+
 def _espejo_documental(
     session: SessionDep,
     partida: PedimentoItem,
@@ -561,6 +624,11 @@ def _espejo_documental(
     tipo_de_cambio = _tipo_de_cambio_esperado(session, partida, fecha)
     aplica_cuota, monto_cuota = _cuota_compensatoria_esperada(session, partida, fecha)
     igi, iva, derivaciones = _fiscal_esperado(partida, fecha, catalogo, peticion)
+    minimo_incrementables, derivacion_incrementables = _incrementables_minimos(
+        session, partida, fecha
+    )
+    if derivacion_incrementables:
+        derivaciones = {**derivaciones, "incrementables": derivacion_incrementables}
     # `None` y `False` dicen cosas distintas: sin catálogo cargado no se puede
     # afirmar que una unidad no exista, y acusar ahí sería culpar al pedimento
     # de un hueco nuestro.
@@ -573,6 +641,7 @@ def _espejo_documental(
         "igi_amount": igi,
         "vat_amount": iva,
         "derivations": derivaciones,
+        "minimum_incrementables": minimo_incrementables,
         "declared_unit_is_known": unidad_conocida,
         "country_of_origin": pais,
         "origin_source": ORIGEN_DEL_PROVEEDOR if pais else None,
@@ -808,6 +877,48 @@ def _dictamen_de_la_ficha(
         f"del {veredicto.created_at.date().isoformat()}"
     )
     return veredicto.fraction_code, veredicto.nico_code, fuente
+
+
+def _skus_de(session: SessionDep, partidas: Sequence[PedimentoItem]) -> dict[uuid.UUID, str]:
+    """El SKU de cada partida, por el producto ligado. Sin producto, sin SKU."""
+    ids = [p.product_id for p in partidas if p.product_id is not None]
+    if not ids:
+        return {}
+    por_producto = dict(
+        session.execute(sa.select(Product.id, Product.sku).where(Product.id.in_(ids))).tuples()
+    )
+    return {
+        p.id: por_producto[p.product_id]
+        for p in partidas
+        if p.product_id is not None and p.product_id in por_producto
+    }
+
+
+def _historial_de_skus(session: SessionDep, pedimento: Pedimento, skus: set[str]) -> dict[str, str]:
+    """La última fracción declarada para cada SKU en OTRO pedimento anterior.
+
+    Alimenta `INCONSISTENT_SKU_CLASSIFICATION` (§25), que el Espejo sabía
+    detectar y nadie le pasaba el historial: `sku_history` llegaba siempre en
+    `None` (lo señaló Persona 2, 13-oct). Sólo operaciones de fecha anterior:
+    una posterior no es historia, y compararla haría depender el resultado
+    del orden en que se revisan los pedimentos.
+    """
+    if not skus:
+        return {}
+    filas = session.execute(
+        sa.select(Product.sku, PedimentoItem.declared_fraction_code)
+        .join(PedimentoItem, PedimentoItem.product_id == Product.id)
+        .join(Pedimento, Pedimento.id == PedimentoItem.pedimento_id)
+        .where(
+            Product.sku.in_(skus),
+            Pedimento.id != pedimento.id,
+            Pedimento.operation_date < pedimento.operation_date,
+            PedimentoItem.declared_fraction_code.isnot(None),
+        )
+        .order_by(Pedimento.operation_date)
+    ).all()
+    # El último gana: el orden ascendente deja en el dict la más reciente.
+    return {fila.sku: fila.declared_fraction_code for fila in filas if fila.declared_fraction_code}
 
 
 def _valor(partida: PedimentoItem) -> Money | None:

@@ -26,7 +26,7 @@ permite reconstruir CUÁLES características faltan, sin adivinar.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -46,6 +46,17 @@ ANOMALY_MAP: dict[str, tuple[str, str | None]] = {
     "IVA_BASE_INCORRECTA": ("WRONG_VALUE", "iva_base"),
     "IVA_IMPORTE_INCORRECTO": ("WRONG_VALUE", "iva_amount"),
     "VALOR_ADUANA_INCONSISTENTE": ("WRONG_VALUE", "customs_value"),
+    # Los 3 siguientes los produce `synthetic/` (§24/§25 maestro, 13-oct) —
+    # ninguno estaba en el corpus original (`corpus_espejo_v1_20260921.json`,
+    # generado fuera del repo). MISSING_NOM/MISSED_PROSEC/MISSED_PREFERENCE
+    # quedan fuera de este mapa a propósito, las tres por la misma razón:
+    # ninguna de las 12 fichas de catálogo (`synthetic/catalog.py`) tiene
+    # una fracción con NOM/PROSEC/preferencia REAL ya cargada que la
+    # habilite -- afirmarlo sin esa fuente violaría §8.1 del maestro. Ver
+    # `synthetic/README.md` (sección "qué falta y por qué").
+    "INCREMENTABLE_FALTANTE": ("MISSING_INCREMENTABLE", None),
+    "IDENTIFICADOR_INCORRECTO": ("WRONG_IDENTIFIER", None),
+    "SKU_CLASIFICADO_INCONSISTENTE": ("INCONSISTENT_SKU_CLASSIFICATION", None),
 }
 
 #: Las 6 anomalías de cantidad son INDETECTABLES a propósito (hallazgo de
@@ -115,6 +126,16 @@ class ParsedPedimento:
     provider_currency: str
     totals_valor_aduana_mxn: Decimal
     parts: list[ParsedPartida]
+    #: Clave del `pedimento_number` que este documento rectifica, o `None`
+    #: si es un original (§10 maestro, ADR 0014). Claves ausentes en el JSON
+    #: anterior a esta carga siguen parseando como `None` -- aditivo.
+    rectifies_pedimento_number: str | None = None
+    rectification_number: int | None = None
+    #: Flete que la factura cobra aparte, en la divisa del proveedor. `None`
+    #: en el corpus original, que no lo traía: no es cero, es «no consta».
+    invoice_freight_amount: Decimal | None = None
+    #: Identificadores de nivel G declarados en el pedimento (ADR 0012).
+    identifiers: dict[str, str] = field(default_factory=dict)
 
     @property
     def trade_flow(self) -> str:
@@ -192,6 +213,14 @@ def _parse_pedimento(raw: dict[str, Any]) -> ParsedPedimento:
         provider_currency=proveedor["currency"],
         totals_valor_aduana_mxn=_d(raw["totals"]["valor_aduana_mxn"]),
         parts=[_parse_partida(p) for p in raw["parts"]],
+        rectifies_pedimento_number=raw.get("rectifies_pedimento_number"),
+        rectification_number=raw.get("rectification_number"),
+        identifiers=dict(raw.get("identifiers", {})),
+        invoice_freight_amount=(
+            _d(raw["invoice"]["freight_amount"])
+            if raw.get("invoice", {}).get("freight_amount") is not None
+            else None
+        ),
     )
 
 

@@ -212,6 +212,10 @@ def _create_invoice(
         currency=ped.provider_currency,
         total_amount=total_extranjero,
         total_amount_currency=ped.provider_currency,
+        freight_amount=ped.invoice_freight_amount,
+        freight_amount_currency=(
+            ped.provider_currency if ped.invoice_freight_amount is not None else None
+        ),
         data_origin=DATA_ORIGIN,
         synthetic_scenario_id=scenario.id,
         seed=scenario.seed,
@@ -359,10 +363,19 @@ def _create_product_con_dna(
     `P012`), aunque cada partida tenga su propio `Product`+`sku`.
     """
     faltantes = _faltantes_de(parte, spec)
+    # `sku_override` (en `observed`) rompe a propósito la unicidad por
+    # documento -- es lo que permite que dos partidas de pedimentos
+    # DISTINTOS comparen como "mismo SKU" para `INCONSISTENT_SKU_
+    # CLASSIFICATION` (§25 maestro), sin volver a compartir la fila
+    # `Product` que se revirtió el 22-sep (ver docstring de esta función):
+    # cada partida sigue con su propio `Product`+`ProductDna` propios, sólo
+    # el texto de `sku` coincide entre los dos. Ausente en el 100% del
+    # corpus original -- aditivo.
+    sku = parte.observed.get("sku_override") or f"{document_id}-{parte.sec}"
     product = Product(
         client_id=client.id,
         supplier_id=supplier.id,
-        sku=f"{document_id}-{parte.sec}",
+        sku=sku,
         model=spec.id,
         commercial_name=parte.commercial_description[:200],
         description=parte.commercial_description,
@@ -480,6 +493,12 @@ def _create_pedimento_item(
         price_paid_currency=MXN,
         incrementables=_d(observado["incrementables_mxn"]),
         incrementables_currency=MXN,
+        # Los tres siguientes son `None`/`[]`/`{}` en el 100% del corpus
+        # original (ninguna de las 181 partidas los traía) -- `.get()` con
+        # el mismo default que la columna, aditivo.
+        net_weight_kg=_d(observado["net_weight_kg"]) if "net_weight_kg" in observado else None,
+        applied_nom_codes=list(observado.get("applied_nom_codes", [])),
+        identifiers=dict(observado.get("identifiers", {})),
         data_origin=DATA_ORIGIN,
         synthetic_scenario_id=scenario.id,
         seed=scenario.seed,
@@ -534,6 +553,24 @@ def load_pedimento(
     if existente is not None:
         return None, 0, 0
 
+    rectifies_pedimento_id = None
+    if ped.rectifies_pedimento_number:
+        original = (
+            session.query(Pedimento)
+            .filter_by(pedimento_number=ped.rectifies_pedimento_number)
+            .one_or_none()
+        )
+        if original is None:
+            # El original tiene que entrar primero -- nunca se inventa una
+            # rectificación sin el documento que rectifica (§8.1 maestro,
+            # aplicado a datos sintéticos: ni siquiera aquí se afirma una
+            # relación que no se puede resolver).
+            raise ValueError(
+                f"{ped.document_id} rectifica {ped.rectifies_pedimento_number}, que no "
+                "está cargado -- el original debe procesarse primero"
+            )
+        rectifies_pedimento_id = original.id
+
     client = _get_or_create_client(session, ped, scenario)
     supplier = _get_or_create_supplier(session, ped, scenario)
     invoice = _create_invoice(session, ped, client=client, supplier=supplier, scenario=scenario)
@@ -553,6 +590,9 @@ def load_pedimento(
         customs_value=ped.totals_valor_aduana_mxn,
         customs_value_currency=MXN,
         is_simulation=True,
+        rectifies_pedimento_id=rectifies_pedimento_id,
+        rectification_number=ped.rectification_number,
+        identifiers=dict(ped.identifiers),
         data_origin=DATA_ORIGIN,
         synthetic_scenario_id=scenario.id,
         seed=scenario.seed,

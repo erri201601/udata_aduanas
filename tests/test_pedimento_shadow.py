@@ -63,6 +63,9 @@ def esperado(**kw: object) -> ExpectedItem:
         # construye `False` (ver docstring del campo) -- pero el TIPO sí lo
         # admite, y sin esto ningún test podría afirmar "pedimento limpio".
         "compensatory_duty_applies": False,
+        # Explícito: la factura no cobra flete aparte, así que lo mínimo de
+        # incrementables es cero y la comprobación se hizo.
+        "minimum_incrementables": Decimal("0"),
     }
     base.update(kw)
     return ExpectedItem(**base)  # type: ignore[arg-type]

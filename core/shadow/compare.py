@@ -343,6 +343,29 @@ def compare_item(declared: DeclaredItem, expected: ExpectedItem) -> list[Diverge
                     ),
                 )
 
+    # ── Incrementables (art. 65) ─────────────────────────────────────────────
+    # Si la factura cobra flete o seguro aparte, lo declarado como
+    # incrementable no puede ser menor que la parte de esta partida. Con la
+    # misma tolerancia que el valor: el reparto entre partidas y el tipo de
+    # cambio redondean.
+    if expected.minimum_incrementables is not None and declared.incrementables is not None:
+        minimo = expected.minimum_incrementables
+        faltante = minimo - declared.incrementables
+        if minimo > 0 and faltante / minimo > VALUE_TOLERANCE:
+            emitir(
+                DivergenceType.MISSING_INCREMENTABLE,
+                "incrementables",
+                str(declared.incrementables),
+                str(minimo),
+                (
+                    f"La factura cobra aparte flete y seguro por {minimo} MXN para esta "
+                    f"partida y se declararon {declared.incrementables} de incrementables: "
+                    f"faltan {faltante}. El valor en aduana queda bajo, y con él el IGI y "
+                    "el IVA."
+                ),
+                derivacion=expected.derivations.get("incrementables"),
+            )
+
     # ── Valor en aduana ──────────────────────────────────────────────────────
     if expected.customs_value is not None and declared.customs_value is not None:
         if declared.customs_value_currency != expected.customs_value_currency:
@@ -414,6 +437,7 @@ _COMPROBACIONES: Final[tuple[tuple[str, str], ...]] = (
     ("tipo de cambio", "exchange_rate"),
     ("cuota compensatoria", "compensatory_duty_applies"),
     ("valor en aduana", "customs_value"),
+    ("incrementables", "minimum_incrementables"),
     ("impuesto general de importación", "igi_amount"),
     ("IVA", "vat_amount"),
     ("unidad de medida", "declared_unit_is_known"),
@@ -486,6 +510,11 @@ def _lagunas(expected: ExpectedItem, declared: DeclaredItem | None = None) -> li
             "no se sabe si esta combinación de origen y fracción tiene cuota "
             "compensatoria: sólo cable de acero de China está verificado hoy "
             "(ADR 0009) -- el resto queda NEEDS_VALIDATION"
+        )
+    if expected.minimum_incrementables is None:
+        razones.append(
+            "no se pudo comprobar si faltan incrementables: la factura de la partida no "
+            "cobra flete ni seguro aparte, o no está ligada"
         )
     if expected.customs_value is None:
         razones.append(
