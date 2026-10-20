@@ -58,3 +58,19 @@ Las resoluciones son obra del gobierno de EE. UU., de dominio público.
 - **Nada consume todavía esta tabla.** Mostrar «qué decidió CBP para esta
   subpartida» junto a una clasificación es el siguiente paso, en su propio
   PR. Ahí debe decir, con todas sus letras, que no es fundamento.
+
+## Actualización 2026-10-20 (misma tarde)
+
+- **El detalle no trae las revocaciones.** `/api/ruling/{n}` devuelve
+  `revokedBy: null` aunque la resolución esté revocada; el resumen de
+  `/api/search` sí lo dice (HQ 087732, 6912.00.41, revocada por 950390). La
+  primera carga dejó así las 868 como vigentes. Ahora el RAW guarda el detalle,
+  el resumen y la combinación (`cross.combinar`): las relaciones vienen del
+  resumen cuando el detalle no las trae. Al recargar, el cargador sólo
+  actualiza el estado de las filas existentes.
+- **Alcance real: 868 resoluciones de 14 partidas, no 220 de 8.**
+  `--desde-corpus` toma también las partidas de las decisiones de
+  clasificación, y entre ellas hay decisiones sintéticas de pruebas (8471,
+  8479, 8544, 7220, 7304, 7306). Son resoluciones reales y `PUBLIC`, así que se
+  quedan. Que el alcance salga de las decisiones es deliberado: es lo que el
+  sistema clasifica.
