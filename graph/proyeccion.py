@@ -44,15 +44,23 @@ empieza a calcular dinero fuera del motor.
 
 LO QUE EL §28 LISTA Y AQUÍ NO ESTÁ, Y QUÉ LO DESBLOQUEA
 
-  PROSECSector     falta cargar los decretos PROSEC
   Treaty           falta cargar los tratados y sus reglas de origen
-  Manufacturer     sólo hay un nombre en texto libre en `suppliers`, no una
-                   entidad con identidad propia
+  Manufacturer     sólo hay un nombre en texto libre (`products.manufacturer_name`,
+                   1 de 188 productos el 20-oct), no una entidad con identidad
+                   propia: dos grafías del mismo fabricante serían dos nodos
 
 Crear esos nodos vacíos daría un grafo que parece completo y no lo está. Se
 añaden cuando exista el dato.
 
-LO QUE ESTABA EN ESA LISTA Y YA NO (13-oct)
+LO QUE ESTABA EN ESA LISTA Y YA NO (13-oct, 20-oct)
+
+  PROSECSector     desbloqueado por el Decreto PROSEC cargado en
+                   `regulatory.prosec_rates` (#258, 2 631 filas). Mismo criterio
+                   que la NOM: UN NODO POR FILA, porque la acotación
+                   («Únicamente: …») y la vigencia son de la fila, no del
+                   sector. La tasa NO se proyecta (el dinero no va al grafo).
+                   `(TariffFraction)-[:ELIGIBLE_UNDER]->(PROSECSector)` une cada
+                   versión de la fracción cuya vigencia se solapa con la fila.
 
   NOM              desbloqueado por el Anexo 2.4.1 del Acuerdo de la SE, cargado
                    en `regulatory.fraction_nom_requirements` (ADR 0003, 456
@@ -111,6 +119,7 @@ from database.models import (
     Pedimento,
     PedimentoItem,
     Product,
+    ProsecRate,
     RegulatoryEvent,
     Supplier,
     TariffFraction,
@@ -328,6 +337,24 @@ def _nodos(session: Session) -> list[tuple[str, list[dict[str, Any]], str]]:
             "id",
         ),
         (
+            "PROSECSector",
+            _filas(
+                session,
+                sa.select(
+                    ProsecRate.id,
+                    ProsecRate.sector_code.label("code"),
+                    ProsecRate.sector_name.label("name"),
+                    ProsecRate.fraction_code,
+                    ProsecRate.is_partial,
+                    ProsecRate.scope_note,
+                    ProsecRate.valid_from,
+                    ProsecRate.valid_to,
+                    ProsecRate.data_origin,
+                ),
+            ),
+            "id",
+        ),
+        (
             "RegulatoryEvent",
             _filas(
                 session,
@@ -406,6 +433,19 @@ def _relaciones(session: Session) -> list[tuple[str, str, str, list[tuple[str, s
             sa.or_(
                 TariffFraction.valid_to.is_(None),
                 TariffFraction.valid_to >= FractionNomRequirement.valid_from,
+            ),
+        ),
+    )
+
+    # Mismo solape que la NOM: una operación de 2023 tiene que encontrar el
+    # sector PROSEC en el que estaba su fracción en 2023.
+    en_prosec = sa.select(TariffFraction.id, ProsecRate.id).join(
+        ProsecRate,
+        sa.and_(
+            ProsecRate.fraction_code == TariffFraction.code,
+            sa.or_(ProsecRate.valid_to.is_(None), ProsecRate.valid_to >= TariffFraction.valid_from),
+            sa.or_(
+                TariffFraction.valid_to.is_(None), TariffFraction.valid_to >= ProsecRate.valid_from
             ),
         ),
     )
@@ -523,6 +563,7 @@ def _relaciones(session: Session) -> list[tuple[str, str, str, list[tuple[str, s
             ),
         ),
         ("SUBJECT_TO", "TariffFraction", "NOM", _pares(session, exige_nom)),
+        ("ELIGIBLE_UNDER", "TariffFraction", "PROSECSector", _pares(session, en_prosec)),
         ("AFFECTED_BY", "TariffFraction", "RegulatoryEvent", _pares(session, afecta)),
     ]
 
