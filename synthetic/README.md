@@ -58,7 +58,7 @@ Implementadas (`synthetic/errors.py`), ninguna exige una fuente jurídica
 que todavía no está cargada:
 
 - **`WRONG_IDENTIFIER`** — usa `regulatory.pedimento_identifier_
-  requirements` (ADR 0010, cargada hoy mismo): un pedimento con clave de
+  requirements` (ADR 0012, cargada hoy mismo): un pedimento con clave de
   documento `V1` que no declara el identificador `V1` del Apéndice 8.
 - **`INCONSISTENT_SKU_CLASSIFICATION`** — dos pedimentos, dos
   IMPORTADORES DISTINTOS (condición real: `uq_products_client_id_sku`),
@@ -109,7 +109,7 @@ parte de las 6 tareas de hoy, y tocar su loader sin que Persona 1 lo pida
 sería exactamente lo que CLAUDE.md pide no hacer ("trabaja sólo dentro del
 alcance de la tarea"). Lo dejo anotado para que alguien lo abra aparte.
 
-## Peso neto y rectificación (ADR 0011)
+## Peso neto y rectificación (ADR 0014)
 
 `net_weight_kg` (nuevo, `pedimento_items`) se puebla en las 5 partidas de
 cable de acero generadas — con un factor de ingeniería genérico
@@ -131,7 +131,7 @@ ya existentes, que esta carga no cierra:
 - **`sku_history` nunca se pasa a `review_pedimento()`**
   (`apps/api/routers/pedimentos.py:216`, siempre `None`) — aunque el dato
   ya exista en `Product.sku`, nadie construye el histórico ni lo pasa al
-  comparador. Mismo patrón que `required_identifiers` (ADR 0010): el dato
+  comparador. Mismo patrón que `required_identifiers` (ADR 0012): el dato
   ya está, el cableado en `core/shadow` es de quien lo decida (Persona 1 lo
   dijo explícito para los identificadores; aquí no se ha pedido, lo anoto
   para que no quede oculto).

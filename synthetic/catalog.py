@@ -285,7 +285,7 @@ SUPPLIERS: tuple[SupplierFicha, ...] = (
 #: régimen, una clave de documento. El generador puede variar `pedimento_key`
 #: a propósito para el escenario `WRONG_IDENTIFIER` (necesita una clave
 #: distinta de `A1`, la única para la que no hay ningún identificador
-#: estructurable exigido -- ver ADR 0010).
+#: estructurable exigido -- ver ADR 0012).
 ENTRY_CUSTOMS = "470"
 REGIME = "IMD"
 PEDIMENTO_KEY = "A1"

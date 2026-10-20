@@ -26,7 +26,7 @@ permite reconstruir CUÁLES características faltan, sin adivinar.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -127,10 +127,15 @@ class ParsedPedimento:
     totals_valor_aduana_mxn: Decimal
     parts: list[ParsedPartida]
     #: Clave del `pedimento_number` que este documento rectifica, o `None`
-    #: si es un original (§10 maestro, ADR 0011). Claves ausentes en el JSON
+    #: si es un original (§10 maestro, ADR 0014). Claves ausentes en el JSON
     #: anterior a esta carga siguen parseando como `None` -- aditivo.
     rectifies_pedimento_number: str | None = None
     rectification_number: int | None = None
+    #: Flete que la factura cobra aparte, en la divisa del proveedor. `None`
+    #: en el corpus original, que no lo traía: no es cero, es «no consta».
+    invoice_freight_amount: Decimal | None = None
+    #: Identificadores de nivel G declarados en el pedimento (ADR 0012).
+    identifiers: dict[str, str] = field(default_factory=dict)
 
     @property
     def trade_flow(self) -> str:
@@ -210,6 +215,12 @@ def _parse_pedimento(raw: dict[str, Any]) -> ParsedPedimento:
         parts=[_parse_partida(p) for p in raw["parts"]],
         rectifies_pedimento_number=raw.get("rectifies_pedimento_number"),
         rectification_number=raw.get("rectification_number"),
+        identifiers=dict(raw.get("identifiers", {})),
+        invoice_freight_amount=(
+            _d(raw["invoice"]["freight_amount"])
+            if raw.get("invoice", {}).get("freight_amount") is not None
+            else None
+        ),
     )
 
 

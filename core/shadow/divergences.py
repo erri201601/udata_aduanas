@@ -109,6 +109,14 @@ class DivergenceType(StrEnum):
     declara que le faltó — no una lista de campos obligatorios inventada aquí.
     """
 
+    MISSING_INCREMENTABLE = "MISSING_INCREMENTABLE"
+    """Se declararon menos incrementables que el flete y el seguro que la
+    factura cobra aparte (art. 65 de la Ley Aduanera).
+
+    Subvalúa el valor en aduana y, con él, el IGI y el IVA. No dice qué
+    concepto falta: dice que lo que la factura cobra no cabe en lo declarado.
+    """
+
     INCONSISTENT_SKU_CLASSIFICATION = "INCONSISTENT_SKU_CLASSIFICATION"
     """El mismo SKU se clasificó distinto en operaciones anteriores.
 
@@ -151,4 +159,7 @@ DEFAULT_SEVERITY: Final[dict[DivergenceType, str]] = {
     DivergenceType.MISSING_TECHNICAL_FIELD: "MEDIUM",
     # Señala un problema sin decir de qué lado está.
     DivergenceType.INCONSISTENT_SKU_CLASSIFICATION: "MEDIUM",
+    # Subvaluación, pero el reparto del flete entre partidas es una
+    # aproximación: alto, no crítico, y siempre con revisión humana.
+    DivergenceType.MISSING_INCREMENTABLE: "HIGH",
 }

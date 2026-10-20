@@ -212,6 +212,10 @@ def _create_invoice(
         currency=ped.provider_currency,
         total_amount=total_extranjero,
         total_amount_currency=ped.provider_currency,
+        freight_amount=ped.invoice_freight_amount,
+        freight_amount_currency=(
+            ped.provider_currency if ped.invoice_freight_amount is not None else None
+        ),
         data_origin=DATA_ORIGIN,
         synthetic_scenario_id=scenario.id,
         seed=scenario.seed,
@@ -588,6 +592,7 @@ def load_pedimento(
         is_simulation=True,
         rectifies_pedimento_id=rectifies_pedimento_id,
         rectification_number=ped.rectification_number,
+        identifiers=dict(ped.identifiers),
         data_origin=DATA_ORIGIN,
         synthetic_scenario_id=scenario.id,
         seed=scenario.seed,

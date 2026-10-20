@@ -184,6 +184,26 @@ def _proveedor(session: Session, partida: PedimentoItem) -> list[SourceRef]:
     ]
 
 
+def _factura(session: Session, partida: PedimentoItem) -> list[SourceRef]:
+    if partida.invoice_item_id is None:
+        return []
+    fila = session.execute(
+        sa.select(Invoice.id, Invoice.invoice_number, Invoice.data_origin)
+        .join(InvoiceItem, InvoiceItem.invoice_id == Invoice.id)
+        .where(InvoiceItem.id == partida.invoice_item_id)
+    ).first()
+    if fila is None:
+        return []
+    return [
+        SourceRef(
+            what=f"flete y seguro que cobra la factura {fila.invoice_number}",
+            table="operational.invoices",
+            row_id=str(fila.id),
+            data_origin=fila.data_origin,
+        )
+    ]
+
+
 def _tipo_de_cambio(
     session: Session, partida: PedimentoItem, fecha: date, moneda: str | None = None
 ) -> list[SourceRef]:
@@ -351,6 +371,12 @@ def fuentes_de_la_partida(
             ),
         ]
         fuentes["customs_value_currency"] = fuentes["customs_value"]
+    if esperada.minimum_incrementables is not None:
+        fuentes["incrementables"] = [
+            *_articulo(session, fecha, ARTICULO_VALOR_DE_TRANSACCION),
+            *_factura(session, partida),
+            *_tipo_de_cambio(session, partida, fecha),
+        ]
     if esperada.exchange_rate is not None:
         fuentes["exchange_rate"] = _tipo_de_cambio(session, partida, fecha)
     if esperada.compensatory_duty_applies:

@@ -1,4 +1,4 @@
-# ADR 0011 — Peso neto por partida y rectificación de pedimentos
+# ADR 0014 — Peso neto por partida y rectificación de pedimentos
 
 - **Fecha:** 2026-10-13
 - **Estado:** aceptado (2026-10-13, Persona 1) — pendiente mergear por

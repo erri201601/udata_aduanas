@@ -1,7 +1,7 @@
 """peso neto por partida y rectificacion de pedimentos
 
 Revision ID: 67e3c2617b54
-Revises: 88cd0fb12273
+Revises: e4b8c1d2f5a6
 Create Date: 2026-10-13 20:01:40.417738+00:00
 
 """
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "67e3c2617b54"
-down_revision: str | None = "88cd0fb12273"
+down_revision: str | None = "e4b8c1d2f5a6"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

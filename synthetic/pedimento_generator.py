@@ -50,6 +50,17 @@ class PartidaPlan:
         return Decimal("2500.00")
 
 
+def flete_real_mxn(plan: PartidaPlan) -> Decimal:
+    """El flete que de verdad costó la partida: el correcto si el escenario lo
+    da, si no el declarado (en una partida limpia, coinciden)."""
+    if plan.incrementables_correcto_mxn is not None:
+        return plan.incrementables_correcto_mxn
+    if plan.incrementables_mxn is not None:
+        return plan.incrementables_mxn
+    precio = (plan.precio_unitario_mxn * Decimal(plan.cantidad_umc)).quantize(Decimal("0.01"))
+    return (precio * Decimal("0.03")).quantize(Decimal("0.01"))
+
+
 def _construir_partida(sec: int, plan: PartidaPlan) -> tuple[dict[str, object], Decimal]:
     ficha = PRODUCT_CATALOG[plan.partida.product_id]
     fraccion = plan.fraccion_override or ficha.fraction_code
@@ -134,6 +145,7 @@ def construir_pedimento(
     pedimento_key: str = PEDIMENTO_KEY,
     rectifies_pedimento_number: str | None = None,
     rectification_number: int | None = None,
+    identifiers: dict[str, str] | None = None,
 ) -> dict[str, object]:
     """Un pedimento completo, en la forma que `parse_corpus` espera bajo
     `ground_truth[document_id]`."""
@@ -164,8 +176,25 @@ def construir_pedimento(
             "currency": proveedor.currency,
         },
         "totals": {"valor_aduana_mxn": float(total_valor_aduana)},
+        # LA FACTURA COBRA EL FLETE APARTE (§25 MISSING_INCREMENTABLE)
+        #
+        # Sin un documento que diga cuánto costó el flete, una partida que
+        # declara menos incrementables es indetectable por construcción: el
+        # monto real sólo existía en el ground truth. Aquí la factura lo trae,
+        # en la divisa del proveedor, como lo traería una factura FOB real.
+        "invoice": {
+            "freight_amount": float(
+                (
+                    sum((flete_real_mxn(p) for p in partidas), start=Decimal("0")) / exchange_rate
+                ).quantize(Decimal("0.01"))
+            ),
+        },
         "parts": partes,
     }
+    if identifiers is not None:
+        # Identificadores de nivel G (pedimento): se declaran una vez en el
+        # documento, no en la partida (ADR 0012). Van a `pedimentos.identifiers`.
+        pedimento["identifiers"] = identifiers
     if rectifies_pedimento_number is not None:
         pedimento["rectifies_pedimento_number"] = rectifies_pedimento_number
     if rectification_number is not None:

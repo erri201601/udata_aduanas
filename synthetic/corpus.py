@@ -1,7 +1,7 @@
 """Orquestación de todo `synthetic/` (§24 maestro): 5 pedimentos nuevos que
 cubren las 3 anomalías nuevas implementadas (`WRONG_IDENTIFIER`,
 `INCONSISTENT_SKU_CLASSIFICATION`, `MISSING_INCREMENTABLE`), una
-rectificación (§10) y peso neto por partida en cable de acero (ADR 0011,
+rectificación (§10) y peso neto por partida en cable de acero (ADR 0014,
 para que la cuota compensatoria del ADR 0009 pueda llevar importe).
 
 Se generan ENCIMA del corpus de 15 pedimentos ya cargado -- mismos 12
@@ -123,7 +123,6 @@ def _pedimento_identificador_incorrecto(
         igi_rate=Decimal("0.35"),
         pais_origen=proveedor.country,
         net_weight_kg=Decimal(40) * _KG_POR_METRO_CABLE_18MM,
-        identifiers={},  # exige "V1" (pedimento_key="V1") y no lo declara
         anomalies=(identificador_incorrecto(pedimento_key="V1", identifier_code="V1"),),
     )
     return construir_pedimento(
@@ -136,6 +135,8 @@ def _pedimento_identificador_incorrecto(
         exchange_rate=tasa_de_cambio(fecha_entrada),
         partidas=[plan],
         pedimento_key="V1",
+        # La clave V1 exige el identificador V1, de nivel G, y no se declara.
+        identifiers={},
     )
 
 
@@ -229,7 +230,6 @@ def _pedimento_rectificacion(
         igi_rate=Decimal("0.35"),
         pais_origen=proveedor.country,
         net_weight_kg=Decimal(40) * _KG_POR_METRO_CABLE_18MM,
-        identifiers={"V1": "corrige la rectificación"},
         anomalies=(),
     )
     return construir_pedimento(
@@ -244,4 +244,5 @@ def _pedimento_rectificacion(
         pedimento_key="V1",
         rectifies_pedimento_number=original["pedimento_number"],  # type: ignore[arg-type]
         rectification_number=1,
+        identifiers={"V1": "corrige la rectificación"},
     )

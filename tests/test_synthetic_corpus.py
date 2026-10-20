@@ -71,8 +71,10 @@ def test_wrong_identifier_declara_v1_sin_el_identificador() -> None:
     ped = next(p for p in corpus.pedimentos if p.document_id == "PED_SIM_016")
 
     assert ped.pedimento_key == "V1"
+    # V1 es de nivel G: el identificador se declara en el pedimento (ADR 0012).
+    assert ped.identifiers == {}
     (parte,) = ped.parts
-    assert parte.observed.get("identifiers") == {}
+    assert "identifiers" not in parte.observed
     (anomalia,) = parte.anomalies
     assert anomalia.code == "IDENTIFICADOR_INCORRECTO"
     assert anomalia.expected_detection is True
@@ -124,7 +126,7 @@ def test_rectificacion_apunta_al_original_y_corrige_el_identificador() -> None:
     assert rectificacion.rectifies_pedimento_number == original.pedimento_number
     assert rectificacion.rectification_number == 1
     assert rectificacion.parts[0].anomalies == []
-    assert rectificacion.parts[0].observed["identifiers"] != {}
+    assert "V1" in rectificacion.identifiers
 
 
 def test_las_partidas_de_cable_traen_peso_neto() -> None:

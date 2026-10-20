@@ -64,7 +64,7 @@ class Client(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, SyntheticMixi
     prosec_sector_codes: Mapped[list[str] | None] = mapped_column(
         ARRAY(sa.String(8)), nullable=True
     )
-    """Sectores del Decreto PROSEC (art. 4) en que opera el importador (ADR 0011).
+    """Sectores del Decreto PROSEC (art. 4) en que opera el importador (ADR 0014).
 
     `None` = no se sabe; `[]` = consta que no opera en ninguno. No dice que
     esté INSCRITO en el programa: eso es una condición que se comprueba fuera
@@ -218,6 +218,13 @@ class Pedimento(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, SyntheticM
     is_simulation: Mapped[bool] = mapped_column(
         sa.Boolean, nullable=False, server_default=sa.false()
     )
+    rectifies_pedimento_id: Mapped[uuid.UUID | None] = mapped_column(
+        sa.ForeignKey(f"{_SCHEMA}.pedimentos.id", ondelete="RESTRICT"), nullable=True
+    )
+    """El pedimento original que éste rectifica (§10, ADR 0014). `NULL` en un
+    original. `RESTRICT`: un original rectificado no se borra."""
+    rectification_number: Mapped[int | None] = mapped_column(sa.SmallInteger, nullable=True)
+    """1, 2… en las rectificaciones sucesivas de un mismo original."""
     identifiers: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     """Identificadores declarados a nivel pedimento (nivel `G` del Apéndice 8),
     clave → complementos. Los de partida van en `pedimento_items.identifiers`."""

@@ -62,6 +62,7 @@ def comparacion(**kw: object):  # type: ignore[no-untyped-def]
         # construye `False` -- pero sin esto ningún test podría afirmar
         # "pedimento limpio" (ver docstring del campo en core/shadow/types.py).
         "compensatory_duty_applies": False,
+        "minimum_incrementables": Decimal("0"),
     }
     dec.update(kw.get("declarado", {}))  # type: ignore[arg-type]
     esp.update(kw.get("esperado", {}))  # type: ignore[arg-type]

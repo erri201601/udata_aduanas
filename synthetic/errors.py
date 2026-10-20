@@ -19,7 +19,7 @@ Las tres SÍ implementadas no dependen de ninguna fuente jurídica todavía
 sin cargar:
 
 - `WRONG_IDENTIFIER` se apoya en `regulatory.pedimento_identifier_
-  requirements` (ADR 0010, ya cargada) -- un dato OFFICIAL real.
+  requirements` (ADR 0012, ya cargada) -- un dato OFFICIAL real.
 - `INCONSISTENT_SKU_CLASSIFICATION` y `MISSING_INCREMENTABLE` son
   consistencia interna del propio pedimento/factura, no requieren ninguna
   fuente externa.
@@ -64,11 +64,13 @@ class AnomalySpec:
 
 def identificador_incorrecto(*, pedimento_key: str, identifier_code: str) -> AnomalySpec:
     """Omite el identificador que `pedimento_identifier_requirements`
-    (ADR 0010) exige para esta `pedimento_key` -- p. ej. declarar clave de
+    (ADR 0012) exige para esta `pedimento_key` -- p. ej. declarar clave de
     documento `V1` sin el identificador `V1` del Apéndice 8."""
     return AnomalySpec(
         code=IDENTIFICADOR_INCORRECTO,
-        field="identifiers",
+        # El campo con el que el Espejo emite un identificador de pedimento
+        # que falta (`CAMPO_IDENTIFICADORES_DEL_DOCUMENTO`, ADR 0012).
+        field="document_identifiers",
         expected=f"{identifier_code} (exigido por pedimento_key={pedimento_key})",
         observed="",
     )
