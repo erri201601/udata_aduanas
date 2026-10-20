@@ -68,6 +68,7 @@ from database.models import (
     GroundTruthRecord,
     Pedimento,
     PedimentoItem,
+    Product,
     ProductDna,
     RiskFinding,
     ShadowReview,
@@ -263,6 +264,39 @@ def _fracciones_que_un_dictamen_contradice(
         ).all()
     }
 
+    # LA MISMA MERCANCÍA EN OTRA FICHA (20-oct)
+    #
+    # El generador sintético crea productos nuevos —otro importador— con la
+    # MISMA descripción que una ficha ya dictaminada. Sin esto, el dictamen de
+    # César sobre «cable de acero sin recubrimiento, 6x36» (73121005) no valía
+    # para el mismo cable importado por otro, y el Espejo, que acertaba, sumaba
+    # falsos positivos. Sólo cuando TODOS los dictámenes de esa descripción
+    # dicen lo mismo: si uno pide información o dice otra fracción, no hay
+    # criterio firme y no se excluye nada.
+    descripcion_de = dict(
+        session.execute(
+            sa.select(ProductDna.id, Product.description)
+            .join(Product, Product.id == ProductDna.product_id)
+            .where(ProductDna.id.in_(set(por_ficha)))
+        )
+        .tuples()
+        .all()
+    )
+    por_descripcion: dict[str, set[tuple[str | None, str | None]]] = {}
+    for dna_id, (_, fraccion, nico) in por_ficha.items():
+        desc = descripcion_de.get(dna_id)
+        if desc:
+            por_descripcion.setdefault(desc, set()).add((fraccion, nico))
+    descripcion_del_producto = dict(
+        session.execute(
+            sa.select(Product.id, Product.description).where(
+                Product.id.in_(set(con_producto.values()))
+            )
+        )
+        .tuples()
+        .all()
+    )
+
     contradichas: set[tuple[str, str]] = set()
     for pid, product_id in con_producto.items():
         if pid in sembradas:
@@ -271,6 +305,11 @@ def _fracciones_que_un_dictamen_contradice(
             continue
         dna_id = ficha_de.get(product_id)
         firmado = por_ficha.get(dna_id) if dna_id is not None else None
+        if firmado is None:
+            criterios = por_descripcion.get(descripcion_del_producto.get(product_id) or "", set())
+            if len(criterios) == 1:
+                fraccion, nico = next(iter(criterios))
+                firmado = (None, fraccion, nico)
         if firmado is None or firmado[1] is None:
             continue
         if firmado[1] != partidas[pid].declared_fraction_code:
