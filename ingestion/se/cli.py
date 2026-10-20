@@ -12,6 +12,9 @@ una tiene su propio flag. Por ahora sólo existe una: `--cable-acero-china`
 (`docs/RECONOCIMIENTO_CUOTAS_COMPENSATORIAS.md`) no tienen flag todavía
 porque no tienen resolución primaria verificada.
 
+`--anexo-2-5-1` carga el índice del Anexo 2.5.1 (DOF 25-nov-2022): dónde hay
+cuota, con el texto tal cual y sin importe (ADR 0017).
+
 También el Decreto PROSEC (`--prosec`, artículo 5) y la Regla 8ª
 (`--regla-8a`, desde las 9802 de la LIGIE ya cargada), ADR 0011.
 
@@ -19,6 +22,7 @@ Uso:
     python -m ingestion.se.cli --target local  --prosec
     python -m ingestion.se.cli --target local  --regla-8a
     python -m ingestion.se.cli --target local  --cable-acero-china
+    python -m ingestion.se.cli --target local  --anexo-2-5-1
     python -m ingestion.se.cli --target shared --cable-acero-china --raw-only
 """
 
@@ -38,7 +42,7 @@ from database.models import ProsecRate, TariffFraction
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from ingestion.se import cuotas_compensatorias, load, prosec, regla_8a
+from ingestion.se import anexo_2_5_1, cuotas_compensatorias, load, prosec, regla_8a
 from ingestion.snice import raw
 
 if TYPE_CHECKING:
@@ -90,6 +94,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="Decreto PROSEC, artículo 5: tasas por sector y fracción (ADR 0011).",
     )
     parser.add_argument(
+        "--anexo-2-5-1",
+        action="store_true",
+        help="Anexo 2.5.1: dónde hay cuota compensatoria, como índice y sin importe (ADR 0017).",
+    )
+    parser.add_argument(
         "--regla-8a",
         action="store_true",
         help=(
@@ -110,11 +119,14 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     if args.prosec:
         return _prosec(args)
+    if args.anexo_2_5_1:
+        return _anexo_2_5_1(args)
     if args.regla_8a:
         return _regla_8a(args)
     if not args.raw_only and not args.cable_acero_china:
         raise SystemExit(
-            "--cable-acero-china, --prosec o --regla-8a es obligatorio salvo con --raw-only"
+            "--cable-acero-china, --prosec, --anexo-2-5-1 o --regla-8a es obligatorio "
+            "salvo con --raw-only"
         )
 
     database_url = None if args.raw_only else _database_url(args.target)
@@ -191,6 +203,51 @@ def _prosec(args: argparse.Namespace) -> int:
         print(f"NO SE CARGA: {motivo}")
     print(f"OK ({args.target}): {creadas} tasas PROSEC insertadas.")
     log.info("se.prosec.cli.done", target=args.target, creadas=creadas, omitidas=len(omitidas))
+    return 0
+
+
+def _anexo_2_5_1(args: argparse.Namespace) -> int:
+    """RAW → PARSED → DATABASE del Anexo 2.5.1 (ADR 0017).
+
+    El HTML del DOF cambia entre descargas (la barra lateral trae el tipo de
+    cambio del día), así que la clave de MinIO lleva el hash: cada captura es
+    un objeto propio y el `content_hash` de cada fila apunta al suyo (#265).
+    """
+    from apps.api.logging import registrar
+
+    minio_target = _minio_target(args.target)
+    datos = raw.fetch(anexo_2_5_1.SOURCE_URL)
+    clave = f"se/anexo_2_5_1_20221125_{raw.content_hash(datos)[:16]}.html"
+    capture = raw.store_raw_bytes(
+        datos, source_url=anexo_2_5_1.SOURCE_URL, minio_key=clave, target=minio_target
+    )
+    raw.verify_stored(target=minio_target, minio_key=clave)
+    if args.raw_only:
+        print(f"RAW OK ({args.target}): {capture.minio_key}  sha256={capture.content_hash}")
+        return 0
+
+    filas = anexo_2_5_1.parse(datos.decode("utf-8"))
+    print(
+        f"Parseado: {len(filas)} filas del Anexo 2.5.1 — "
+        f"{len({f.product_description for f in filas})} productos, "
+        f"{len({f.fraction_code for f in filas})} fracciones, "
+        f"{len({f.origin_country for f in filas})} orígenes."
+    )
+    engine = create_engine(_database_url(args.target))
+    with Session(engine) as session:
+        creadas, omitidas = load.cargar_anexo_2_5_1(
+            session,
+            filas,
+            content_hash=capture.content_hash,
+            minio_key=clave,
+            retrieved_at=capture.retrieved_at,
+        )
+        session.commit()
+    for motivo in omitidas:
+        print(f"NO SE CARGA: {motivo}")
+    registrar(records=creadas, errors=len(omitidas))
+    print(f"OK ({args.target}): {creadas} filas del Anexo 2.5.1 insertadas.")
+    log.info("se.anexo_2_5_1.cli.done", target=args.target, creadas=creadas, omitidas=len(omitidas))
     return 0
 
 

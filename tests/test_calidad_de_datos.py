@@ -37,6 +37,13 @@ CLAVES: dict[str, tuple[str, ...]] = {
     "regulatory.compensatory_duties": ("origin_country", "fraction_code", "exporter_name"),
     "regulatory.prosec_rates": ("sector_code", "fraction_code", "scope_note"),
     "regulatory.regla_8a_fractions": ("sector_code", "fraction_code"),
+    "regulatory.compensatory_duty_listings": (
+        "fraction_code",
+        "origin_country",
+        "product_description",
+        "exporter_text",
+        "first_resolution_date",
+    ),
     "regulatory.pedimento_identifier_requirements": (
         "identifier_code",
         "condition_kind",

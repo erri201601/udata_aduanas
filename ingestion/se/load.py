@@ -21,6 +21,7 @@ import sqlalchemy as sa
 import structlog
 from database.models import (
     CompensatoryDuty,
+    CompensatoryDutyListing,
     FractionNomRequirement,
     ProsecRate,
     Regla8aFraction,
@@ -33,6 +34,7 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
     from ingestion.se.anexo_2_4_1 import FilaNom
+    from ingestion.se.anexo_2_5_1 import ParsedListing
     from ingestion.se.cuotas_compensatorias import ParsedCompensatoryDuty
     from ingestion.se.prosec import FilaProsec
     from ingestion.se.regla_8a import FraccionRegla8a
@@ -324,3 +326,91 @@ def cargar_regla_8a(
     session.flush()
     log.info("se.regla_8a.cargado", creadas=creadas, recibidas=len(fracciones))
     return creadas
+
+
+def cargar_anexo_2_5_1(
+    session: Session,
+    filas: Sequence[ParsedListing],
+    *,
+    content_hash: str,
+    minio_key: str,
+    retrieved_at: datetime | None = None,
+) -> tuple[int, list[str]]:
+    """Escribe el índice del Anexo 2.5.1 (ADR 0017). Idempotente por la clave
+    natural.
+
+    Una fila cuya fracción no esté en la LIGIE vigente el día en que el anexo
+    entra en vigor no se carga: `NEEDS_VALIDATION`. Devuelve `(creadas,
+    omitidas)`.
+    """
+    from ingestion.se import anexo_2_5_1
+
+    retrieved_at = retrieved_at or datetime.now(UTC)
+    desde = anexo_2_5_1.VALID_FROM
+    vigentes = set(
+        session.scalars(
+            sa.select(TariffFraction.code).where(
+                TariffFraction.valid_from <= desde,
+                sa.or_(TariffFraction.valid_to.is_(None), TariffFraction.valid_to >= desde),
+            )
+        )
+    )
+    existentes = set(
+        session.execute(
+            sa.select(
+                CompensatoryDutyListing.fraction_code,
+                CompensatoryDutyListing.origin_country,
+                CompensatoryDutyListing.product_description,
+                CompensatoryDutyListing.exporter_text,
+                CompensatoryDutyListing.first_resolution_date,
+            ).where(CompensatoryDutyListing.valid_from == desde)
+        ).tuples()
+    )
+    creadas = 0
+    omitidas: list[str] = []
+    for fila in filas:
+        if fila.fraction_code not in vigentes:
+            omitidas.append(
+                f"{fila.fraction_code} {fila.origin_country}: no está vigente en la LIGIE el "
+                f"{desde} (NEEDS_VALIDATION)"
+            )
+            continue
+        clave = (
+            fila.fraction_code,
+            fila.origin_country,
+            fila.product_description,
+            fila.exporter_text,
+            fila.first_resolution_date,
+        )
+        if clave in existentes:
+            continue
+        existentes.add(clave)
+        session.add(
+            CompensatoryDutyListing(
+                product_description=fila.product_description,
+                fraction_code=fila.fraction_code,
+                origin_country=fila.origin_country,
+                exporter_text=fila.exporter_text,
+                applies_to_all_others=fila.applies_to_all_others,
+                duty_text=fila.duty_text,
+                scope_note=fila.scope_note,
+                resolution_history=[
+                    {"tipo": r.tipo, "fecha": r.fecha.isoformat()} for r in fila.resolution_history
+                ],
+                first_resolution_date=fila.first_resolution_date,
+                latest_resolution_date=fila.latest_resolution_date,
+                data_origin="OFFICIAL",
+                valid_from=desde,
+                published_at=anexo_2_5_1.PUBLISHED_AT,
+                source_url=anexo_2_5_1.SOURCE_URL,
+                source_document=f"{anexo_2_5_1.SOURCE_DOCUMENT} ({minio_key})",
+                content_hash=content_hash,
+                retrieved_at=retrieved_at,
+            )
+        )
+        creadas += 1
+    session.flush()
+    log.info(
+        "se.anexo_2_5_1.cargado", creadas=creadas, recibidas=len(filas), omitidas=len(omitidas)
+    )
+    return creadas, omitidas

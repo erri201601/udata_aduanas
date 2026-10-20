@@ -139,7 +139,10 @@ tests/               1 294 tests              ✅
 .github/workflows/ci.yml                      ✅ 6 jobs
 ```
 
-### Base de datos — 39 tablas
+### Base de datos — 40 tablas
+
+20-oct: `compensatory_duty_listings`, el índice del Anexo 2.5.1 (ADR 0017).
+El resto de esta sección sigue con las cifras del 13-oct.
 
 Alembic en `8471a674f18d` (13-oct, #238). Las tres tablas nuevas del 13-oct
 —`prosec_rates`, `regla_8a_fractions` y `pedimento_identifier_requirements`—

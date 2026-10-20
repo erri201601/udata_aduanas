@@ -39,10 +39,11 @@ def _business_tables() -> list[sa.Table]:
 # ── Estructura ──────────────────────────────────────────────────────────────
 
 
-def test_hay_39_entidades() -> None:
+def test_hay_40_entidades() -> None:
     # +2 el 13-oct: prosec_rates y regla_8a_fractions (ADR 0011); +1
-    # pedimento_identifier_requirements (ADR 0012).
-    assert len(_tables()) == 39
+    # pedimento_identifier_requirements (ADR 0012); +1 el 20-oct:
+    # compensatory_duty_listings, el índice del Anexo 2.5.1 (ADR 0017).
+    assert len(_tables()) == 40
 
 
 def test_todas_las_tablas_en_los_tres_esquemas() -> None:

@@ -34,6 +34,7 @@ from database.models.operational import (
 )
 from database.models.regulatory import (
     CompensatoryDuty,
+    CompensatoryDutyListing,
     CustomsOffice,
     ExchangeRate,
     FractionNomRequirement,
@@ -62,6 +63,7 @@ __all__ = [
     "ClassificationDecision",
     "Client",
     "CompensatoryDuty",
+    "CompensatoryDutyListing",
     "Cove",
     "CustomsOffice",
     "EvidenceRecord",
