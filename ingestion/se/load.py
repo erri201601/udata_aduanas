@@ -19,7 +19,13 @@ from typing import TYPE_CHECKING, Final
 
 import sqlalchemy as sa
 import structlog
-from database.models import CompensatoryDuty, FractionNomRequirement
+from database.models import (
+    CompensatoryDuty,
+    FractionNomRequirement,
+    ProsecRate,
+    Regla8aFraction,
+    TariffFraction,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -28,6 +34,8 @@ if TYPE_CHECKING:
 
     from ingestion.se.anexo_2_4_1 import FilaNom
     from ingestion.se.cuotas_compensatorias import ParsedCompensatoryDuty
+    from ingestion.se.prosec import FilaProsec
+    from ingestion.se.regla_8a import FraccionRegla8a
 
 log = structlog.stdlib.get_logger("ingestion.se.load")
 
@@ -147,4 +155,140 @@ def cargar_cuotas_compensatorias(
 
     session.flush()
     log.info("se.cuotas_compensatorias.cargado", creadas=creadas, recibidas=len(filas))
+    return creadas
+
+
+def cargar_prosec(
+    session: Session,
+    filas: Sequence[FilaProsec],
+    *,
+    content_hash: str,
+    minio_key: str,
+    retrieved_at: datetime | None = None,
+) -> tuple[int, list[str]]:
+    """Escribe las tasas del artículo 5 del Decreto PROSEC (ADR 0011). Idempotente.
+
+    Una fila cuya fracción no esté vigente en la LIGIE cargada en la fecha de
+    inicio de vigencia NO se carga: sería una tasa para una fracción que no
+    existe ese día (NEEDS_VALIDATION). Devuelve `(creadas, omitidas)`.
+    """
+    from ingestion.se import prosec
+
+    retrieved_at = retrieved_at or datetime.now(UTC)
+    vigentes = set(
+        session.scalars(
+            sa.select(TariffFraction.code).where(
+                TariffFraction.valid_from <= prosec.VALID_FROM,
+                sa.or_(
+                    TariffFraction.valid_to.is_(None),
+                    TariffFraction.valid_to >= prosec.VALID_FROM,
+                ),
+            )
+        )
+    )
+    existentes = set(
+        session.execute(
+            sa.select(
+                ProsecRate.sector_code,
+                ProsecRate.fraction_code,
+                ProsecRate.scope_note,
+                ProsecRate.valid_from,
+            )
+        ).tuples()
+    )
+    creadas = 0
+    omitidas: list[str] = []
+    for fila in filas:
+        if fila.fraction_code not in vigentes:
+            omitidas.append(
+                f"{fila.sector_code} {fila.fraction_code}: no está vigente en la LIGIE el "
+                f"{prosec.VALID_FROM} (NEEDS_VALIDATION)"
+            )
+            continue
+        clave = (fila.sector_code, fila.fraction_code, fila.acotacion, prosec.VALID_FROM)
+        if clave in existentes:
+            continue
+        existentes.add(clave)
+        session.add(
+            ProsecRate(
+                sector_code=fila.sector_code,
+                sector_name=fila.sector_name,
+                fraction_code=fila.fraction_code,
+                igi_rate=fila.igi_rate,
+                is_partial=fila.is_partial,
+                scope_note=fila.acotacion,
+                data_origin="OFFICIAL",
+                valid_from=prosec.VALID_FROM,
+                published_at=prosec.PUBLISHED_AT,
+                source_url=prosec.SOURCE_URL,
+                source_document=f"{prosec.SOURCE_DOCUMENT} ({minio_key})",
+                content_hash=content_hash,
+                retrieved_at=retrieved_at,
+            )
+        )
+        creadas += 1
+    session.flush()
+    log.info("se.prosec.cargado", creadas=creadas, recibidas=len(filas), omitidas=len(omitidas))
+    return creadas, omitidas
+
+
+def cargar_regla_8a(
+    session: Session,
+    fracciones: Sequence[FraccionRegla8a],
+    *,
+    retrieved_at: datetime | None = None,
+) -> int:
+    """Escribe qué 9802 corresponde a cada sector (ADR 0011). Idempotente.
+
+    La fuente de cada fila es la propia 9802 en la LIGIE —su texto es el que
+    nombra el programa sectorial—, así que se copian su URL, su documento, su
+    hash y su vigencia. La tasa NO se copia: se lee de la LIGIE al consumir.
+    """
+    retrieved_at = retrieved_at or datetime.now(UTC)
+    ligie = {
+        f.code: f
+        for f in session.scalars(
+            sa.select(TariffFraction).where(
+                TariffFraction.code.in_([x.fraction_code for x in fracciones]),
+                TariffFraction.valid_to.is_(None),
+            )
+        )
+    }
+    existentes = set(
+        session.execute(
+            sa.select(
+                Regla8aFraction.sector_code,
+                Regla8aFraction.fraction_code,
+                Regla8aFraction.valid_from,
+            )
+        ).tuples()
+    )
+    creadas = 0
+    for fr in fracciones:
+        origen = ligie.get(fr.fraction_code)
+        if origen is None:
+            continue
+        clave = (fr.sector_code, fr.fraction_code, origen.valid_from)
+        if clave in existentes:
+            continue
+        existentes.add(clave)
+        session.add(
+            Regla8aFraction(
+                sector_code=fr.sector_code,
+                sector_name=fr.sector_name,
+                fraction_code=fr.fraction_code,
+                scope_note=fr.scope_note,
+                data_origin="OFFICIAL",
+                source_id=origen.source_id,
+                valid_from=origen.valid_from,
+                published_at=origen.published_at,
+                source_url=origen.source_url,
+                source_document=origen.source_document,
+                content_hash=origen.content_hash,
+                retrieved_at=retrieved_at,
+            )
+        )
+        creadas += 1
+    session.flush()
+    log.info("se.regla_8a.cargado", creadas=creadas, recibidas=len(fracciones))
     return creadas
