@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from ingestion.cbp_cross.cross import (
     ResolucionIlegibleError,
+    combinar,
     de_la_partida,
     hs6_de,
     parse,
@@ -82,6 +83,20 @@ def test_una_revocada_lo_dice() -> None:
     r = parse(_detalle(revokedBy=["H123456"]))
     assert r.is_revoked and r.revoked_by == ("H123456",)
     assert parse(_detalle(operationallyRevoked=True)).is_revoked
+
+
+def test_la_revocacion_que_el_detalle_no_trae_se_toma_de_la_busqueda() -> None:
+    """HQ 087732: revocada por 950390 según la búsqueda; `null` en el detalle."""
+    detalle = _detalle(revokedBy=None)
+    resumen = {"rulingNumber": "954053", "revokedBy": ["950390"], "relatedRulings": ["1"]}
+    r = parse(combinar(detalle, resumen))
+    assert r.is_revoked and r.revoked_by == ("950390",)
+    assert r.related_rulings == ("1",)
+
+
+def test_lo_que_trae_el_detalle_no_se_pisa() -> None:
+    r = parse(combinar(_detalle(revokedBy=["H1"]), {"revokedBy": ["H2"]}))
+    assert r.revoked_by == ("H1",)
 
 
 def test_sin_texto_no_se_carga() -> None:

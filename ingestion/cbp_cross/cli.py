@@ -87,9 +87,15 @@ def main(argv: list[str] | None = None) -> int:
                         break
                     vistas.add(numero)
                     encontradas += 1
-                    datos = cross.detalle(cliente, numero)
+                    detalle = json.loads(cross.detalle(cliente, numero))
+                    documento = {
+                        "detalle": detalle,
+                        "resumen_de_busqueda": resumen,
+                        "combinado": cross.combinar(detalle, resumen),
+                    }
+                    datos = json.dumps(documento, ensure_ascii=False, sort_keys=True).encode()
                     try:
-                        resolucion = cross.parse(json.loads(datos))
+                        resolucion = cross.parse(documento["combinado"])
                     except (cross.ResolucionIlegibleError, ValueError) as exc:
                         omitidas += 1
                         log.warning("cbp_cross.omitida", numero=numero, error=str(exc))

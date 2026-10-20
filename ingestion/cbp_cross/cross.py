@@ -108,8 +108,27 @@ def _texto(valor: Any) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(lineas)).strip()
 
 
+#: Lo que `/api/ruling/{n}` NO trae y el resumen de `/api/search` sí (20-oct):
+#: la HQ 087732 (6912.00.41) sale revocada por la 950390 en la búsqueda y con
+#: `revokedBy: null` en el detalle. Cargada sólo del detalle, parecía vigente.
+RELACIONES: Final = ("revokedBy", "modifiedBy", "relatedRulings", "operationallyRevoked")
+
+
+def combinar(detalle: dict[str, Any], resumen: dict[str, Any] | None) -> dict[str, Any]:
+    """El detalle, con las relaciones tomadas del resumen de búsqueda cuando el
+    detalle no las trae. Lo combinado es lo que va a RAW: la procedencia de cada
+    campo queda en el documento guardado."""
+    if not resumen:
+        return dict(detalle)
+    salida = dict(detalle)
+    for campo in RELACIONES:
+        if not salida.get(campo) and resumen.get(campo):
+            salida[campo] = resumen[campo]
+    return salida
+
+
 def parse(detalle: dict[str, Any]) -> ParsedRuling:
-    """Del JSON de `/api/ruling/{número}` a una resolución."""
+    """Del JSON de una resolución (`combinar`) a una resolución."""
     numero = str(detalle.get("rulingNumber") or "").strip()
     fecha = detalle.get("rulingDate")
     asunto = re.sub(r"\s+", " ", str(detalle.get("subject") or "")).strip()
