@@ -282,6 +282,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/classifications/{decision_id}/comparables": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Resoluciones de otras aduanas para la misma subpartida (no fundamento) */
+        get: operations["comparables_classifications__decision_id__comparables_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/copilot/consultas": {
         parameters: {
             query?: never;
@@ -1001,7 +1018,7 @@ export interface components {
             /** Estimated Impact Amount Currency */
             estimated_impact_amount_currency?: string | null;
             /** Folio */
-            folio: string;
+            folio?: string | null;
             /** Candidates */
             candidates?: components["schemas"]["ClassificationCandidateRead"][];
             /** Evidences */
@@ -1077,6 +1094,51 @@ export interface components {
             modo_busqueda: string;
             /** Degradado Por */
             degradado_por?: string | null;
+        };
+        /** ComparableRead */
+        ComparableRead: {
+            /** Authority */
+            authority: string;
+            /** Ruling Number */
+            ruling_number: string;
+            /**
+             * Ruling Date
+             * Format: date
+             */
+            ruling_date: string;
+            /** Subject */
+            subject: string;
+            /** Tariff Codes */
+            tariff_codes: string[];
+            /** Url */
+            url: string;
+            /** Is Revoked */
+            is_revoked: boolean;
+            /** Revoked By */
+            revoked_by: string[];
+            /** Extracto */
+            extracto: string;
+            /** Extracto De */
+            extracto_de: string;
+            /** Data Origin */
+            data_origin: string;
+        };
+        /** ComparablesRead */
+        ComparablesRead: {
+            /** Hs6 */
+            hs6: string | null;
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+            /** Comparables */
+            comparables?: components["schemas"]["ComparableRead"][];
+            /**
+             * Aviso
+             * @default Casos de otra aduana, no fundamento jurídico en México. Sólo coinciden los seis dígitos del Sistema Armonizado; la fracción de EE. UU. no se traduce a TIGIE.
+             */
+            aviso: string;
         };
         /**
          * Consulta
@@ -1265,7 +1327,7 @@ export interface components {
             /** Estimated Impact Amount Currency */
             estimated_impact_amount_currency?: string | null;
             /** Folio */
-            folio: string;
+            folio?: string | null;
             /** Sku */
             sku?: string | null;
             /** Producto */
@@ -1282,7 +1344,7 @@ export interface components {
              */
             decision_id: string;
             /** Folio */
-            folio: string;
+            folio?: string | null;
             /** Fraction Code */
             fraction_code?: string | null;
             /** Reasoning */
@@ -1403,7 +1465,7 @@ export interface components {
              */
             decision_id: string;
             /** Folio */
-            folio: string;
+            folio?: string | null;
             /** What */
             what: string;
             /** Why */
@@ -2170,7 +2232,7 @@ export interface components {
             /** Estimated Impact Amount Currency */
             estimated_impact_amount_currency?: string | null;
             /** Folio */
-            folio: string;
+            folio?: string | null;
             /** Producto */
             producto?: string | null;
             /** Sku */
@@ -3284,6 +3346,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    comparables_classifications__decision_id__comparables_get: {
+        parameters: {
+            query?: {
+                limite?: number;
+            };
+            header?: never;
+            path: {
+                decision_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComparablesRead"];
+                };
             };
             /** @description Validation Error */
             422: {

@@ -1949,3 +1949,20 @@ code {
 /* El folio de §17 (AD-2026-000001): discreto, pero copiable. */
 .folio { margin: 0 0 0.25rem; color: var(--tenue); font-size: 0.85rem; }
 .folio code { user-select: all; }
+
+/* Casos comparables (ADR 0019): separados del fundamento, con su aviso. */
+.comparables { margin-top: 2rem; }
+.comparables__aviso {
+  padding: 0.6rem 0.9rem;
+  border-left: 3px solid var(--aviso);
+  background: rgba(245, 165, 36, 0.09);
+  font-size: 0.87rem;
+}
+.comparables__lista { list-style: none; padding: 0; margin: 0; }
+.comparable { padding: 0.75rem 0; border-bottom: 1px solid rgba(107, 116, 136, 0.25); }
+.comparable--revocada { opacity: 0.65; }
+.comparable__cabecera { margin: 0; font-size: 0.87rem; color: var(--tenue); }
+.comparable__revocada { color: var(--aviso); }
+.comparable__asunto { margin: 0.25rem 0; font-weight: 600; }
+.comparable__extracto { margin: 0.35rem 0; padding-left: 0.8rem; border-left: 2px solid var(--tenue); font-size: 0.9rem; }
+.comparable__meta { margin: 0; font-size: 0.8rem; color: var(--tenue); }
