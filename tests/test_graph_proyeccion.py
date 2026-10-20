@@ -124,11 +124,11 @@ def _escenario() -> list[list[Mapping[str, Any]]]:
         "valid_to": None,
         "data_origin": "OFFICIAL",
     }
-    # 13 consultas de nodos (NOM y RegulatoryEvent van al final, 13-oct).
-    nodos: list[list[Mapping[str, Any]]] = [[fraccion], [nico], [regla]] + [[] for _ in range(10)]
-    # 12 de relaciones (SUBJECT_TO y AFFECTED_BY al final).
+    # 14 consultas de nodos (NOM, PROSECSector y RegulatoryEvent al final).
+    nodos: list[list[Mapping[str, Any]]] = [[fraccion], [nico], [regla]] + [[] for _ in range(11)]
+    # 13 de relaciones (SUBJECT_TO, ELIGIBLE_UNDER y AFFECTED_BY al final).
     relaciones: list[list[Mapping[str, Any]]] = [[{"tariff_fraction_id": FRACCION, "id": NICO}]] + [
-        [] for _ in range(11)
+        [] for _ in range(12)
     ]
     return nodos + relaciones
 
@@ -151,10 +151,10 @@ def test_las_omisiones_del_28_estan_escritas() -> None:
     from graph import proyeccion
 
     doc = proyeccion.__doc__ or ""
-    for ausente in ("PROSECSector", "Treaty", "Manufacturer"):
+    for ausente in ("Treaty", "Manufacturer"):
         assert ausente in doc, f"falta decir por qué no está {ausente}"
     # Y los que salieron de la lista, con la fuente que los desbloqueó.
-    for nombre in ("NOM", "RegulatoryEvent", "Anexo 2.4.1"):
+    for nombre in ("NOM", "RegulatoryEvent", "Anexo 2.4.1", "PROSECSector", "Decreto PROSEC"):
         assert nombre in doc
 
 
@@ -244,7 +244,7 @@ def _escenario_con_nom() -> list[list[Mapping[str, Any]]]:
         "data_origin": "OFFICIAL",
     }
     lotes[11] = [nom]  # la 12.ª consulta de nodos es la de NOM
-    lotes[13 + 10] = [{"tariff_fraction_id": FRACCION, "id": NOM_ID}]  # SUBJECT_TO
+    lotes[14 + 10] = [{"tariff_fraction_id": FRACCION, "id": NOM_ID}]  # SUBJECT_TO
     return lotes
 
 
@@ -259,6 +259,45 @@ def test_la_nom_se_proyecta_con_su_alcance_y_su_vigencia() -> None:
     assert nom["valid_from"] == date(2023, 1, 1)
     assert nom["data_origin"] == "OFFICIAL"
     assert grafo.relaciones["SUBJECT_TO"] == {(str(FRACCION), str(NOM_ID))}
+
+
+PROSEC_ID = uuid.uuid4()
+
+
+def test_el_prosec_se_proyecta_por_fila_y_sin_la_tasa() -> None:
+    """Un nodo por fila del decreto: la acotación y la vigencia son suyas. La
+    tasa no viaja aunque la consulta la trajera: el dinero no va al grafo."""
+    lotes = _escenario()
+    lotes[12] = [  # la 13.ª consulta de nodos es la de PROSECSector
+        {
+            "id": PROSEC_ID,
+            "code": "I",
+            "name": "Industria Eléctrica",
+            "fraction_code": "84713001",
+            "is_partial": True,
+            "scope_note": "Únicamente: portátiles",
+            "valid_from": date(2024, 8, 26),
+            "valid_to": None,
+            "data_origin": "OFFICIAL",
+        }
+    ]
+    lotes[14 + 11] = [{"tariff_fraction_id": FRACCION, "id": PROSEC_ID}]  # ELIGIBLE_UNDER
+    grafo = GrafoFalso()
+    proyectar(SesionFalsa(lotes), grafo)  # type: ignore[arg-type]
+
+    sector = grafo.nodos["PROSECSector"][str(PROSEC_ID)]
+    assert sector["code"] == "I" and sector["scope_note"].startswith("Únicamente")
+    assert sector["data_origin"] == "OFFICIAL"
+    assert grafo.relaciones["ELIGIBLE_UNDER"] == {(str(FRACCION), str(PROSEC_ID))}
+
+
+def test_la_consulta_del_prosec_no_pide_la_tasa() -> None:
+    import inspect
+
+    from graph import proyeccion
+
+    fuente = inspect.getsource(proyeccion)
+    assert "ProsecRate.igi_rate" not in fuente
 
 
 def test_sin_eventos_no_se_crea_ningun_nodo_vacio() -> None:
