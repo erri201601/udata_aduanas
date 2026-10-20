@@ -20,7 +20,7 @@ from database.models.enums import DATA_ORIGIN
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-pytestmark = pytest.mark.unit
+pytestmark = [pytest.mark.unit, pytest.mark.contract]
 
 _REGULATORY = "regulatory"
 _SCHEMAS = {"regulatory", "operational", "intelligence"}

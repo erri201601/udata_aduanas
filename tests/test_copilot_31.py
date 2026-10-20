@@ -29,7 +29,7 @@ from core.copilot import (
 from core.llm.errors import ProviderNotConfiguredError, ProviderRateLimitError
 from core.llm.types import CallMetadata, StructuredResponse
 
-pytestmark = pytest.mark.unit
+pytestmark = [pytest.mark.unit, pytest.mark.contract]
 
 FECHA = date(2024, 3, 15)
 
