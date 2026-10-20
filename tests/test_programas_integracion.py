@@ -1,9 +1,10 @@
 """`cargar_programas`: vigencia, tasa de la Regla 8ª desde la LIGIE, y `None`
 frente a catálogo vacío (ADR 0011).
 
-Contra Postgres, en una transacción que se revierte. Las filas se insertan con
-una fecha muy lejana (2099) para no mezclarse con lo que Persona 2 cargue: lo
-vigente en esa fecha es sólo lo de este test.
+Contra Postgres, en una transacción que se revierte. Desde #258/#261 la base
+compartida tiene el PROSEC y la Regla 8ª reales sin fecha de fin: rigen también
+en 2099. Cada test empieza vaciando las dos tablas dentro de su transacción (se
+revierte con ella); lo vigente en 2099 es sólo lo de este test.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 
 import pytest
+import sqlalchemy as sa
 from core.opportunity import OpportunityKind
 from database.models import ProsecRate, Regla8aFraction
 from database.repositories.programas import cargar_programas
@@ -42,6 +44,12 @@ class _Catalogo:
 
     def igi_rate(self, *, on_date: date, fraction_code: str) -> Decimal | None:
         return self.tasas.get(fraction_code)
+
+
+@pytest.fixture(autouse=True)
+def _sin_filas_reales(pg_session: Session) -> None:  # noqa: F811
+    pg_session.execute(sa.delete(ProsecRate))
+    pg_session.execute(sa.delete(Regla8aFraction))
 
 
 def _catalogo(tasas: dict[str, Decimal]) -> TariffCatalogRepository:

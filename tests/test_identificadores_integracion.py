@@ -1,7 +1,9 @@
 """`cargar_reglas`: vigencia y `None` frente a «ninguna aplica» (ADR 0012).
 
-Contra Postgres, en una transacción que se revierte, con fechas de 2099 para no
-mezclarse con lo que cargue Persona 2.
+Contra Postgres, en una transacción que se revierte. Desde #257 la base
+compartida tiene las reglas reales del Apéndice 8 sin fecha de fin: rigen
+también en 2099. Cada test empieza vaciando la tabla dentro de su transacción
+(se revierte con ella), o «no hay reglas vigentes» nunca sería cierto.
 """
 
 from __future__ import annotations
@@ -10,6 +12,7 @@ from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
 import pytest
+import sqlalchemy as sa
 from database.models import PedimentoIdentifierRequirement
 from database.repositories.identificadores import cargar_reglas
 
@@ -26,6 +29,11 @@ PROCEDENCIA = {
     "content_hash": "0" * 64,
     "retrieved_at": datetime.now(UTC),
 }
+
+
+@pytest.fixture(autouse=True)
+def _sin_reglas_reales(pg_session: Session) -> None:  # noqa: F811
+    pg_session.execute(sa.delete(PedimentoIdentifierRequirement))
 
 
 def _regla(codigo: str, desde: date, hasta: date | None = None) -> PedimentoIdentifierRequirement:

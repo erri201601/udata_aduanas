@@ -50,6 +50,32 @@ def pg_session(monkeypatch: pytest.MonkeyPatch) -> Iterator[Session]:
         engine.dispose()
 
 
+@pytest.fixture(autouse=True)
+def _sin_la_carga_real(pg_session: Session) -> None:
+    """Desde el 20-oct este corpus está cargado en la base compartida: sin
+    retirarlo, todo se «salta» y la carga no se prueba. Se retira dentro de la
+    transacción del test y se revierte con ella. Pedimento y factura arrastran
+    en cascada sus partidas; el producto no, y lo que lo referencia tampoco."""
+    corpus = parse_corpus(construir_corpus_nuevo(tasa_de_cambio=_tasa_fija))
+    skus = [
+        parte.observed.get("sku_override") or f"{ped.document_id}-{parte.sec}"
+        for ped in corpus.pedimentos
+        for parte in ped.parts
+    ]
+    numeros = [p.pedimento_number for p in corpus.pedimentos]
+    facturas = [p.document_id for p in corpus.pedimentos]
+    for sql in (
+        "DELETE FROM operational.pedimentos WHERE pedimento_number = ANY(:numeros)",
+        "DELETE FROM operational.invoices WHERE invoice_number = ANY(:facturas)",
+        "DELETE FROM intelligence.opportunity_findings WHERE product_id IN "
+        "(SELECT id FROM operational.products WHERE sku = ANY(:skus))",
+        "DELETE FROM intelligence.classification_decisions WHERE product_id IN "
+        "(SELECT id FROM operational.products WHERE sku = ANY(:skus))",
+        "DELETE FROM operational.products WHERE sku = ANY(:skus)",
+    ):
+        pg_session.execute(sa.text(sql), {"numeros": numeros, "facturas": facturas, "skus": skus})
+
+
 def _tasa_fija(_fecha: date) -> Decimal:
     return Decimal("17.00")
 
