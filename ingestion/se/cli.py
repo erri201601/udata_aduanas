@@ -198,18 +198,21 @@ def _regla_8a(args: argparse.Namespace) -> int:
     engine = create_engine(_database_url(args.target))
     with Session(engine) as session:
         sectores = dict(
-            session.execute(
-                sa.select(ProsecRate.sector_code, ProsecRate.sector_name).distinct()
-            ).tuples()
+            session.execute(sa.select(ProsecRate.sector_code, ProsecRate.sector_name).distinct())
+            .tuples()
+            .all()
         )
         if not sectores:
             raise SystemExit("No hay sectores PROSEC cargados: corre antes --prosec.")
-        nueve_ocho = session.execute(
-            sa.select(TariffFraction.code, TariffFraction.description).where(
-                TariffFraction.code.like("9802%"), TariffFraction.valid_to.is_(None)
-            )
-        ).tuples()
-        fracciones, sin_sector = regla_8a.fracciones_regla_8a(list(nueve_ocho), sectores)
+        nueve_ocho = [
+            (codigo, texto)
+            for codigo, texto in session.execute(
+                sa.select(TariffFraction.code, TariffFraction.description).where(
+                    TariffFraction.code.like("9802%"), TariffFraction.valid_to.is_(None)
+                )
+            ).all()
+        ]
+        fracciones, sin_sector = regla_8a.fracciones_regla_8a(nueve_ocho, sectores)
         creadas = load.cargar_regla_8a(session, fracciones)
         session.commit()
     for motivo in sin_sector:

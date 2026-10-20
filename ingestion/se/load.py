@@ -196,9 +196,41 @@ def cargar_prosec(
             )
         ).tuples()
     )
-    creadas = 0
-    omitidas: list[str] = []
+    # CONTRADICCIONES DEL PROPIO DECRETO (20-oct)
+    #
+    # La misma fracción, en el mismo sector y con la misma acotación, con dos
+    # tasas distintas: el sector XV lista la 7419.80.02 al 5 % y exenta. No se
+    # elige ninguna —sería inventar cuál rige— y, si una ya se cargó, se
+    # retira: `NEEDS_VALIDATION`.
+    tasas: dict[tuple[str, str, str | None], set[Decimal]] = {}
     for fila in filas:
+        tasas.setdefault((fila.sector_code, fila.fraction_code, fila.acotacion), set()).add(
+            fila.igi_rate
+        )
+    contradictorias = {clave for clave, valores in tasas.items() if len(valores) > 1}
+    for sector, fraccion, acotacion in contradictorias:
+        session.execute(
+            sa.delete(ProsecRate).where(
+                ProsecRate.sector_code == sector,
+                ProsecRate.fraction_code == fraccion,
+                ProsecRate.scope_note.is_not_distinct_from(acotacion),
+                ProsecRate.valid_from == prosec.VALID_FROM,
+                ProsecRate.source_url == prosec.SOURCE_URL,
+            )
+        )
+        existentes.discard((sector, fraccion, acotacion, prosec.VALID_FROM))
+
+    creadas = 0
+    omitidas: list[str] = [
+        f"{sector} {fraccion}: el decreto le da {len(tasas[(sector, fraccion, acotacion)])} "
+        "tasas distintas con la misma acotación (NEEDS_VALIDATION)"
+        for sector, fraccion, acotacion in sorted(
+            contradictorias, key=lambda c: (c[0], c[1], c[2] or "")
+        )
+    ]
+    for fila in filas:
+        if (fila.sector_code, fila.fraction_code, fila.acotacion) in contradictorias:
+            continue
         if fila.fraction_code not in vigentes:
             omitidas.append(
                 f"{fila.sector_code} {fila.fraction_code}: no está vigente en la LIGIE el "
