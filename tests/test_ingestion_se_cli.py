@@ -10,7 +10,7 @@ pytestmark = pytest.mark.unit
 
 def test_cable_acero_china_es_obligatorio_sin_raw_only() -> None:
     with pytest.raises(
-        SystemExit, match="--cable-acero-china, --prosec, --anexo-2-5-1 o --regla-8a es obligatorio"
+        SystemExit, match="--cable-acero-china, --prosec, --anexo-2-4-1, --anexo-2-5-1 o --regla-8a"
     ):
         main(["--target", "local"])
 

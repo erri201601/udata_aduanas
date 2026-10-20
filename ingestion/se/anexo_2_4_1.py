@@ -96,6 +96,11 @@ class FilaNom:
     nom_code: str
     scope_note: str | None = None
     """El «Únicamente: …» íntegro, o `None` si la NOM aplica a toda la fila."""
+    nicos_listados: tuple[str, ...] = ()
+    """Los NICO de la fracción que el anexo lista con esta NOM. Sólo lo llena
+    `parse_html`: con la tabla sí se pueden atribuir. Si el anexo no lista
+    todos los NICO vigentes de la fracción, la NOM no es de la fracción entera,
+    y el cargador la deja acotada (`cargar`)."""
 
 
 @dataclass
@@ -192,3 +197,104 @@ def _acumular(actual: _EnCurso, linea: str) -> None:
     derecha = _columna_nom(linea).strip()
     if derecha:
         actual.derecha.append(derecha)
+
+
+# ── La versión del DOF 25-nov-2022, en HTML (ADR 0003, actualización 20-oct) ──
+#
+# El Acuerdo publicado en el DOF el 25-nov-2022 sustituyó el Anexo 2.4.1 entero
+# y rige desde el 12-dic-2022 (mismo acuerdo que el 2.5.1, ADR 0017). El DOF lo
+# publica como tablas: Fracción/NICO · Descripción · NOM/Acotación, con la NOM
+# en una celda que abarca la fracción y sus NICO. Con la tabla, la atribución
+# que el PDF no permitía (ver «SE AGRUPA POR FRACCIÓN») deja de ser un problema.
+
+_SECCION = re.compile(r"(?<![\d.])([1-9])\s*\.\s*-\s+Se identifican")
+_FIN_DEL_ANEXO = re.compile(r"ANEXO\s*2\s*\.\s*5\s*\.\s*1")
+_FRACCION_CELDA = re.compile(r"^(\d{4})\.(\d{2})\.(\d{2})$")
+_NICO_CELDA = re.compile(r"^\d{2}$")
+
+
+#: Lo que limita una NOM en la versión HTML: «Únicamente: …» o «Excepto: …».
+#: Se guarda CON la palabra, porque no dicen lo mismo.
+_LIMITE = re.compile(r"((?:[ÚU]nicamente|Excepto)\s*:.*)", re.IGNORECASE)
+
+
+def _noms_de(celda: str) -> list[tuple[str, str | None]]:
+    """Cada NOM de la celda con SU acotación: el texto que la sigue hasta la
+    siguiente NOM.
+
+    Una celda puede traer varias («NOM-019 Únicamente: … NOM-208 Únicamente:
+    … NOM-001 Únicamente: …», 8528.59.01). La lectura del PDF le pegaba a
+    todas la primera acotación.
+    """
+    junto = re.sub(r"-\s+(?=\d)", "-", " ".join(celda.split()))
+    marcas = list(_NOM.finditer(junto))
+    salida: dict[str, str | None] = {}
+    for i, m in enumerate(marcas):
+        fin = marcas[i + 1].start() if i + 1 < len(marcas) else len(junto)
+        limite = _LIMITE.search(junto[m.end() : fin])
+        nota = limite.group(1).strip() if limite else None
+        if m.group(0) not in salida or (nota and not salida[m.group(0)]):
+            salida[m.group(0)] = nota
+    return list(salida.items())
+
+
+def parse_html(html: str) -> list[FilaNom]:
+    """Las filas de los numerales tabulares del Anexo 2.4.1 en el HTML del DOF.
+
+    Cada tabla se asigna al numeral cuyo encabezado («2.- Se identifican…») la
+    precede; el anexo termina donde empieza el 2.5.1. Una fila por fracción y
+    NOM, con los NICO que la llevan en `nicos_listados`.
+    """
+    from ingestion.se.tablas_html import cuadricula, tablas
+
+    numeral: int | None = None
+    #: (fracción, numeral) -> NOM -> (acotación, NICO que la llevan)
+    acumulado: dict[tuple[str, int], dict[str, tuple[str | None, list[str]]]] = {}
+    nicos_de: dict[tuple[str, int], list[str]] = {}
+    for tabla in tablas(html):
+        antes = " ".join(tabla.antes.split())
+        if _FIN_DEL_ANEXO.search(antes):
+            numeral = None
+        secciones = _SECCION.findall(antes)
+        if secciones:
+            numeral = int(secciones[-1])
+        if numeral not in NUMERALES_TABULARES:
+            continue
+        fraccion: str | None = None
+        for fila in cuadricula(tabla.filas):
+            if len(fila) < 3:
+                continue
+            codigo = fila[0].strip()
+            m = _FRACCION_CELDA.match(codigo)
+            if m:
+                fraccion = "".join(m.groups())
+                nico = None
+            elif _NICO_CELDA.match(codigo) and fraccion:
+                nico = codigo
+            else:
+                continue
+            clave = (fraccion, numeral)
+            nicos = nicos_de.setdefault(clave, [])
+            if nico and nico not in nicos:
+                nicos.append(nico)
+            por_nom = acumulado.setdefault(clave, {})
+            for nom, nota in _noms_de(fila[2]):
+                anterior, con_nico = por_nom.get(nom, (nota, []))
+                if nico and nico not in con_nico:
+                    con_nico.append(nico)
+                por_nom[nom] = (anterior or nota, con_nico)
+    salida: list[FilaNom] = []
+    for (fraccion, num), por_nom in acumulado.items():
+        listados = nicos_de.get((fraccion, num), [])
+        for nom, (nota, con_nico) in por_nom.items():
+            salida.append(
+                FilaNom(
+                    fraction_code=fraccion,
+                    nico=None,
+                    numeral=num,
+                    nom_code=nom,
+                    scope_note=nota,
+                    nicos_listados=tuple(con_nico or listados),
+                )
+            )
+    return salida
