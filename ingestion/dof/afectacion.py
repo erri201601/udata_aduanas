@@ -111,29 +111,41 @@ def _anios(valor: str) -> int | None:
     return _NUMEROS.get(valor.lower()) if not valor.isdigit() else int(valor)
 
 
+def _entrada(transitorio: str, publicada: date) -> date | None:
+    if _SIGUIENTE.search(transitorio):
+        return publicada + timedelta(days=1)
+    if _MISMO_DIA.search(transitorio):
+        return publicada
+    f = _FECHA.search(transitorio)
+    mes = _MESES.get(f.group(2).lower()) if f else None
+    if f and mes:
+        dia = 1 if f.group(1).lower() == "primero" else int(f.group(1))
+        return date(int(f.group(3)), mes, dia)
+    return None
+
+
 def vigencia_de(html: str, publicada: date) -> tuple[date | None, date | None]:
     """`(entra_en_vigor, vigente_hasta)` del transitorio, o `None` si no es
     inequívoco. «Vigencia de N años contados a partir de su entrada en vigor»
     da el fin: el día antes del aniversario."""
-    m = _TRANSITORIO.search(_cuerpo(_texto(html)))
-    if not m:
-        return None, None
-    transitorio = m.group(1)
+    # La PRIMERA aparición que traiga una fórmula de entrada en vigor, no la
+    # primera a secas: el Código de Conducta de la SE (19-oct-2026) cita en
+    # sus considerandos el «Transitorio Tercero» de otra ley, y ahí no hay
+    # fecha. Su transitorio de verdad viene después.
     entra: date | None = None
-    if _SIGUIENTE.search(transitorio):
-        entra = publicada + timedelta(days=1)
-    elif _MISMO_DIA.search(transitorio):
-        entra = publicada
-    else:
-        f = _FECHA.search(transitorio)
-        mes = _MESES.get(f.group(2).lower()) if f else None
-        if f and mes:
-            dia = 1 if f.group(1).lower() == "primero" else int(f.group(1))
-            entra = date(int(f.group(3)), mes, dia)
+    transitorio = ""
+    for m in _TRANSITORIO.finditer(_cuerpo(_texto(html))):
+        ventana = m.group(1)
+        entra = _entrada(ventana, publicada)
+        if entra is not None:
+            transitorio = ventana
+            break
+    if entra is None:
+        return None, None
     hasta: date | None = None
     v = _VIGENCIA_ANIOS.search(transitorio)
     anios = _anios(v.group(1)) if v else None
-    if entra and anios:
+    if anios:
         try:
             hasta = entra.replace(year=entra.year + anios) - timedelta(days=1)
         except ValueError:  # 29 de febrero

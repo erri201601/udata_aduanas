@@ -699,6 +699,7 @@ def leer_notas_pendientes(
     *,
     descargar: Callable[[str], bytes],
     guardar_raw: Callable[[bytes, str], str],
+    todas: bool = False,
 ) -> tuple[int, int]:
     """Lee la nota de cada evento que aún no se leyó (ADR 0022).
 
@@ -707,14 +708,19 @@ def leer_notas_pendientes(
     NOM del título, y fija `effective_date` (y `valid_to`, si el decreto dice
     cuánto dura) sólo cuando el transitorio es inequívoco.
 
+    Con `todas`, vuelve a leer también las ya leídas: sirve cuando el lector
+    mejora (21-oct: un «Transitorio Tercero» citado en los considerandos le
+    quitaba la fecha al Código de Conducta de la SE).
+
     Devuelve `(leídas, con_fracciones)`. Una nota que no se pudo descargar se
     deja pendiente para la siguiente pasada.
     """
     from ingestion.dof.afectacion import leer
 
-    pendientes = session.scalars(
-        sa.select(RegulatoryEvent).where(RegulatoryEvent.note_content_hash.is_(None))
-    ).all()
+    consulta = sa.select(RegulatoryEvent)
+    if not todas:
+        consulta = consulta.where(RegulatoryEvent.note_content_hash.is_(None))
+    pendientes = session.scalars(consulta).all()
     leidas = con_fracciones = 0
     for evento in pendientes:
         url = re.sub(r"^https?://(www\.)?dof\.gob\.mx", "https://dof.gob.mx", evento.source_url)
@@ -730,7 +736,7 @@ def leer_notas_pendientes(
         )
         evento.affected_fraction_codes = list(afectacion.fracciones)
         evento.keywords = list(dict.fromkeys([*evento.keywords, *afectacion.noms]))
-        if evento.effective_date is None and afectacion.entra_en_vigor is not None:
+        if afectacion.entra_en_vigor is not None and (todas or evento.effective_date is None):
             evento.effective_date = afectacion.entra_en_vigor
         if afectacion.vigencia_hasta is not None:
             evento.valid_to = afectacion.vigencia_hasta

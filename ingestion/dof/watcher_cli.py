@@ -75,10 +75,17 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         action="store_true",
         help="No lee el sumario: sólo lee las notas de los eventos pendientes (ADR 0022).",
     )
+    parser.add_argument(
+        "--releer",
+        action="store_true",
+        help="Con --solo-notas: vuelve a leer también las ya leídas (cuando mejora el lector).",
+    )
     return parser.parse_args(argv)
 
 
-def _leer_notas(database_url: str, minio_target: MinioTarget) -> tuple[int, int]:
+def _leer_notas(
+    database_url: str, minio_target: MinioTarget, *, todas: bool = False
+) -> tuple[int, int]:
     """Lee las notas pendientes. Cada nota va a RAW con el hash en la clave."""
 
     def guardar(datos: bytes, codigo: str) -> str:
@@ -90,7 +97,9 @@ def _leer_notas(database_url: str, minio_target: MinioTarget) -> tuple[int, int]
         return captura.content_hash
 
     with Session(create_engine(database_url)) as session:
-        resultado = load.leer_notas_pendientes(session, descargar=raw.fetch, guardar_raw=guardar)
+        resultado = load.leer_notas_pendientes(
+            session, descargar=raw.fetch, guardar_raw=guardar, todas=todas
+        )
         session.commit()
     return resultado
 
@@ -101,7 +110,9 @@ def main(argv: list[str] | None = None) -> int:
     minio_target = _minio_target(args.target)
 
     if args.solo_notas:
-        leidas, con_fracciones = _leer_notas(_database_url(args.target), minio_target)
+        leidas, con_fracciones = _leer_notas(
+            _database_url(args.target), minio_target, todas=args.releer
+        )
         registrar(records=leidas, con_fracciones=con_fracciones)
         print(f"OK ({args.target}): {leidas} notas leídas, {con_fracciones} citan fracciones.")
         return 0
