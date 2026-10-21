@@ -19,6 +19,7 @@ import { useEffect, useState } from 'react'
 import { fetchSentinel } from '../api/client'
 import type { Sentinel } from '../api/client'
 import { DataOriginBadge } from '../components/DataOriginBadge'
+import { EventosDelDof } from '../components/EventosDelDof'
 import type { DataOrigin } from '../components/DataOriginBadge'
 
 /** Hoy en ISO, sin pasar por UTC: es una fecha de vigencia, no un instante. */
@@ -145,6 +146,8 @@ export function RegulatorySentinel() {
               tono={datos.vigilancia_automatica ? 'normal' : 'atencion'}
             />
           </div>
+
+          <EventosDelDof eventos={datos.eventos} />
 
           <h2 className="seccion">Corpus vigilado</h2>
           <div className="tabla-scroll">

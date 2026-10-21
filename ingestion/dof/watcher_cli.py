@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 from apps.api.config import get_settings
-from apps.api.logging import con_corrida
+from apps.api.logging import con_corrida, registrar
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -70,13 +70,41 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         action="store_true",
         help="Solo sube y verifica el RAW en --target; no toca la base.",
     )
+    parser.add_argument(
+        "--solo-notas",
+        action="store_true",
+        help="No lee el sumario: sólo lee las notas de los eventos pendientes (ADR 0022).",
+    )
     return parser.parse_args(argv)
+
+
+def _leer_notas(database_url: str, minio_target: MinioTarget) -> tuple[int, int]:
+    """Lee las notas pendientes. Cada nota va a RAW con el hash en la clave."""
+
+    def guardar(datos: bytes, codigo: str) -> str:
+        clave = f"dof/notas/{codigo}_{raw.content_hash(datos)[:16]}.html"
+        captura = raw.store_raw_bytes(
+            datos, source_url=f"dof:{codigo}", minio_key=clave, target=minio_target
+        )
+        raw.verify_stored(target=minio_target, minio_key=clave)
+        return captura.content_hash
+
+    with Session(create_engine(database_url)) as session:
+        resultado = load.leer_notas_pendientes(session, descargar=raw.fetch, guardar_raw=guardar)
+        session.commit()
+    return resultado
 
 
 @con_corrida("ingestion.dof.watcher")
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     minio_target = _minio_target(args.target)
+
+    if args.solo_notas:
+        leidas, con_fracciones = _leer_notas(_database_url(args.target), minio_target)
+        registrar(records=leidas, con_fracciones=con_fracciones)
+        print(f"OK ({args.target}): {leidas} notas leídas, {con_fracciones} citan fracciones.")
+        return 0
 
     sumario_bytes = raw.fetch(SUMARIO_URL)
     hoy = datetime.now(UTC).date()
@@ -109,7 +137,14 @@ def main(argv: list[str] | None = None) -> int:
         )
         session.commit()
 
-    print(f"OK ({args.target}): {creados} regulatory_events nuevos.")
+    # Y la nota de cada evento nuevo (o pendiente de otra pasada): qué
+    # fracciones cita, qué NOM y desde cuándo rige (ADR 0022).
+    leidas, con_fracciones = _leer_notas(database_url, minio_target)
+    registrar(records=creados, notas_leidas=leidas, con_fracciones=con_fracciones)
+    print(
+        f"OK ({args.target}): {creados} regulatory_events nuevos; "
+        f"{leidas} notas leídas, {con_fracciones} citan fracciones."
+    )
     log.info(
         "dof.watcher_cli.done",
         target=args.target,

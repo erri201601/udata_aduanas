@@ -15,6 +15,7 @@ automática que hoy nadie pidió.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
@@ -40,7 +41,7 @@ from ingestion.dof.rgce import fracciones_de
 from ingestion.dof.sumario import clasificar_event_kind
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from sqlalchemy.orm import Session
 
@@ -691,3 +692,53 @@ def load_identifier_requirements(
         creadas += 1
     session.flush()
     return creadas
+
+
+def leer_notas_pendientes(
+    session: Session,
+    *,
+    descargar: Callable[[str], bytes],
+    guardar_raw: Callable[[bytes, str], str],
+) -> tuple[int, int]:
+    """Lee la nota de cada evento que aún no se leyó (ADR 0022).
+
+    `descargar(url)` trae la nota; `guardar_raw(bytes, codigo)` la sube a RAW y
+    devuelve su hash. Llena `affected_fraction_codes`, añade a `keywords` las
+    NOM del título, y fija `effective_date` (y `valid_to`, si el decreto dice
+    cuánto dura) sólo cuando el transitorio es inequívoco.
+
+    Devuelve `(leídas, con_fracciones)`. Una nota que no se pudo descargar se
+    deja pendiente para la siguiente pasada.
+    """
+    from ingestion.dof.afectacion import leer
+
+    pendientes = session.scalars(
+        sa.select(RegulatoryEvent).where(RegulatoryEvent.note_content_hash.is_(None))
+    ).all()
+    leidas = con_fracciones = 0
+    for evento in pendientes:
+        url = re.sub(r"^https?://(www\.)?dof\.gob\.mx", "https://dof.gob.mx", evento.source_url)
+        codigo = re.search(r"codigo=(\d+)", url)
+        try:
+            datos = descargar(url)
+        except Exception as exc:
+            log.warning("dof.nota.no_descargada", url=url, error=type(exc).__name__)
+            continue
+        publicada = evento.published_at or evento.valid_from
+        afectacion = leer(
+            datos.decode("utf-8", errors="replace"), titulo=evento.title, publicada=publicada
+        )
+        evento.affected_fraction_codes = list(afectacion.fracciones)
+        evento.keywords = list(dict.fromkeys([*evento.keywords, *afectacion.noms]))
+        if evento.effective_date is None and afectacion.entra_en_vigor is not None:
+            evento.effective_date = afectacion.entra_en_vigor
+        if afectacion.vigencia_hasta is not None:
+            evento.valid_to = afectacion.vigencia_hasta
+        evento.note_content_hash = guardar_raw(datos, codigo.group(1) if codigo else "sin_codigo")
+        leidas += 1
+        con_fracciones += int(bool(afectacion.fracciones))
+    session.flush()
+    log.info(
+        "dof.notas.leidas", leidas=leidas, con_fracciones=con_fracciones, pendientes=len(pendientes)
+    )
+    return leidas, con_fracciones

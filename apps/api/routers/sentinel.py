@@ -41,7 +41,15 @@ from datetime import date
 from typing import TYPE_CHECKING, Annotated, Final, Literal
 
 import sqlalchemy as sa
-from database.models import ClassificationDecision, LegalDocument, LegalRule, RegulatoryEvent
+from database.models import (
+    ClassificationDecision,
+    FractionNomRequirement,
+    LegalDocument,
+    LegalRule,
+    Pedimento,
+    PedimentoItem,
+    RegulatoryEvent,
+)
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.dialects.postgresql import aggregate_order_by
@@ -69,6 +77,12 @@ MUESTRA_POR_OLA: Final = 6
 
 #: Cuántas normas derogadas se listan.
 TOPE_FUERA_DE_VIGENCIA: Final = 20
+
+#: Cuántas publicaciones del DOF se cruzan con lo que importan los clientes.
+TOPE_EVENTOS: Final = 15
+
+#: Cuántas fracciones se nombran por evento. Las demás se cuentan.
+MUESTRA_FRACCIONES: Final = 10
 
 #: Orígenes que pueden presentarse como norma real. Los demás se marcan §33.
 ORIGENES_OFICIALES: Final = frozenset({"OFFICIAL", "LICENSED", "HUMAN_VALIDATED"})
@@ -165,6 +179,104 @@ class ImpactoEnDecisiones(BaseModel):
     """¿Se puede sostener el análisis de impacto con lo que hay guardado?"""
 
 
+class EventoConImpacto(BaseModel):
+    """Una publicación del DOF y lo que toca de lo nuestro (ADR 0022)."""
+
+    titulo: str
+    url: str
+    publicado: date | None
+    entra_en_vigor: date | None
+    vigente_hasta: date | None
+    nota_leida: bool
+    """`False`: aún no se leyó la nota, y que no toque nada no está dicho."""
+    fracciones_citadas: int
+    noms: list[str] = Field(default_factory=list)
+    fracciones_de_clientes: list[str] = Field(default_factory=list)
+    """Las que la publicación cita y algún cliente declara o tiene clasificadas."""
+    por_nom: list[str] = Field(default_factory=list)
+    """Las de los clientes que exigen una NOM que la publicación nombra."""
+    total_afectadas: int = 0
+    partidas_afectadas: int = 0
+    todas_simuladas: bool = False
+    """Todas las partidas afectadas son SYNTHETIC: es impacto sobre la demo,
+    no sobre un cliente real (§33)."""
+
+
+def _fracciones_de_clientes(session: Session) -> set[str]:
+    """Lo que se importa o se clasifica: las fracciones declaradas en
+    pedimentos y las de las decisiones de clasificación."""
+    declaradas = session.scalars(
+        sa.select(PedimentoItem.declared_fraction_code)
+        .where(PedimentoItem.declared_fraction_code.isnot(None))
+        .distinct()
+    ).all()
+    clasificadas = session.scalars(
+        sa.select(ClassificationDecision.fraction_code)
+        .where(ClassificationDecision.fraction_code.isnot(None))
+        .distinct()
+    ).all()
+    return {c for c in [*declaradas, *clasificadas] if c}
+
+
+def _eventos_con_impacto(session: Session, on_date: date) -> list[EventoConImpacto]:
+    clientes = _fracciones_de_clientes(session)
+    eventos = session.scalars(
+        sa.select(RegulatoryEvent)
+        .order_by(
+            RegulatoryEvent.published_at.desc().nulls_last(), RegulatoryEvent.created_at.desc()
+        )
+        .limit(TOPE_EVENTOS)
+    ).all()
+    salida: list[EventoConImpacto] = []
+    for e in eventos:
+        noms = [k for k in e.keywords if k.startswith("NOM-")]
+        directas = sorted(set(e.affected_fraction_codes) & clientes)
+        por_nom: list[str] = []
+        if noms:
+            exigen = session.scalars(
+                sa.select(FractionNomRequirement.fraction_code)
+                .where(
+                    FractionNomRequirement.nom_code.in_(noms),
+                    FractionNomRequirement.valid_from <= on_date,
+                    sa.or_(
+                        FractionNomRequirement.valid_to.is_(None),
+                        FractionNomRequirement.valid_to >= on_date,
+                    ),
+                )
+                .distinct()
+            ).all()
+            por_nom = sorted((set(exigen) & clientes) - set(directas))
+        afectadas = set(directas) | set(por_nom)
+        partidas = (
+            session.execute(
+                sa.select(sa.func.count(), sa.func.bool_and(Pedimento.is_simulation))
+                .select_from(PedimentoItem)
+                .join(Pedimento, Pedimento.id == PedimentoItem.pedimento_id)
+                .where(PedimentoItem.declared_fraction_code.in_(afectadas))
+            ).one()
+            if afectadas
+            else (0, False)
+        )
+        salida.append(
+            EventoConImpacto(
+                titulo=e.title,
+                url=e.source_url,
+                publicado=e.published_at,
+                entra_en_vigor=e.effective_date,
+                vigente_hasta=e.valid_to,
+                nota_leida=e.note_content_hash is not None,
+                fracciones_citadas=len(e.affected_fraction_codes),
+                noms=noms,
+                fracciones_de_clientes=directas[:MUESTRA_FRACCIONES],
+                por_nom=por_nom[:MUESTRA_FRACCIONES],
+                total_afectadas=len(afectadas),
+                partidas_afectadas=int(partidas[0] or 0),
+                todas_simuladas=bool(partidas[1]) if partidas[0] else False,
+            )
+        )
+    return salida
+
+
 class Sentinel(BaseModel):
     """Estado de la vigilancia normativa a una fecha."""
 
@@ -192,6 +304,10 @@ class Sentinel(BaseModel):
     """
 
     impacto: ImpactoEnDecisiones = Field(default_factory=ImpactoEnDecisiones)
+
+    eventos: list[EventoConImpacto] = Field(default_factory=list)
+    """Las publicaciones más recientes del DOF y qué tocan de lo que los
+    clientes importan o clasifican (ADR 0022)."""
 
     corpus_sintetico: int = 0
     """Documentos del corpus que NO son fuente oficial (§33)."""
@@ -453,5 +569,6 @@ def centinela(
         eventos_dof=eventos,
         vigilancia_automatica=eventos > 0,
         impacto=_impacto(session),
+        eventos=_eventos_con_impacto(session, on_date),
         corpus_sintetico=sum(1 for d in documentos if not d.es_fuente_oficial),
     )

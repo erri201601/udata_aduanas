@@ -1966,3 +1966,18 @@ code {
 .comparable__asunto { margin: 0.25rem 0; font-weight: 600; }
 .comparable__extracto { margin: 0.35rem 0; padding-left: 0.8rem; border-left: 2px solid var(--tenue); font-size: 0.9rem; }
 .comparable__meta { margin: 0; font-size: 0.8rem; color: var(--tenue); }
+
+/* Lo que publicó el DOF y a quién toca (ADR 0022). */
+.eventos { list-style: none; padding: 0; margin: 0; }
+.evento { padding: 0.75rem 0; border-bottom: 1px solid rgba(107, 116, 136, 0.25); }
+.evento__cabecera { margin: 0; font-size: 0.85rem; color: var(--tenue); }
+.evento__titulo { display: block; margin: 0.2rem 0; font-weight: 600; }
+.evento__impacto { margin: 0.3rem 0 0; font-size: 0.9rem; color: var(--tenue); }
+.evento__impacto--pendiente { color: var(--aviso); }
+.evento__impacto--toca {
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid var(--aviso);
+  background: rgba(245, 165, 36, 0.09);
+  color: inherit;
+}
+.evento__impacto--toca p { margin: 0.25rem 0 0; }
