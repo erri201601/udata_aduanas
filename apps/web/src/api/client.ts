@@ -318,6 +318,11 @@ export async function fetchPanorama(signal?: AbortSignal): Promise<Panorama> {
   return pedir<Panorama>('/dashboard/operacion', signal)
 }
 
+/** La cabecera de un expediente: lo mismo que su fila del Panorama. */
+export async function fetchOperacion(pedimentoId: string, signal?: AbortSignal): Promise<Operacion> {
+  return pedir<Operacion>(`/dashboard/operacion/${pedimentoId}`, signal)
+}
+
 export async function fetchDashboard(signal?: AbortSignal): Promise<Dashboard> {
   return pedir<Dashboard>('/dashboard', signal)
 }

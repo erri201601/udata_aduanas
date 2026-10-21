@@ -19,8 +19,17 @@
 
 import { useEffect, useState } from 'react'
 
-import { TASAS_DEL_CORPUS, fetchEspejo, fetchPedimentos, revisarPedimento } from '../api/client'
-import type { LineaEspejo, PedimentoEspejo, PedimentoRead } from '../api/client'
+import {
+  TASAS_DEL_CORPUS,
+  fetchEspejo,
+  fetchOperacion,
+  fetchPedimentos,
+  revisarPedimento,
+} from '../api/client'
+import type { LineaEspejo, Operacion, PedimentoEspejo, PedimentoRead } from '../api/client'
+import type { Navegar } from '../App'
+import { CabeceraExpediente, Chip, EstadoRevision } from '../components/Expediente'
+import { fechaCorta } from '../components/expediente'
 import { detalleDe, etiquetaDe } from '../components/divergencias'
 import { CalculoDelMonto } from '../components/CalculoDelMonto'
 import { comoCalculo } from '../components/calculo'
@@ -315,13 +324,81 @@ function Partida({
   )
 }
 
+/** Quién, dónde, cuándo y en qué estado: lo que se lee antes de las partidas. */
+function Cabecera({ o, irA }: { o: Operacion; irA?: Navegar }) {
+  const [clave, ...resto] = (o.aduana ?? '').split(' · ')
+  return (
+    <CabeceraExpediente
+      tipo="Pedimento"
+      folio={o.pedimento_number}
+      titulo={o.cliente ?? 'Sin cliente registrado'}
+      marcas={
+        <>
+          <EstadoRevision o={o} />
+          {o.revisado_en != null &&
+            (o.criticos > 0 ? (
+              <Chip tono="mal">
+                {o.criticos} {o.criticos === 1 ? 'hallazgo crítico' : 'hallazgos críticos'}
+              </Chip>
+            ) : o.hallazgos > 0 ? (
+              <Chip tono="aviso">
+                {o.hallazgos} {o.hallazgos === 1 ? 'hallazgo' : 'hallazgos'}
+              </Chip>
+            ) : (
+              <Chip tono="neutro">Sin hallazgos en lo revisado</Chip>
+            ))}
+          {o.simulado && <span className="sim">simulación</span>}
+        </>
+      }
+      datos={[
+        { etiqueta: 'RFC', valor: o.rfc, mono: true },
+        {
+          etiqueta: 'Aduana',
+          valor: o.aduana ? (
+            <>
+              <span className="mono">{clave}</span> {resto.join(' · ')}
+            </>
+          ) : null,
+        },
+        {
+          etiqueta: 'Clave y tipo',
+          valor: (
+            <>
+              {o.clave && <span className="mono">{o.clave}</span>} {o.tipo}
+            </>
+          ),
+        },
+        { etiqueta: 'Fecha de operación', valor: fechaCorta(o.fecha) },
+        {
+          etiqueta: 'Valor en aduana',
+          valor: formatearMonto(o.valor_aduana, o.moneda),
+          mono: true,
+        },
+        { etiqueta: 'Siguiente acción', valor: o.siguiente_accion },
+      ]}
+      acciones={
+        irA && o.hallazgos > 0 ? (
+          <button
+            className="boton boton--secundario boton--chico"
+            onClick={() => irA('finding-detail', { pedimentoId: o.pedimento_id })}
+          >
+            Ver los hallazgos de este pedimento
+          </button>
+        ) : null
+      }
+    />
+  )
+}
+
 export function PedimentoShadow({
   pedimentoInicial = null,
-}: { pedimentoInicial?: string | null } = {}) {
+  irA,
+}: { pedimentoInicial?: string | null; irA?: Navegar } = {}) {
   const [pedimentos, setPedimentos] = useState<PedimentoRead[]>([])
   // El que se pidió abrir desde el Panorama; si no, el primero de la lista.
   const [elegido, setElegido] = useState<string | null>(pedimentoInicial)
   const [datos, setDatos] = useState<PedimentoEspejo | null>(null)
+  const [operacion, setOperacion] = useState<Operacion | null>(null)
   const [error, setError] = useState<string | null>(null)
   /* AUDITAR DESDE AQUÍ, NO DESDE UNA TERMINAL (7-oct)
    *
@@ -372,6 +449,19 @@ export function PedimentoShadow({
       .catch((causa: unknown) => {
         if (control.signal.aborted) return
         setError(causa instanceof Error ? causa.message : 'No se pudo cargar el espejo')
+      })
+    return () => control.abort()
+  }, [elegido, version])
+
+  // La cabecera es la misma fila que el Panorama: si falla, la pantalla sigue
+  // sin ella en vez de esconder el espejo.
+  useEffect(() => {
+    if (!elegido) return
+    const control = new AbortController()
+    fetchOperacion(elegido, control.signal)
+      .then(setOperacion)
+      .catch(() => {
+        if (!control.signal.aborted) setOperacion(null)
       })
     return () => control.abort()
   }, [elegido, version])
@@ -459,6 +549,8 @@ export function PedimentoShadow({
       </header>
 
       {datos?.is_simulation && <SyntheticBanner />}
+
+      {operacion && operacion.pedimento_id === elegido && <Cabecera o={operacion} irA={irA} />}
 
       {error && (
         <div className="alerta" role="alert">

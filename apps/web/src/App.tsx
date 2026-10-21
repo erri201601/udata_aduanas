@@ -106,7 +106,7 @@ export default function App() {
           <ProductDna onClasificado={(decisionId) => irA('classification', { decisionId })} />
         )}
         {pantalla.id === 'classification' && (
-          <Classification decisionInicial={destino.decisionId ?? null} />
+          <Classification decisionInicial={destino.decisionId ?? null} irA={irA} />
         )}
         {pantalla.id === 'finding-detail' && (
           <Findings pedimentoInicial={destino.pedimentoId ?? null} />
@@ -115,7 +115,7 @@ export default function App() {
         {pantalla.id === 'human-review' && <HumanReview />}
         {pantalla.id === 'regulatory-sentinel' && <RegulatorySentinel />}
         {pantalla.id === 'pedimento-shadow' && (
-          <PedimentoShadow pedimentoInicial={destino.pedimentoId ?? null} />
+          <PedimentoShadow pedimentoInicial={destino.pedimentoId ?? null} irA={irA} />
         )}
         {pantalla.id === 'copilot' && <Copilot />}
         {!pantalla.implementada && (

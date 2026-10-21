@@ -49,3 +49,23 @@ control de revisión aduanal.
 - Desde 1024 px de ancho, las operaciones se leen como fichas en lugar de tabla.
 - Pendiente: las pantallas que no se tocaron heredan los tokens, pero
   conservan su maquetación anterior.
+
+## Parte 2 — Cabecera de expediente (2026-10-21)
+
+- Pedimentos y Clasificación abren con una cabecera de expediente:
+  - folio, cliente o mercancía;
+  - datos de identificación;
+  - estado.
+- La cabecera de Pedimentos sale de `GET /dashboard/operacion/{id}`, que es la
+  misma función que alimenta la tabla del Panorama. Así no pueden decir dos
+  cosas distintas del mismo pedimento.
+- Clasificación separa tres voces, cada una con su chip:
+  - **Declarado**: la partida del pedimento.
+  - **Sugerido por el motor**.
+  - **Confirmado en revisión interna**.
+
+  Se quitó el borde verde que antes acompañaba a la fracción del motor:
+  presentaba una sugerencia como si fuera correcta.
+- «Confirmado» usa el dictamen del CASO (`dictamen_del_caso`, ADR 0008) y no
+  sólo el de la fila. Con el de la fila, 65 de los 181 casos vigentes decían
+  «pendiente» sobre un caso que una persona ya había cerrado.

@@ -463,6 +463,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/dashboard/operacion/{pedimento_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** La cabecera de un expediente */
+        get: operations["operacion_dashboard_operacion__pedimento_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/dashboard/operacion": {
         parameters: {
             query?: never;
@@ -1062,6 +1079,13 @@ export interface components {
             /** Evidences */
             evidences?: components["schemas"]["EvidenceRecordRead"][];
             dictamen?: components["schemas"]["DictamenRead"] | null;
+            dictamen_del_caso?: components["schemas"]["DictamenRead"] | null;
+            /** Sku */
+            sku?: string | null;
+            /** Producto */
+            producto?: string | null;
+            /** Declarado */
+            declarado?: components["schemas"]["DeclaradoEnPartida"][];
             /**
              * Trace Available
              * @default false
@@ -1379,6 +1403,36 @@ export interface components {
             sku?: string | null;
             /** Producto */
             producto?: string | null;
+        };
+        /**
+         * DeclaradoEnPartida
+         * @description Lo que se DECLARÓ para esta mercancía en una partida de pedimento.
+         *
+         *     Es la tercera voz del expediente, junto a la sugerencia del motor y la
+         *     confirmación de una persona, y no se mezcla con ninguna: lo declarado
+         *     puede estar mal, y ése es precisamente el motivo de revisarlo.
+         */
+        DeclaradoEnPartida: {
+            /**
+             * Pedimento Id
+             * Format: uuid
+             */
+            pedimento_id: string;
+            /** Pedimento Number */
+            pedimento_number: string;
+            /** Line Number */
+            line_number: number;
+            /**
+             * Operation Date
+             * Format: date
+             */
+            operation_date: string;
+            /** Fraction Code */
+            fraction_code?: string | null;
+            /** Nico Code */
+            nico_code?: string | null;
+            /** Is Simulation */
+            is_simulation: boolean;
         };
         /**
          * DictamenRead
@@ -3777,6 +3831,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Dashboard"];
+                };
+            };
+        };
+    };
+    operacion_dashboard_operacion__pedimento_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pedimento_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Operacion"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

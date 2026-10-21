@@ -30,6 +30,7 @@ TRES REGLAS QUE LO DEFINEN
 
 from __future__ import annotations
 
+import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -48,7 +49,7 @@ from database.models import (
 )
 from database.repositories.findings import de_la_ultima_revision
 from database.repositories.preguntas import pendientes as casos_pendientes
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from apps.api.db import SessionDep
@@ -716,9 +717,15 @@ def _siguiente_accion(revisado: datetime | None, completa: bool | None, criticos
     return "Sin acción pendiente"
 
 
-@router.get("/operacion", summary="Panorama operativo: atención y operaciones")
-def panorama_operativo(session: SessionDep) -> Panorama:
-    from apps.api.routers.sentinel import _eventos_con_impacto
+def _operaciones(session: SessionDep, pedimento_id: uuid.UUID | None = None) -> list[Operacion]:
+    """Cada pedimento con su revisión vigente; uno solo si se pide.
+
+    El Panorama y la cabecera de un expediente leen lo mismo: si cada uno lo
+    calculara por su cuenta, la tabla y la cabecera acabarían diciendo cosas
+    distintas del mismo pedimento.
+    """
+    filtro_hallazgos = [] if pedimento_id is None else [RiskFinding.pedimento_id == pedimento_id]
+    filtro_pedimentos = [] if pedimento_id is None else [Pedimento.id == pedimento_id]
 
     # La revisión vigente de cada pedimento, UNA por pedimento: con un
     # max() + join, dos revisiones con la misma hora duplicaban la fila.
@@ -751,7 +758,7 @@ def panorama_operativo(session: SessionDep) -> Panorama:
             RiskFinding.declared_value,
             RiskFinding.expected_value,
             es_del_documento,
-        ).where(de_la_ultima_revision())
+        ).where(de_la_ultima_revision(), *filtro_hallazgos)
     ).tuples():
         if del_doc:
             clave = (pid, tipo, campo, severidad, declarado, esperado)
@@ -780,6 +787,7 @@ def panorama_operativo(session: SessionDep) -> Panorama:
         )
         .outerjoin(Client, Client.id == Pedimento.client_id)
         .outerjoin(ultima, ultima.c.pedimento_id == Pedimento.id)
+        .where(*filtro_pedimentos)
         .order_by(Pedimento.operation_date.desc(), Pedimento.pedimento_number.desc())
     ).all()
 
@@ -809,6 +817,22 @@ def panorama_operativo(session: SessionDep) -> Panorama:
                 siguiente_accion=_siguiente_accion(revisado, es_completa, criticos),
             )
         )
+    return operaciones
+
+
+@router.get("/operacion/{pedimento_id}", summary="La cabecera de un expediente")
+def operacion(pedimento_id: uuid.UUID, session: SessionDep) -> Operacion:
+    filas = _operaciones(session, pedimento_id)
+    if not filas:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "pedimento no encontrado")
+    return filas[0]
+
+
+@router.get("/operacion", summary="Panorama operativo: atención y operaciones")
+def panorama_operativo(session: SessionDep) -> Panorama:
+    from apps.api.routers.sentinel import _eventos_con_impacto
+
+    operaciones = _operaciones(session)
 
     atencion: list[Atencion] = []
     casos = (

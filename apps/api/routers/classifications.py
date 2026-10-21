@@ -25,6 +25,8 @@ from database.models import (
     ClassificationCandidate,
     ClassificationDecision,
     EvidenceRecord,
+    Pedimento,
+    PedimentoItem,
     Product,
     ProductDna,
 )
@@ -75,6 +77,23 @@ class DictamenRead(BaseModel):
     """
 
 
+class DeclaradoEnPartida(BaseModel):
+    """Lo que se DECLARÓ para esta mercancía en una partida de pedimento.
+
+    Es la tercera voz del expediente, junto a la sugerencia del motor y la
+    confirmación de una persona, y no se mezcla con ninguna: lo declarado
+    puede estar mal, y ése es precisamente el motivo de revisarlo.
+    """
+
+    pedimento_id: uuid.UUID
+    pedimento_number: str
+    line_number: int
+    operation_date: date
+    fraction_code: str | None = None
+    nico_code: str | None = None
+    is_simulation: bool
+
+
 class ClassificationDetail(ClassificationDecisionRead):
     """Una decisión con todo lo necesario para defenderla.
 
@@ -97,6 +116,25 @@ class ClassificationDetail(ClassificationDecisionRead):
     Es `None` cuando nadie ha dictaminado, que no es lo mismo que un dictamen
     vacío.
     """
+
+    dictamen_del_caso: DictamenRead | None = None
+    """El último veredicto humano sobre la FICHA, revise la decisión que revise.
+
+    Es lo que la cabecera llama «confirmado». `dictamen` sólo ve el veredicto
+    colgado de ESTA fila: tras reclasificar un caso ya dictaminado, la vigente
+    no tiene uno propio y la cabecera decía «pendiente» encima del aviso de
+    que una persona ya lo había cerrado (ADR 0008).
+    """
+
+    sku: str | None = None
+    producto: str | None = None
+    """El nombre comercial: la cabecera del expediente dice DE QUÉ mercancía
+    es la decisión antes de enseñar ningún código."""
+
+    declarado: list[DeclaradoEnPartida] = Field(default_factory=list)
+    """Las partidas de pedimento con esta mercancía, de la más reciente a la
+    más antigua. Vacío cuando el producto no se ha declarado nunca, que es
+    distinto de declararlo sin fracción."""
 
     trace_available: bool = False
     """¿Se conservó la traza paso a paso de esta decisión?
@@ -232,9 +270,19 @@ def obtener_decision(decision_id: uuid.UUID, session: SessionDep) -> Classificat
         .order_by(ClassificationDecision.created_at.desc())
     ).first()
 
+    producto = session.get(Product, decision.product_id) if decision.product_id else None
+
     detalle = ClassificationDetail.model_validate(decision, from_attributes=True)
     return detalle.model_copy(
         update={
+            "sku": producto.sku if producto else None,
+            "producto": producto.commercial_name if producto else None,
+            "declarado": _declarado(session, decision.product_id),
+            "dictamen_del_caso": (
+                _dictamen(session, dictamen_de(session, decision.product_dna_id))
+                if decision.product_dna_id
+                else None
+            ),
             "dictamen": _dictamen(session, veredicto),
             "candidates": [
                 ClassificationCandidateRead.model_validate(c, from_attributes=True)
@@ -248,6 +296,33 @@ def obtener_decision(decision_id: uuid.UUID, session: SessionDep) -> Classificat
             "trace_available": decision.rgi_trace is not None,
         }
     )
+
+
+LIMITE_DECLARADO = 10
+
+
+def _declarado(session: SessionDep, product_id: uuid.UUID | None) -> list[DeclaradoEnPartida]:
+    if product_id is None:
+        return []
+    filas = session.execute(
+        sa.select(PedimentoItem, Pedimento)
+        .join(Pedimento, Pedimento.id == PedimentoItem.pedimento_id)
+        .where(PedimentoItem.product_id == product_id)
+        .order_by(Pedimento.operation_date.desc(), PedimentoItem.line_number)
+        .limit(LIMITE_DECLARADO)
+    ).all()
+    return [
+        DeclaradoEnPartida(
+            pedimento_id=p.id,
+            pedimento_number=p.pedimento_number,
+            line_number=i.line_number,
+            operation_date=p.operation_date,
+            fraction_code=i.declared_fraction_code,
+            nico_code=i.declared_nico_code,
+            is_simulation=p.is_simulation,
+        )
+        for i, p in filas
+    ]
 
 
 def _dictamen(session: SessionDep, veredicto: ClassificationDecision | None) -> DictamenRead | None:

@@ -20,6 +20,8 @@ import { fetchPanorama } from '../api/client'
 import type { Operacion, Panorama, Severity } from '../api/client'
 import type { Navegar } from '../App'
 import { SyntheticBanner } from '../components/DataOriginBadge'
+import { EstadoRevision } from '../components/Expediente'
+import { fechaCorta } from '../components/expediente'
 import { Icono } from '../components/Icono'
 import { ORDEN_SEVERIDAD, SEVERIDADES, formatearMonto } from '../components/severity'
 import { ExecutiveDashboard } from './ExecutiveDashboard'
@@ -69,42 +71,6 @@ function destinoDe(o: Operacion): string | null {
   if (o.siguiente_accion === 'Revisar hallazgos críticos') return 'finding-detail'
   if (o.siguiente_accion === 'Sin acción pendiente') return null
   return 'pedimento-shadow'
-}
-
-function fecha(iso: string): string {
-  // `fecha` llega como día sin hora: se lee en UTC para no correrlo un día.
-  return new Date(`${iso}T00:00:00Z`).toLocaleDateString('es-MX', {
-    timeZone: 'UTC',
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  })
-}
-
-function EstadoRevision({ o }: { o: Operacion }) {
-  if (o.revisado_en == null) {
-    return (
-      <span className="chip chip--aviso">
-        <span className="chip__punto" aria-hidden="true" />
-        Sin revisar
-      </span>
-    )
-  }
-  const cuando = new Date(o.revisado_en).toLocaleString('es-MX', {
-    dateStyle: 'short',
-    timeStyle: 'short',
-  })
-  return o.revision_completa ? (
-    <span className="chip chip--ok" title={`Revisión espejo interna · ${cuando}`}>
-      <span className="chip__punto" aria-hidden="true" />
-      Completa
-    </span>
-  ) : (
-    <span className="chip chip--aviso" title={`Revisión espejo interna · ${cuando}`}>
-      <span className="chip__punto" aria-hidden="true" />
-      Incompleta
-    </span>
-  )
 }
 
 /** «47-0 · Aeropuerto Internacional…»: la clave se lee, el nombre se consulta. */
@@ -400,7 +366,7 @@ export function PanoramaOperativo({ irA }: { irA: Navegar }) {
                             <Aduana aduana={o.aduana} />
                           </td>
                           <td data-etiqueta="Fecha" className="nowrap">
-                            {fecha(o.fecha)}
+                            {fechaCorta(o.fecha)}
                           </td>
                           <td data-etiqueta="Valor en aduana" className="num mono">
                             {formatearMonto(o.valor_aduana, o.moneda) ?? (
