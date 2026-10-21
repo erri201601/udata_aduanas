@@ -1,6 +1,6 @@
 # ADUANERO OS — Estado del proyecto y backlog
 
-**Actualizado:** 2026-10-13  
+**Actualizado:** 2026-10-21 (sección 0); el resto, 2026-10-13  
 **Mantiene:** Persona 1 (Erick)
 
 Las cifras de este documento se verificaron contra la base y el repositorio el
@@ -10,6 +10,73 @@ afirma el avance de nadie que no haya empujado código.
 Documento de contexto. Sirve para poner al día a cualquiera —persona o agente—
 sin tener que leer el historial de conversaciones. Si algo aquí contradice a
 `docs/00_ADUANERO_OS_PROMPT_MAESTRO.md`, manda el maestro.
+
+---
+
+## 0. Del 14 al 21 de octubre — lo nuevo, verificado contra la base el 21-oct
+
+Las secciones 1 a 8 conservan sus cifras con su fecha. Ésta resume lo que
+cambió después y manda sobre ellas donde se contradigan.
+
+**Avance frente al scorecard del §44: ≈ 86 %** (35 líneas con el mismo peso,
+cada una puntuada contra lo que hay en la base y en el código).
+
+| Bloque | Puntaje | % | Qué falta |
+|---|---:|---:|---|
+| DATA (14) | 11.7 | 84 % | Tasas de la tarifa versionadas por decreto; ANAM y Data México no responden; cuotas sólo como índice |
+| CORE (4) | 3.65 | 91 % | Cobertura de clasificación 62 %; NICO 68/98 |
+| SIMULATOR (8) | 7.9 | 99 % | — |
+| INTELLIGENCE (6) | 4.8 | 80 % | Sentinel a medias; Treaty y Manufacturer en el grafo; tratados |
+| PRODUCT (3) | 2.45 | 82 % | Ensayo de la demo AJR de punta a punta |
+
+**Datos nuevos o corregidos** (ADR entre paréntesis):
+
+- **Cuotas compensatorias:** índice del Anexo 2.5.1 vigente (DOF 25-nov-2022,
+  en vigor desde el 12-dic-2022), 447 filas. Es índice, no tarifa: la regla
+  2.5.3 hace prevalecer la resolución (0017).
+- **NOM:** el Anexo 2.4.1 cargado era el de mayo de 2022. Ahora está la
+  versión vigente, con 603 correlaciones y cada NOM con su acotación; la
+  anterior se conserva, cerrada al 2022-12-11 (0003, actualización).
+- **LIGIE 2022:** rige desde el 12-dic-2022, no desde su publicación; se
+  corrigieron 29 210 filas. La tarifa es una foto de abril de 2026; versionar
+  las tasas por decreto está propuesto (0018).
+- **Casos comparables (no fundamento):** 868 resoluciones de CBP y 4 990 BTI de
+  la UE en `comparable_rulings`, vectorizadas. Se muestran en Classification
+  ordenadas por parecido con la ficha, que se compara entre idiomas (0019,
+  0020). EBTI se actualiza cada día (timer `aduanero-ebti`).
+- **SAT Datos Abiertos:** pedimentos y recaudación de comercio exterior,
+  mensuales desde 2010, 1 800 cifras (0021). Timer `aduanero-sat`, el 5 y el
+  20 de cada mes.
+- **ANAM** (410) y **Data México** (sin respuesta) quedan
+  `SOURCE_NOT_AVAILABLE`.
+
+**Motor y producto:**
+
+- **Folio de decisión** `AD-AAAA-NNNNNN` (§17), en la API y en la consola
+  (0015).
+- **NICO por medidas**, cuando la LIGIE sólo distingue rangos: 40/40 → 68/68
+  contra César, sin ningún fallo (0016).
+- **Observabilidad (§37):** `run_id` y un resumen en cada CLI y en cada
+  petición que escribe.
+- **Calidad de datos (§38):** tests de vigencias, procedencia, firma humana y
+  simulación contra la base real.
+- **Grafo:** 2 631 nodos `PROSECSector`.
+
+**Conteos (21-oct):** `tariff_fractions` 8 136 · `nicos` 11 503 ·
+`legal_chunks` 3 651 · `fraction_nom_requirements` 1 059 (603 vigentes) ·
+`compensatory_duty_listings` 447 · `prosec_rates` 2 631 · `comparable_rulings`
+5 858 · `trade_statistics` 1 800 · `pedimentos` 23 · `pedimento_items` 188 ·
+`classification_decisions` 6 414. Alembic en `ecedec726d14`. 42 entidades.
+
+**Medición vigente:** detección TP 57 · FP 0 · FN 3 (los 3 son `WRONG_NICO`
+de ficha técnica, que no tiene detector). Clasificación: fracción 98/98, NICO
+68/98.
+
+**Lecciones que costaron tiempo** (están en la memoria del agente):
+
+- Un test de integración que asume la base vacía falla en cuanto se cargan
+  datos reales, y en la CI sigue verde.
+- Re-revisar pedimentos para medir exige pasar las tasas de IVA y DTA.
 
 ---
 
