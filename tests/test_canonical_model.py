@@ -39,12 +39,13 @@ def _business_tables() -> list[sa.Table]:
 # ── Estructura ──────────────────────────────────────────────────────────────
 
 
-def test_hay_41_entidades() -> None:
+def test_hay_42_entidades() -> None:
     # +2 el 13-oct: prosec_rates y regla_8a_fractions (ADR 0011); +1
     # pedimento_identifier_requirements (ADR 0012); +1 el 20-oct:
     # compensatory_duty_listings, el índice del Anexo 2.5.1 (ADR 0017); +1
-    # comparable_rulings, casos comparables de CBP (ADR 0019).
-    assert len(_tables()) == 41
+    # comparable_rulings, casos comparables de CBP (ADR 0019); +1
+    # trade_statistics, cifras abiertas del SAT (ADR 0021).
+    assert len(_tables()) == 42
 
 
 def test_todas_las_tablas_en_los_tres_esquemas() -> None:

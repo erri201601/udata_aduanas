@@ -1132,3 +1132,43 @@ class ComparableRuling(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Reg
     RAG (ADR 0019). Ordena los casos por parecido con la ficha, que está en
     español: el modelo es multilingüe. `NULL` = sin vectorizar; se ordena por
     fecha y la respuesta lo dice."""
+
+
+class TradeStatistic(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base):
+    """Una cifra oficial de comercio exterior por mes: SAT Datos Abiertos (ADR 0021).
+
+    El maestro (§11) las pide para «calibración, benchmarks, estadísticas»:
+    cuántos pedimentos se pagan en el país y cuánto recauda el comercio
+    exterior por impuesto. NO es dato de ninguna operación ni de ningún
+    cliente, y ningún motor la usa para calcular dinero (regla 6).
+
+    La vigencia es el mes al que se refiere la cifra: `valid_from` es el día 1
+    y `valid_to` el último día del mes.
+    """
+
+    __tablename__ = "trade_statistics"
+    __table_args__ = (
+        sa.UniqueConstraint("source", "series", "year", "month", name="uq_trade_statistics_fila"),
+        sa.Index("ix_trade_statistics_vigencia", "source", "series", "valid_from", "valid_to"),
+        {"schema": _SCHEMA},
+    )
+
+    source: Mapped[str] = mapped_column(sa.String(16), nullable=False)
+    """Quién la publica: `SAT`."""
+
+    series: Mapped[str] = mapped_column(sa.String(64), nullable=False)
+    """Qué se mide, p. ej. `PEDIMENTOS_IMPORTACION` o `RECAUDACION_IGI`."""
+
+    year: Mapped[int] = mapped_column(sa.SmallInteger, nullable=False)
+    month: Mapped[int] = mapped_column(sa.SmallInteger, nullable=False)
+    value: Mapped[Decimal] = mapped_column(sa.Numeric(20, 6), nullable=False)
+    unit: Mapped[str] = mapped_column(sa.String(32), nullable=False)
+    """Tal como la publica la fuente: «millones de pedimentos», «millones de pesos»."""
+
+    is_cumulative: Mapped[bool] = mapped_column(sa.Boolean, nullable=False)
+    """Acumulada en el año (enero a ese mes) o del mes solo. El SAT no lo dice
+    en el archivo: el cargador lo comprueba con los datos (ADR 0021)."""
+
+    notes: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    """Las notas al pie de la fuente, verbatim («Cifras preliminares», el cambio
+    de AGA a SAT en 2022…)."""
