@@ -463,6 +463,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/dashboard/operacion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Panorama operativo: atención y operaciones */
+        get: operations["panorama_operativo_dashboard_operacion_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/metrics/classification": {
         parameters: {
             query?: never;
@@ -772,6 +789,27 @@ export interface components {
             de_un_total: number;
             /** Ejemplos */
             ejemplos?: string[];
+        };
+        /**
+         * Atencion
+         * @description Un asunto que espera a alguien. Sólo se lista si hay algo.
+         */
+        Atencion: {
+            /** Clave */
+            clave: string;
+            /** Titulo */
+            titulo: string;
+            /** Cantidad */
+            cantidad: number;
+            /** Detalle */
+            detalle: string;
+            /** Pantalla */
+            pantalla: string;
+            /**
+             * Tono
+             * @default atencion
+             */
+            tono: string;
         };
         /**
          * AttributeStatus
@@ -1869,6 +1907,49 @@ export interface components {
             muestra?: string[];
         };
         /**
+         * Operacion
+         * @description Un pedimento con su estado de revisión, tal como está en la base.
+         */
+        Operacion: {
+            /** Pedimento Id */
+            pedimento_id: string;
+            /** Pedimento Number */
+            pedimento_number: string;
+            /** Cliente */
+            cliente: string | null;
+            /** Rfc */
+            rfc: string | null;
+            /** Aduana */
+            aduana: string | null;
+            /** Clave */
+            clave: string | null;
+            /** Tipo */
+            tipo: string;
+            /**
+             * Fecha
+             * Format: date
+             */
+            fecha: string;
+            /** Valor Aduana */
+            valor_aduana: string | null;
+            /** Moneda */
+            moneda: string | null;
+            /** Simulado */
+            simulado: boolean;
+            /** Revisado En */
+            revisado_en: string | null;
+            /** Revision Completa */
+            revision_completa: boolean | null;
+            /** Hallazgos */
+            hallazgos: number;
+            /** Criticos */
+            criticos: number;
+            /** Peor Severidad */
+            peor_severidad: string | null;
+            /** Siguiente Accion */
+            siguiente_accion: string;
+        };
+        /**
          * Oportunidades
          * @description Dinero recuperable, que es otra conversación con el cliente.
          */
@@ -1897,6 +1978,18 @@ export interface components {
              * @default 0
              */
             simuladas: number;
+        };
+        /** Panorama */
+        Panorama: {
+            /** Atencion */
+            atencion?: components["schemas"]["Atencion"][];
+            /** Operaciones */
+            operaciones?: components["schemas"]["Operacion"][];
+            /**
+             * Todo Simulado
+             * @default false
+             */
+            todo_simulado: boolean;
         };
         /**
          * Pasaje
@@ -3684,6 +3777,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Dashboard"];
+                };
+            };
+        };
+    };
+    panorama_operativo_dashboard_operacion_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Panorama"];
                 };
             };
         };

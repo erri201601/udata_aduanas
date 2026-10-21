@@ -315,9 +315,12 @@ function Partida({
   )
 }
 
-export function PedimentoShadow() {
+export function PedimentoShadow({
+  pedimentoInicial = null,
+}: { pedimentoInicial?: string | null } = {}) {
   const [pedimentos, setPedimentos] = useState<PedimentoRead[]>([])
-  const [elegido, setElegido] = useState<string | null>(null)
+  // El que se pidió abrir desde el Panorama; si no, el primero de la lista.
+  const [elegido, setElegido] = useState<string | null>(pedimentoInicial)
   const [datos, setDatos] = useState<PedimentoEspejo | null>(null)
   const [error, setError] = useState<string | null>(null)
   /* AUDITAR DESDE AQUÍ, NO DESDE UNA TERMINAL (7-oct)
@@ -424,7 +427,7 @@ export function PedimentoShadow() {
     <section className="pantalla">
       <header className="pantalla__encabezado">
         <div>
-          <h1>Pedimento Shadow</h1>
+          <h1>Pedimentos</h1>
           <p className="pantalla__sub">
             El pedimento que se declaró, frente al que el sistema esperaba
           </p>

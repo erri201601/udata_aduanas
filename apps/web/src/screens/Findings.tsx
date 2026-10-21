@@ -100,9 +100,9 @@ function agrupados(hallazgos: Hallazgo[]): { h: Hallazgo; veces: number }[] {
   return salida
 }
 
-export function Findings() {
+export function Findings({ pedimentoInicial = null }: { pedimentoInicial?: string | null } = {}) {
   const { pedimentos, error: errorLista, cargando: cargandoLista } = usePedimentos()
-  const [elegido, setElegido] = useState<string | null>(null)
+  const [elegido, setElegido] = useState<string | null>(pedimentoInicial)
   const activo = elegido ?? pedimentos[0]?.id ?? null
   const { revision, error, cargando } = usePedimentoFindings(activo)
 

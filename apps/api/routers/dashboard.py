@@ -30,6 +30,7 @@ TRES REGLAS QUE LO DEFINEN
 
 from __future__ import annotations
 
+from datetime import date, datetime
 from decimal import Decimal
 
 import sqlalchemy as sa
@@ -37,6 +38,8 @@ from core.audit import ALCANCE_CONTRIBUCION
 from core.shadow.compare import CAMPO_IDENTIFICADORES_DEL_DOCUMENTO
 from database.models import (
     ClassificationDecision,
+    Client,
+    CustomsOffice,
     OpportunityFinding,
     Pedimento,
     Product,
@@ -651,4 +654,227 @@ def tablero(session: SessionDep) -> Dashboard:
         productos=_contar(session, Product),
         filas_simuladas=simuladas,
         todo_simulado=contadas > 0 and simuladas == contadas,
+    )
+
+
+# ── Panorama operativo: qué requiere atención y en qué está cada operación ────
+
+
+class Atencion(BaseModel):
+    """Un asunto que espera a alguien. Sólo se lista si hay algo."""
+
+    clave: str
+    titulo: str
+    cantidad: int
+    detalle: str
+    pantalla: str
+    """A qué pantalla de la consola lleva (`id` de su registro)."""
+    tono: str = "atencion"
+
+
+class Operacion(BaseModel):
+    """Un pedimento con su estado de revisión, tal como está en la base."""
+
+    pedimento_id: str
+    pedimento_number: str
+    cliente: str | None
+    rfc: str | None
+    aduana: str | None
+    """«47-0 · Aeropuerto Internacional de la Ciudad de México», del Anexo 22."""
+    clave: str | None
+    tipo: str
+    fecha: date
+    valor_aduana: Decimal | None
+    moneda: str | None
+    simulado: bool
+    revisado_en: datetime | None
+    revision_completa: bool | None
+    hallazgos: int
+    criticos: int
+    peor_severidad: str | None
+    siguiente_accion: str
+    """Derivada de los datos: revisar si nunca se revisó; atender los críticos
+    si los hay; completar si la revisión dejó partidas sin verificar."""
+
+
+class Panorama(BaseModel):
+    atencion: list[Atencion] = Field(default_factory=list)
+    operaciones: list[Operacion] = Field(default_factory=list)
+    todo_simulado: bool = False
+
+
+_ORDEN_SEVERIDAD = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1, "INFO": 0}
+
+
+def _siguiente_accion(revisado: datetime | None, completa: bool | None, criticos: int) -> str:
+    if revisado is None:
+        return "Revisar pedimento"
+    if criticos:
+        return "Revisar hallazgos críticos"
+    if completa is False:
+        return "Completar revisión"
+    return "Sin acción pendiente"
+
+
+@router.get("/operacion", summary="Panorama operativo: atención y operaciones")
+def panorama_operativo(session: SessionDep) -> Panorama:
+    from apps.api.routers.sentinel import _eventos_con_impacto
+
+    # La revisión vigente de cada pedimento, UNA por pedimento: con un
+    # max() + join, dos revisiones con la misma hora duplicaban la fila.
+    ultima = (
+        sa.select(
+            ShadowReview.pedimento_id,
+            ShadowReview.created_at.label("revisado_en"),
+            ShadowReview.is_complete,
+        )
+        .distinct(ShadowReview.pedimento_id)
+        .order_by(ShadowReview.pedimento_id, ShadowReview.created_at.desc())
+        .subquery()
+    )
+    # Mismo criterio que el tablero (#224): lo del documento —el tipo de
+    # cambio, los identificadores de pedimento— cuenta una vez por pedimento
+    # y dato, no una vez por partida. Sin esto, esta pantalla decía 244
+    # críticos donde el tablero dice 79.
+    es_del_documento = sa.or_(
+        RiskFinding.finding_type.in_(HALLAZGOS_DEL_DOCUMENTO),
+        sa.func.coalesce(RiskFinding.field, "").in_(CAMPOS_DEL_DOCUMENTO),
+    )
+    vistos_doc: set[tuple[object, ...]] = set()
+    por_pedimento: dict[str, tuple[int, int, str | None]] = {}
+    for pid, severidad, tipo, campo, declarado, esperado, del_doc in session.execute(
+        sa.select(
+            RiskFinding.pedimento_id,
+            RiskFinding.severity,
+            RiskFinding.finding_type,
+            RiskFinding.field,
+            RiskFinding.declared_value,
+            RiskFinding.expected_value,
+            es_del_documento,
+        ).where(de_la_ultima_revision())
+    ).tuples():
+        if del_doc:
+            clave = (pid, tipo, campo, severidad, declarado, esperado)
+            if clave in vistos_doc:
+                continue
+            vistos_doc.add(clave)
+        total, criticos, peor = por_pedimento.get(str(pid), (0, 0, None))
+        if peor is None or _ORDEN_SEVERIDAD.get(severidad, 0) > _ORDEN_SEVERIDAD.get(peor, 0):
+            peor = severidad
+        por_pedimento[str(pid)] = (
+            total + 1,
+            criticos + (1 if severidad == "CRITICAL" else 0),
+            peor,
+        )
+
+    aduanas = {
+        f"{a}{s}": n
+        for a, s, n in session.execute(
+            sa.select(CustomsOffice.aduana, CustomsOffice.seccion, CustomsOffice.name)
+        ).tuples()
+    }
+
+    filas = session.execute(
+        sa.select(
+            Pedimento, Client.legal_name, Client.rfc, ultima.c.revisado_en, ultima.c.is_complete
+        )
+        .outerjoin(Client, Client.id == Pedimento.client_id)
+        .outerjoin(ultima, ultima.c.pedimento_id == Pedimento.id)
+        .order_by(Pedimento.operation_date.desc(), Pedimento.pedimento_number.desc())
+    ).all()
+
+    operaciones: list[Operacion] = []
+    for p, cliente, rfc, revisado, es_completa in filas:
+        total, criticos, peor = por_pedimento.get(str(p.id), (0, 0, None))
+        oficina = p.customs_office or ""
+        nombre = aduanas.get(oficina)
+        operaciones.append(
+            Operacion(
+                pedimento_id=str(p.id),
+                pedimento_number=p.pedimento_number,
+                cliente=cliente,
+                rfc=rfc,
+                aduana=(f"{oficina[:2]}-{oficina[2:]} · {nombre}" if nombre else (oficina or None)),
+                clave=p.pedimento_key,
+                tipo="Importación" if p.trade_flow == "IMPORT" else "Exportación",
+                fecha=p.operation_date,
+                valor_aduana=p.customs_value,
+                moneda=p.customs_value_currency,
+                simulado=p.is_simulation,
+                revisado_en=revisado,
+                revision_completa=es_completa,
+                hallazgos=total,
+                criticos=criticos,
+                peor_severidad=peor,
+                siguiente_accion=_siguiente_accion(revisado, es_completa, criticos),
+            )
+        )
+
+    atencion: list[Atencion] = []
+    casos = (
+        session.scalar(sa.select(sa.func.count()).select_from(casos_pendientes().subquery())) or 0
+    )
+    if casos:
+        atencion.append(
+            Atencion(
+                clave="revision",
+                titulo="Clasificaciones esperando a un clasificador",
+                cantidad=casos,
+                detalle="El motor no pudo sostenerlas solo: necesitan un dictamen.",
+                pantalla="human-review",
+            )
+        )
+    criticos_total = sum(o.criticos for o in operaciones)
+    if criticos_total:
+        atencion.append(
+            Atencion(
+                clave="criticos",
+                titulo="Hallazgos críticos sin atender",
+                cantidad=criticos_total,
+                detalle=(
+                    f"En {sum(1 for o in operaciones if o.criticos)} pedimento(s), "
+                    "según su última revisión."
+                ),
+                pantalla="finding-detail",
+                tono="mal",
+            )
+        )
+    sin_revisar = sum(1 for o in operaciones if o.revisado_en is None)
+    if sin_revisar:
+        atencion.append(
+            Atencion(
+                clave="sin_revisar",
+                titulo="Pedimentos sin revisar",
+                cantidad=sin_revisar,
+                detalle="Nadie los ha contrastado todavía con lo esperado.",
+                pantalla="pedimento-shadow",
+            )
+        )
+    incompletas = sum(1 for o in operaciones if o.revision_completa is False)
+    if incompletas:
+        atencion.append(
+            Atencion(
+                clave="incompletas",
+                titulo="Revisiones con partidas sin verificar",
+                cantidad=incompletas,
+                detalle="La revisión no pudo comprobar todas sus partidas.",
+                pantalla="pedimento-shadow",
+            )
+        )
+    eventos = [e for e in _eventos_con_impacto(session, date.today()) if e.total_afectadas]
+    if eventos:
+        atencion.append(
+            Atencion(
+                clave="dof",
+                titulo="Publicaciones del DOF que tocan a clientes",
+                cantidad=len(eventos),
+                detalle="Citan fracciones o NOM de lo que los clientes importan o clasifican.",
+                pantalla="regulatory-sentinel",
+            )
+        )
+
+    return Panorama(
+        atencion=atencion,
+        operaciones=operaciones,
+        todo_simulado=bool(operaciones) and all(o.simulado for o in operaciones),
     )

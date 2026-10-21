@@ -29,6 +29,9 @@ export type DossierRead = components['schemas']['DossierRead']
 export type ClassifyRequest = components['schemas']['ClassifyRequest']
 export type ClassifyResponse = components['schemas']['ClassifyResponse']
 export type Dashboard = components['schemas']['Dashboard']
+export type Panorama = components['schemas']['Panorama']
+export type Operacion = components['schemas']['Operacion']
+export type Atencion = components['schemas']['Atencion']
 export type PendienteRead = components['schemas']['PendienteRead']
 export type RevisionRequest = components['schemas']['RevisionRequest']
 export type RevisionResponse = components['schemas']['RevisionResponse']
@@ -310,6 +313,11 @@ export async function classifyProduct(
 
 
 /** Cifras del sistema para el tablero ejecutivo. */
+/** Lo que requiere atención y cada operación con su estado de revisión. */
+export async function fetchPanorama(signal?: AbortSignal): Promise<Panorama> {
+  return pedir<Panorama>('/dashboard/operacion', signal)
+}
+
 export async function fetchDashboard(signal?: AbortSignal): Promise<Dashboard> {
   return pedir<Dashboard>('/dashboard', signal)
 }

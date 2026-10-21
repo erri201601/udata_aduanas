@@ -105,7 +105,7 @@ function Tarjeta({
   )
 }
 
-export function ExecutiveDashboard() {
+export function ExecutiveDashboard({ embebido = false }: { embebido?: boolean } = {}) {
   const [datos, setDatos] = useState<Dashboard | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [cargando, setCargando] = useState(true)
@@ -144,20 +144,22 @@ export function ExecutiveDashboard() {
     }))
 
   return (
-    <section className="pantalla">
-      <header className="pantalla__encabezado">
-        <div>
-          <h1>Panorama</h1>
-          <p className="pantalla__sub">Qué ha resuelto el sistema, y qué sigue esperando</p>
-        </div>
-      </header>
+    <section className={embebido ? 'indicadores' : 'pantalla'}>
+      {!embebido && (
+        <header className="pantalla__encabezado">
+          <div>
+            <h1>Indicadores del sistema</h1>
+            <p className="pantalla__sub">Qué ha resuelto el sistema, y qué sigue esperando</p>
+          </div>
+        </header>
+      )}
 
       {/* La marca aparece si hay UNA fila simulada, no sólo si lo son todas.
           Cuando entró el primer dictamen humano, `todo_simulado` pasó a falso
           y el banner desapareció — con los 16 pedimentos igual de inventados
           que antes. Una mezcla es justo cuando más hace falta la advertencia
-          (§10, §33). */}
-      {(datos?.filas_simuladas ?? 0) > 0 && <SyntheticBanner />}
+          (§10, §33). Embebido, el Panorama ya la enseña arriba. */}
+      {!embebido && (datos?.filas_simuladas ?? 0) > 0 && <SyntheticBanner />}
 
       {error && (
         <div className="alerta" role="alert">

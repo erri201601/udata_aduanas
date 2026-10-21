@@ -172,7 +172,7 @@ export function Classification({ decisionInicial = null }: Props = {}) {
     <section className="pantalla">
       <header className="pantalla__encabezado">
         <div>
-          <h1>Classification</h1>
+          <h1>Clasificación arancelaria</h1>
           <p className="pantalla__sub">
             Cómo se llegó a la fracción, no sólo cuál es
           </p>
