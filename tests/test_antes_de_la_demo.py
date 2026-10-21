@@ -47,3 +47,19 @@ def test_una_comprobacion_que_revienta_no_esconde_las_demas(
     salida = capsys.readouterr().out
     assert "sin base" in salida
     assert "✓ sigue" in salida
+
+
+def test_lo_que_crece_solo_se_compara_como_minimo() -> None:
+    from apps.evaluacion.antes_de_la_demo import al_menos
+
+    assert al_menos("días de FIX", 203, 204).ok
+    assert al_menos("días de FIX", 203, 203).ok
+    assert not al_menos("días de FIX", 203, 202).ok
+
+
+def test_la_vigencia_no_es_valid_to_vacio() -> None:
+    """Una versión con fin (la 9803.00.01 exenta hasta 2031) también rige hoy."""
+    from apps.evaluacion.antes_de_la_demo import VIGENTE_HOY
+
+    assert "valid_to >= current_date" in VIGENTE_HOY
+    assert "valid_from <= current_date" in VIGENTE_HOY
