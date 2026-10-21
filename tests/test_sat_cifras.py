@@ -54,6 +54,13 @@ def test_la_recaudacion_tiene_una_serie_por_impuesto() -> None:
     assert set(agosto) == set(ARCH_RECAUDACION.series)
 
 
+def test_los_centavos_no_se_pierden_y_el_ruido_del_float_si() -> None:
+    """DTA de enero de 2010: 30.843439440000004 en el float de xlrd. Son
+    millones de pesos: los centavos son el octavo decimal (#280)."""
+    dta = next(c for c in leer_filas(RECAUDACION, ARCH_RECAUDACION) if c.serie == "RECAUDACION_DTA")
+    assert dta.valor == Decimal("30.84343944")
+
+
 def test_las_notas_del_sat_viajan_verbatim() -> None:
     nota = leer_filas(IMPORTACION, ARCH_IMPORTACION)[0].notas or ""
     assert "Agencia Nacional de Aduanas" in nota

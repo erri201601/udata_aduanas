@@ -1161,7 +1161,10 @@ class TradeStatistic(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Regul
 
     year: Mapped[int] = mapped_column(sa.SmallInteger, nullable=False)
     month: Mapped[int] = mapped_column(sa.SmallInteger, nullable=False)
-    value: Mapped[Decimal] = mapped_column(sa.Numeric(20, 6), nullable=False)
+    value: Mapped[Decimal] = mapped_column(sa.Numeric(24, 8), nullable=False)
+    """Ocho decimales: la recaudación viene en MILLONES de pesos con centavos
+    (30.84343944 = $30 843 439.44). Con seis, la base redondeaba los centavos y
+    cada recarga veía una cifra «cambiada» (#280)."""
     unit: Mapped[str] = mapped_column(sa.String(32), nullable=False)
     """Tal como la publica la fuente: «millones de pedimentos», «millones de pesos»."""
 
