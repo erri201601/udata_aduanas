@@ -53,6 +53,16 @@ def test_lo_de_la_columna_lateral_del_dof_no_cuenta() -> None:
     assert "01022101" not in fracciones_de(DECRETO_9803)
 
 
+def test_un_transitorio_citado_en_los_considerandos_no_tapa_el_de_verdad() -> None:
+    """Código de Conducta de la SE, DOF 19-oct-2026."""
+    nota = (
+        "<p>… cuyo Transitorio Tercero, establece como obligación institucional emitir un "
+        "Código de Conducta …</p><p>TRANSITORIOS</p><p>PRIMERO.- El presente Acuerdo "
+        "entrará en vigor al día siguiente de su publicación en el Diario Oficial.</p>"
+    )
+    assert vigencia_de(nota, date(2026, 10, 19)) == (date(2026, 10, 20), None)
+
+
 def test_el_primero_de_enero_en_minusculas() -> None:
     assert vigencia_de(DECRETO_DIC_2025, date(2025, 12, 29)) == (date(2026, 1, 1), None)
 
