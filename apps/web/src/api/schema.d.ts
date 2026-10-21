@@ -1122,6 +1122,8 @@ export interface components {
             extracto_de: string;
             /** Data Origin */
             data_origin: string;
+            /** Parecido */
+            parecido?: number | null;
         };
         /** ComparablesRead */
         ComparablesRead: {
@@ -1139,6 +1141,13 @@ export interface components {
              * @default Casos de otra aduana, no fundamento jurídico en México. Sólo coinciden los seis dígitos del Sistema Armonizado; la fracción de EE. UU. no se traduce a TIGIE.
              */
             aviso: string;
+            /**
+             * Orden
+             * @default fecha
+             */
+            orden: string;
+            /** Motivo Orden */
+            motivo_orden?: string | null;
         };
         /**
          * Consulta

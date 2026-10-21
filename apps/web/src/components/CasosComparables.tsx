@@ -27,6 +27,11 @@ export function CasosComparables({ datos }: { datos: ComparablesRead | null }) {
       <p className="comparables__aviso" role="note">
         {datos.aviso}
       </p>
+      <p className="comparable__meta">
+        {datos.orden === 'parecido'
+          ? 'Ordenadas por parecido con la ficha del producto (vigentes primero).'
+          : `Ordenadas por fecha${datos.motivo_orden ? `: ${datos.motivo_orden}` : ''}.`}
+      </p>
 
       {datos.comparables.length === 0 ? (
         <p className="sin-dato">Ninguna resolución cargada cita esta subpartida.</p>

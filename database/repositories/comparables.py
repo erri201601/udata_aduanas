@@ -16,6 +16,8 @@ import sqlalchemy as sa
 from database.models import ComparableRuling
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from sqlalchemy.orm import Session
 
 #: Cuánto texto se muestra del criterio. Lo demás está en la URL pública.
@@ -54,17 +56,45 @@ def criterio_de(texto: str) -> tuple[str, str]:
     return _recorte(texto), "inicio"
 
 
+def texto_para_vector(asunto: str, texto: str) -> str:
+    """Lo que se vectoriza de una resolución: qué mercancía era y cómo se
+    clasificó. Sin membretes ni cortesías, que sólo meten ruido."""
+    extracto, _ = criterio_de(texto)
+    return f"{_plano(asunto)}\n{extracto}"
+
+
 def comparables_de(
-    session: Session, hs6: str, *, limite: int = 8
-) -> tuple[int, list[ComparableRuling]]:
-    """Las resoluciones que citan la subpartida: primero las vigentes y las
-    más recientes. Devuelve también el total, para decir cuántas hay de más."""
+    session: Session,
+    hs6: str,
+    *,
+    limite: int = 8,
+    vector: Sequence[float] | None = None,
+) -> tuple[int, list[tuple[ComparableRuling, float | None]]]:
+    """Las resoluciones que citan la subpartida, con su parecido a `vector`.
+
+    Primero las vigentes. Dentro de ellas, con `vector`, por parecido (coseno),
+    y las que no tienen vector al final. Sin `vector`, por fecha, de la más
+    reciente a la más antigua. Devuelve también el total.
+    """
     donde = ComparableRuling.hs6_codes.contains([hs6])
     total = session.scalar(sa.select(sa.func.count()).select_from(ComparableRuling).where(donde))
-    filas = session.scalars(
-        sa.select(ComparableRuling)
+    if vector is None:
+        filas = session.scalars(
+            sa.select(ComparableRuling)
+            .where(donde)
+            .order_by(ComparableRuling.is_revoked, ComparableRuling.ruling_date.desc())
+            .limit(limite)
+        ).all()
+        return total or 0, [(f, None) for f in filas]
+    distancia = ComparableRuling.embedding.cosine_distance(list(vector))
+    pares = session.execute(
+        sa.select(ComparableRuling, distancia.label("distancia"))
         .where(donde)
-        .order_by(ComparableRuling.is_revoked, ComparableRuling.ruling_date.desc())
+        .order_by(
+            ComparableRuling.is_revoked,
+            distancia.asc().nulls_last(),
+            ComparableRuling.ruling_date.desc(),
+        )
         .limit(limite)
-    ).all()
-    return total or 0, list(filas)
+    ).tuples()
+    return total or 0, [(f, None if d is None else round(1 - float(d), 3)) for f, d in pares]

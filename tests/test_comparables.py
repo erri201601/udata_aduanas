@@ -118,8 +118,55 @@ def test_el_endpoint_da_la_subpartida_el_aviso_y_las_vigentes_primero(
     assert r.aviso == AVISO_COMPARABLES and "no fundamento" in r.aviso
     assert r.comparables[0].extracto_de == "holding"
 
+    assert r.orden == "fecha", "la decisión de prueba no tiene producto"
+    assert r.motivo_orden and "ficha" in r.motivo_orden
+
     vacio = comparables(sin.id, pg_session, limite=8)
     assert vacio.hs6 is None and vacio.comparables == []
 
     with pytest.raises(Exception, match="no encontrada"):
         comparables(uuid.uuid4(), pg_session, limite=8)
+
+
+@pytest.mark.integration
+def test_con_vector_ordena_por_parecido_y_sin_vector_al_final(
+    pg_session: Session,  # noqa: F811
+) -> None:
+    from database.models import ComparableRuling
+    from database.repositories.comparables import comparables_de
+
+    def eje(i: int) -> list[float]:
+        v = [0.0] * 1536
+        v[i] = 1.0
+        return v
+
+    def resolucion(numero: str, vector: list[float] | None, revocada: bool = False) -> None:
+        pg_session.add(
+            ComparableRuling(
+                authority="CBP",
+                ruling_number=numero,
+                ruling_date=date(2020, 1, 1),
+                subject=numero,
+                tariff_codes=["9999.97.0010"],
+                hs6_codes=["999997"],
+                full_text="HOLDING:\n\nUnder GRI 1 it is classifiable in 9999.97 here.\n",
+                is_revoked=revocada,
+                data_origin="PUBLIC",
+                valid_from=date(2020, 1, 1),
+                source_url=f"https://rulings.cbp.gov/ruling/{numero}",
+                content_hash="0" * 64,
+                retrieved_at=datetime.now(UTC),
+                embedding=vector,
+            )
+        )
+
+    resolucion("LEJOS", eje(1))
+    resolucion("CERCA", eje(0))
+    resolucion("SIN-VECTOR", None)
+    resolucion("REVOCADA-CERCA", eje(0), revocada=True)
+    pg_session.flush()
+
+    total, pares = comparables_de(pg_session, "999997", limite=8, vector=eje(0))
+    assert total == 4
+    assert [f.ruling_number for f, _ in pares] == ["CERCA", "LEJOS", "SIN-VECTOR", "REVOCADA-CERCA"]
+    assert pares[0][1] == 1.0 and pares[2][1] is None
