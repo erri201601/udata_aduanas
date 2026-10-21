@@ -20,13 +20,16 @@ import { useState } from 'react'
 
 import { detalleDe, etiquetaDe } from '../components/divergencias'
 import { SyntheticBanner } from '../components/DataOriginBadge'
+import { CabeceraPedimento } from '../components/Expediente'
 import {
   SEVERIDADES,
   esAccionable,
   formatearMonto,
 } from '../components/severity'
 import { usePedimentoFindings, usePedimentos } from '../hooks/useFindings'
+import { useOperacion } from '../hooks/useOperacion'
 import type { Severity } from '../api/client'
+import type { Navegar } from '../App'
 
 function SeverityBadge({ severity }: { severity: Severity }) {
   const s = SEVERIDADES[severity] ?? { etiqueta: severity, ayuda: '' }
@@ -100,11 +103,16 @@ function agrupados(hallazgos: Hallazgo[]): { h: Hallazgo; veces: number }[] {
   return salida
 }
 
-export function Findings({ pedimentoInicial = null }: { pedimentoInicial?: string | null } = {}) {
+export function Findings({
+  pedimentoInicial = null,
+  irA,
+}: { pedimentoInicial?: string | null; irA?: Navegar } = {}) {
   const { pedimentos, error: errorLista, cargando: cargandoLista } = usePedimentos()
   const [elegido, setElegido] = useState<string | null>(pedimentoInicial)
   const activo = elegido ?? pedimentos[0]?.id ?? null
   const { revision, error, cargando } = usePedimentoFindings(activo)
+  // De qué pedimento son, antes de leer una sola tarjeta.
+  const operacion = useOperacion(activo)
 
   const hallazgos = revision?.findings ?? []
   const accionables = hallazgos.filter((h) => esAccionable(h.impact_amount))
@@ -144,6 +152,14 @@ export function Findings({ pedimentoInicial = null }: { pedimentoInicial?: strin
             ))}
           </select>
         </label>
+      )}
+
+      {operacion && (
+        <CabeceraPedimento
+          o={operacion}
+          irA={irA}
+          enlace={{ texto: 'Ver lo declarado frente a lo esperado', pantalla: 'pedimento-shadow' }}
+        />
       )}
 
       {revision && (

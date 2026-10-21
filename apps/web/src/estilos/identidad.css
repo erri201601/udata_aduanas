@@ -534,6 +534,20 @@ th[aria-sort='descending'] .orden__flecha { opacity: 1; }
 
 .voz__nota { margin: 0; color: var(--tenue); font-size: 0.8rem; }
 .voz__accion { margin-top: auto; }
+
+.voz__partidas { font-size: 0.8rem; }
+.voz__partidas > summary { cursor: pointer; color: var(--acento-fuerte); font-weight: 600; }
+.voz__partidas ul { list-style: none; margin: 0.4rem 0 0; padding: 0; }
+.voz__partidas li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem 0.6rem;
+  padding: 0.35rem 0;
+  border-top: 1px solid var(--borde);
+}
+.voz__partidas .voz__nico { font-size: 0.8rem; }
+.voz__partidas .boton--enlace { margin-left: auto; padding: 0 0.25rem; }
 .voz__accion .boton--enlace { padding-left: 0; }
 
 @media (max-width: 1024px) {

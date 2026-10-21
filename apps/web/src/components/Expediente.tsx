@@ -15,6 +15,9 @@
 import type { ReactNode } from 'react'
 
 import type { Operacion } from '../api/client'
+import type { Navegar } from '../App'
+import { formatearMonto } from './severity'
+import { fechaCorta } from './expediente'
 import type { Tono, Voz } from './expediente'
 
 
@@ -121,9 +124,85 @@ export function Voces({ voces }: { voces: Voz[] }) {
             </p>
           )}
           <p className="voz__nota">{v.nota}</p>
+          {v.extra}
           {v.accion && <div className="voz__accion">{v.accion}</div>}
         </li>
       ))}
     </ol>
+  )
+}
+
+/** Quién, dónde, cuándo y en qué estado: lo que se lee antes de las partidas. */
+export function CabeceraPedimento({
+  o,
+  irA,
+  enlace,
+}: {
+  o: Operacion
+  irA?: Navegar
+  /** A dónde lleva el botón: Pedimentos enlaza a Hallazgos y viceversa. */
+  enlace?: { texto: string; pantalla: string }
+}) {
+  const [clave, ...resto] = (o.aduana ?? '').split(' · ')
+  return (
+    <CabeceraExpediente
+      tipo="Pedimento"
+      folio={o.pedimento_number}
+      titulo={o.cliente ?? 'Sin cliente registrado'}
+      marcas={
+        <>
+          <EstadoRevision o={o} />
+          {o.revisado_en != null &&
+            (o.criticos > 0 ? (
+              <Chip tono="mal">
+                {o.criticos} {o.criticos === 1 ? 'hallazgo crítico' : 'hallazgos críticos'}
+              </Chip>
+            ) : o.hallazgos > 0 ? (
+              <Chip tono="aviso">
+                {o.hallazgos} {o.hallazgos === 1 ? 'hallazgo' : 'hallazgos'}
+              </Chip>
+            ) : (
+              <Chip tono="neutro">Sin hallazgos en lo revisado</Chip>
+            ))}
+          {o.simulado && <span className="sim">simulación</span>}
+        </>
+      }
+      datos={[
+        { etiqueta: 'RFC', valor: o.rfc, mono: true },
+        {
+          etiqueta: 'Aduana',
+          valor: o.aduana ? (
+            <>
+              <span className="mono">{clave}</span> {resto.join(' · ')}
+            </>
+          ) : null,
+        },
+        {
+          etiqueta: 'Clave y tipo',
+          valor: (
+            <>
+              {o.clave && <span className="mono">{o.clave}</span>} {o.tipo}
+            </>
+          ),
+        },
+        { etiqueta: 'Fecha de operación', valor: fechaCorta(o.fecha) },
+        {
+          etiqueta: 'Valor en aduana',
+          valor: formatearMonto(o.valor_aduana, o.moneda),
+          mono: true,
+        },
+        { etiqueta: 'Siguiente acción', valor: o.siguiente_accion },
+      ]}
+      acciones={
+        irA && enlace && (o.hallazgos > 0 || enlace.pantalla !== 'finding-detail') ? (
+          <button
+            className="boton boton--secundario boton--chico"
+            onClick={() => irA(enlace.pantalla, { pedimentoId: o.pedimento_id })}
+          >
+            {enlace.texto}
+          </button>
+        ) : null
+      }
+    />
   )
 }

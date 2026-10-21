@@ -71,10 +71,74 @@ const ESTADO_DEL_MOTOR: Record<string, string> = {
   BLOCKED: 'Bloqueada',
 }
 
+type Partida = NonNullable<ClassificationDetail['declarado']>[number]
+
+/** Cada partida donde se declaró la mercancía, y si coincide con lo sugerido.
+ *
+ * La tarjeta enseña la más reciente; si la misma mercancía se declaró con
+ * otra fracción en otro pedimento, eso también es un hallazgo y no puede
+ * quedar escondido detrás de un «y 3 más». */
+function TodasLasPartidas({
+  partidas,
+  total,
+  sugerida,
+  irA,
+}: {
+  partidas: Partida[]
+  total: number
+  sugerida: string | null | undefined
+  irA?: Navegar
+}) {
+  return (
+    <details className="voz__partidas">
+      <summary>Todas las partidas ({total})</summary>
+      <ul>
+        {partidas.map((p) => {
+          const contraste = contrastar(sugerida, p.fraction_code, 'sugerido')
+          return (
+            <li key={`${p.pedimento_id}-${p.line_number}`}>
+              <span className="mono">
+                {p.fraction_code ?? '—'}
+                {p.nico_code && <span className="voz__nico">{p.nico_code}</span>}
+              </span>
+              <span className="tenue">
+                <span className="mono">{p.pedimento_number}</span> · partida {p.line_number} ·{' '}
+                {fechaCorta(p.operation_date)}
+              </span>
+              {contraste && (
+                <span className={`voz__contraste voz__contraste--${contraste.tono}`}>
+                  {contraste.tono === 'ok' ? 'Coincide con lo sugerido' : 'Difiere de lo sugerido'}
+                </span>
+              )}
+              {irA && (
+                <button
+                  className="boton boton--enlace"
+                  onClick={() => irA('pedimento-shadow', { pedimentoId: p.pedimento_id })}
+                  aria-label={`Abrir el pedimento ${p.pedimento_number}`}
+                >
+                  Abrir
+                </button>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+      {total > partidas.length && (
+        <p className="voz__nota">
+          Se muestran las {partidas.length} más recientes de {total}.
+        </p>
+      )}
+    </details>
+  )
+}
+
 /** Declarado, sugerido y confirmado: cada uno con su nombre y su estado. */
 function vocesDe(d: ClassificationDetail, irA?: Navegar): Voz[] {
-  const declarado = d.declarado?.[0]
-  const otras = (d.declarado?.length ?? 0) - 1
+  const partidas = d.declarado ?? []
+  const declarado = partidas[0]
+  const total = d.declarado_total ?? partidas.length
+  // Distintas entre las que se listan: de las que no llegaron no se afirma nada.
+  const fracciones = new Set(partidas.map((p) => p.fraction_code ?? '—'))
   // El de esta fila o, si no lo tiene, el del caso: tras reclasificar, la
   // decisión vigente no hereda el veredicto, pero la mercancía sigue revisada.
   const dictamen = d.dictamen ?? d.dictamen_del_caso
@@ -88,27 +152,41 @@ function vocesDe(d: ClassificationDetail, irA?: Navegar): Voz[] {
       codigo: declarado?.fraction_code,
       sinCodigo: declarado ? 'Declarada sin fracción' : 'No declarada',
       nico: declarado?.nico_code,
-      estado: declarado
-        ? { texto: 'En pedimento', tono: 'neutro' }
-        : { texto: 'Sin declarar', tono: 'neutro' },
+      estado: !declarado
+        ? { texto: 'Sin declarar', tono: 'neutro' }
+        : fracciones.size > 1
+          ? {
+              texto: `Declarada con ${total > partidas.length ? 'al menos ' : ''}${fracciones.size} fracciones`,
+              tono: 'aviso',
+            }
+          : { texto: total > 1 ? `En ${total} partidas` : 'En pedimento', tono: 'neutro' },
       nota: declarado ? (
         <>
           Partida {declarado.line_number} del pedimento{' '}
           <span className="mono">{declarado.pedimento_number}</span> ·{' '}
           {fechaCorta(declarado.operation_date)}
-          {otras > 0 && ` · y en ${otras} ${otras === 1 ? 'partida más' : 'partidas más'}`}.
-          Lo declarado también puede estar mal: es lo que se revisa.
+. {total > 1 && 'Es la más reciente. '}Lo declarado también puede estar mal: es lo
+          que se revisa.
         </>
       ) : (
         'Esta mercancía no aparece en ningún pedimento cargado.'
       ),
+      extra:
+        total > 1 ? (
+          <TodasLasPartidas
+            partidas={partidas}
+            total={total}
+            sugerida={d.fraction_code}
+            irA={irA}
+          />
+        ) : null,
       accion:
         declarado && irA ? (
           <button
             className="boton boton--enlace"
             onClick={() => irA('pedimento-shadow', { pedimentoId: declarado.pedimento_id })}
           >
-            Abrir el pedimento
+            {total > 1 ? 'Abrir el pedimento más reciente' : 'Abrir el pedimento'}
           </button>
         ) : null,
     },

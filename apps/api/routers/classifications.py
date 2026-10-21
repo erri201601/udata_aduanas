@@ -134,7 +134,11 @@ class ClassificationDetail(ClassificationDecisionRead):
     declarado: list[DeclaradoEnPartida] = Field(default_factory=list)
     """Las partidas de pedimento con esta mercancía, de la más reciente a la
     más antigua. Vacío cuando el producto no se ha declarado nunca, que es
-    distinto de declararlo sin fracción."""
+    distinto de declararlo sin fracción. Trae a lo más `LIMITE_DECLARADO`."""
+
+    declarado_total: int = 0
+    """Cuántas partidas hay en total. Sin esto, una lista cortada en diez se
+    leería como si fueran todas."""
 
     trace_available: bool = False
     """¿Se conservó la traza paso a paso de esta decisión?
@@ -278,6 +282,7 @@ def obtener_decision(decision_id: uuid.UUID, session: SessionDep) -> Classificat
             "sku": producto.sku if producto else None,
             "producto": producto.commercial_name if producto else None,
             "declarado": _declarado(session, decision.product_id),
+            "declarado_total": _declarado_total(session, decision.product_id),
             "dictamen_del_caso": (
                 _dictamen(session, dictamen_de(session, decision.product_dna_id))
                 if decision.product_dna_id
@@ -299,6 +304,19 @@ def obtener_decision(decision_id: uuid.UUID, session: SessionDep) -> Classificat
 
 
 LIMITE_DECLARADO = 10
+
+
+def _declarado_total(session: SessionDep, product_id: uuid.UUID | None) -> int:
+    if product_id is None:
+        return 0
+    return (
+        session.scalar(
+            sa.select(sa.func.count())
+            .select_from(PedimentoItem)
+            .where(PedimentoItem.product_id == product_id)
+        )
+        or 0
+    )
 
 
 def _declarado(session: SessionDep, product_id: uuid.UUID | None) -> list[DeclaradoEnPartida]:

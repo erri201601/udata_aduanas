@@ -69,3 +69,19 @@ control de revisión aduanal.
 - «Confirmado» usa el dictamen del CASO (`dictamen_del_caso`, ADR 0008) y no
   sólo el de la fila. Con el de la fila, 65 de los 181 casos vigentes decían
   «pendiente» sobre un caso que una persona ya había cerrado.
+
+## Parte 3 — Hallazgos y todas las partidas declaradas (2026-10-21)
+
+- Hallazgos abre con la misma cabecera de pedimento que Pedimentos
+  (`CabeceraPedimento` y `useOperacion`, compartidos). Cada cabecera enlaza a
+  la otra pantalla.
+- En Clasificación, «Declarado» lista todas las partidas en que se declaró la
+  mercancía:
+  - cada una indica si coincide o difiere de lo sugerido;
+  - un chip avisa si se declaró con fracciones distintas.
+- El detalle trae `declarado_total`. La lista se corta en 10 y la pantalla lo
+  dice. Cuando está cortada, el chip dice «al menos N fracciones», porque de
+  las partidas que no llegaron no se afirma nada.
+- Hoy ninguna mercancía de la base aparece en más de una partida. La lista se
+  verificó interceptando la respuesta en el navegador y con un test contra
+  Postgres.
