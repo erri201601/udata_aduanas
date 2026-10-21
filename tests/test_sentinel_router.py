@@ -42,6 +42,11 @@ class SesionFalsa:
         lote = self._filas.pop(0) if self._filas else []
         return type("Resultado", (), {"all": lambda _self, _l=lote: _l})()
 
+    def scalars(self, _sentencia: Any) -> Any:
+        """Las listas de `_eventos_con_impacto` (ADR 0022): sin eventos ni
+        fracciones de clientes. Sus casos se prueban contra Postgres."""
+        return type("Escalares", (), {"all": lambda _self: []})()
+
 
 def _cliente(**kwargs: Any) -> TestClient:
     app = create_app()
