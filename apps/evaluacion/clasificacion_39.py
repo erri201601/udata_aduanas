@@ -460,6 +460,51 @@ def informe(r: Resultado) -> str:
     return "\n".join(lineas)
 
 
+def reclasificar(sesion: sa.orm.Session) -> int:
+    """Vuelve a clasificar cada partida con el código ACTUAL, sin confirmar nada.
+
+    POR QUÉ HACE FALTA (21-oct)
+
+    `medir` lee las decisiones GUARDADAS, así que mide el motor que corrió la
+    última vez, no el que hay en el árbol. Para saber si un cambio en la
+    búsqueda mejora o empeora hay que reclasificar, y hasta hoy eso era un
+    script suelto en cada intento (ADR 0007, ADR 0025).
+
+    Pasa por `clasificar_borrador` y `save_classification`, el mismo camino
+    que `POST /products/{id}/classify`. Las decisiones nuevas quedan en la
+    transacción de quien llama, que es quien tiene que revertirla: `main` lo
+    hace siempre.
+    """
+    from database.models import Pedimento, PedimentoItem
+    from database.repositories.classification import save_classification
+
+    from apps.api.clasificacion import clasificar_borrador
+    from apps.api.dna import cargar_borrador, version_vigente
+
+    filas = sesion.execute(
+        sa.select(PedimentoItem.product_id, Pedimento.operation_date)
+        .join(Pedimento, Pedimento.id == PedimentoItem.pedimento_id)
+        .where(PedimentoItem.product_id.isnot(None))
+    ).all()
+    hechas = 0
+    for producto, fecha in filas:
+        if producto is None:  # el WHERE ya lo excluye; esto se lo dice a mypy
+            continue
+        ficha = version_vigente(sesion, producto)
+        borrador = cargar_borrador(sesion, producto)
+        if ficha is None or borrador is None:
+            continue
+        resultado = clasificar_borrador(
+            sesion, borrador, operation_date=fecha, trade_flow="IMPORT"
+        ).outcome
+        save_classification(
+            sesion, resultado, product_id=producto, product_dna_id=ficha.id, trade_flow="IMPORT"
+        )
+        hechas += 1
+    sesion.flush()
+    return hechas
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -467,6 +512,14 @@ def main(argv: list[str] | None = None) -> int:
         default="local",
         choices=["local", "shared"],
         help="Qué Postgres se mide. 'shared' es la base del equipo.",
+    )
+    parser.add_argument(
+        "--reclasificar",
+        action="store_true",
+        help=(
+            "Reclasifica cada partida con el código actual antes de medir, dentro "
+            "de una transacción que se revierte. Unos 5 minutos."
+        ),
     )
     args = parser.parse_args(argv)
 
@@ -484,6 +537,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         # Sólo lectura: esta medición no escribe nada, y el rollback lo
         # garantiza aunque alguien añada un INSERT por descuido.
+        if args.reclasificar:
+            print(
+                f"RECLASIFICADO  {reclasificar(sesion)} partidas con el código actual (se revierte)"
+            )
         print(informe(medir(sesion)))
     finally:
         sesion.rollback()
