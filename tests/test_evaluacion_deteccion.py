@@ -137,6 +137,23 @@ def test_el_nico_se_reporta_en_dos_filas() -> None:
     assert "WRONG_NICO" not in r.por_tipo, "sin la fila mezclada que engaña"
 
 
+def test_el_nico_que_exige_ficha_cuenta_si_el_espejo_lo_emite() -> None:
+    """Desde el 7-oct el Espejo espera el NICO del dictamen: si emite el
+    hallazgo es un acierto, y si no, «existe y no cazó», no «no existe»."""
+    r = evaluar(
+        [
+            Evento("p000", "WRONG_NICO", detectable=True, subtipo=NICO_EXIGE_FICHA),
+            Evento("p001", "WRONG_NICO", detectable=True, subtipo=NICO_EXIGE_FICHA),
+        ],
+        [Hallazgo("p000", "NICO_MISMATCH")],
+        partidas=_partidas(2),
+    )
+
+    assert r.por_tipo[NICO_EXIGE_FICHA].tp == 1 and r.por_tipo[NICO_EXIGE_FICHA].fn == 1
+    assert r.excluidos_sin_detector == {}
+    assert r.fn_por_causa == {"el detector existe y no cazó": 1}
+
+
 def test_los_falsos_positivos_se_cuentan_sobre_las_limpias() -> None:
     """Un sistema que grita en todas detecta todo y no sirve."""
     r = evaluar(

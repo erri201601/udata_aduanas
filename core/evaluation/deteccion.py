@@ -131,6 +131,16 @@ SUBTIPO_POR_CAMPO: Final[Mapping[str, str]] = {
 #: importe de IVA salen los dos desviados del mismo cálculo — desde el pedimento
 #: no se distingue cuál se alteró, y el motor no lo afirma.
 DETECTOR_POR_SUBTIPO: Final[Mapping[str, str]] = {
+    # EL NICO QUE EXIGE FICHA SÍ TIENE DETECTOR (21-oct)
+    #
+    # Hasta hoy este subtipo estaba en SUBTIPOS_SIN_DETECTOR: un NICO que
+    # existe en su fracción no se podía poner en duda sin la ficha. Desde el
+    # 7-oct el Espejo espera el NICO firmado por el clasificador cuando lo hay
+    # (`nico_firmado`), y emite NICO_MISMATCH. La métrica no se enteró y siguió
+    # contando como «el detector no existe» dos partidas cuyo hallazgo estaba
+    # en la base (PED_SIM_001-001 y 006-001). Ahora se cuenta lo que se emite,
+    # y lo que no se caza sale como «el detector existe y no cazó».
+    NICO_EXIGE_FICHA: "NICO_MISMATCH",
     "WRONG_VALUE/valor en aduana": "VALUE_MISMATCH",
     "WRONG_VALUE/tasa de IGI": "IGI_RATE_MISMATCH",
     "WRONG_VALUE/base de IVA": "VAT_MISMATCH",
@@ -138,7 +148,8 @@ DETECTOR_POR_SUBTIPO: Final[Mapping[str, str]] = {
 }
 
 #: Subtipos sin detector construido. Se cuentan aparte de los que sí lo tienen.
-SUBTIPOS_SIN_DETECTOR: Final[frozenset[str]] = frozenset({NICO_EXIGE_FICHA})
+#: Hoy ninguno: el NICO que exige ficha lo caza el dictamen (21-oct).
+SUBTIPOS_SIN_DETECTOR: Final[frozenset[str]] = frozenset()
 
 #: Por qué no se detectó. Tres cosas distintas que se ven iguales en un FN.
 SIN_DETECTOR_CONSTRUIDO: Final = "el detector no existe"
