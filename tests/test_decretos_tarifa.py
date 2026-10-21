@@ -97,3 +97,89 @@ def test_versiona_sólo_lo_que_cambia_y_se_lleva_los_nico(pg_session: Session) -
         (versiones[0].id, date(2026, 10, 13)),
         (versiones[1].id, date(2031, 10, 13)),
     ]
+
+
+@pytest.mark.integration
+def test_hacia_atras_la_tasa_vale_desde_el_decreto_y_antes_no_se_sabe(
+    pg_session: Session,  # noqa: F811
+) -> None:
+    import sqlalchemy as sa
+    from database.models import Nico, TariffFraction
+    from ingestion.dof.decretos_tarifa import acotar_hacia_atras
+
+    comun = {
+        "data_origin": "OFFICIAL",
+        "source_url": "https://ejemplo.invalido",
+        "content_hash": "0" * 64,
+        "retrieved_at": datetime.now(UTC),
+    }
+    for codigo, tasa in (("99999911", "0.35"), ("99999912", "0.20")):
+        f = TariffFraction(
+            code=codigo,
+            chapter="99",
+            heading="9999",
+            subheading="999999",
+            description="prueba",
+            unit="Kg",
+            igi_rate=Decimal(tasa),
+            ige_rate=Decimal(0),
+            valid_from=date(2022, 12, 12),
+            **comun,
+        )
+        pg_session.add(f)
+        pg_session.flush()
+        pg_session.add(
+            Nico(
+                tariff_fraction_id=f.id,
+                code="00",
+                full_code=f"{codigo}00",
+                description="Única.",
+                valid_from=date(2022, 12, 12),
+                **comun,
+            )
+        )
+    pg_session.flush()
+
+    def acotar(desde: date, tasas: list[TasaDecretada]) -> object:
+        return acotar_hacia_atras(
+            pg_session,
+            tasas,
+            desde=desde,
+            source_url="https://dof.gob.mx/x",
+            source_document="prueba",
+            content_hash="1" * 64,
+            publicado=desde,
+        )
+
+    # El más reciente primero: confirma la 11 y contradice la 12.
+    r = acotar(
+        date(2026, 1, 1),
+        [
+            TasaDecretada("99999911", Decimal("0.35"), Decimal(0)),
+            TasaDecretada("99999912", Decimal("0.50"), Decimal(0)),
+        ],
+    )
+    assert r.partidas == ["99999911"] and r.conflictos == ["99999912"]
+    # Uno más viejo encuentra el tramo desconocido y no lo llena.
+    viejo = acotar(date(2024, 12, 20), [TasaDecretada("99999911", Decimal("0.10"), Decimal(0))])
+    assert viejo.partidas == [] and viejo.sin_tasa_previa == 1
+
+    versiones = pg_session.scalars(
+        sa.select(TariffFraction)
+        .where(TariffFraction.code == "99999911")
+        .order_by(TariffFraction.valid_from)
+    ).all()
+    assert [(v.valid_from, v.valid_to, v.igi_rate) for v in versiones] == [
+        (date(2022, 12, 12), date(2025, 12, 31), None),
+        (date(2026, 1, 1), None, Decimal("0.350000")),
+    ]
+    nicos = pg_session.scalars(
+        sa.select(Nico).where(Nico.full_code == "9999991100").order_by(Nico.valid_from)
+    ).all()
+    assert [n.tariff_fraction_id for n in nicos] == [versiones[0].id, versiones[1].id]
+    intacta = pg_session.scalars(
+        sa.select(TariffFraction).where(TariffFraction.code == "99999912")
+    ).one()
+    assert intacta.igi_rate == Decimal("0.200000") and intacta.valid_to is None, (
+        "el conflicto no se toca"
+    )
