@@ -892,12 +892,15 @@ rama suelta de `legal-chunks-legal-rule-id`.
 
 Orden acordado el 21-oct:
 
-1. **Separar el puente de vocabulario de la cobertura** (hueco 2 de «Lo que
-   de verdad falta»). Hoy el puente cae siempre fuera del tope de seis
-   términos, y dejarlo pasar costó 29 aciertos, porque además le daba un
-   punto de cobertura a la posición de cuyo texto salió. Es lo que puede
-   mover la cifra que más importa, la cobertura del 62 %. Se mide antes y
-   después; si baja, se revierte.
+1. ~~**Separar el puente de vocabulario de la cobertura**~~ **Medido y
+   descartado el 21-oct** ([ADR 0025](adr/0025-el-puente-no-entra-como-candidata.md)).
+   Con el puente como candidata, sin sumar cobertura, la cobertura baja de
+   62.80 % a 46.95 % y no aparece ningún acierto nuevo: los puentes que se
+   disparan (`de hierro o acero`, `mesa`, `oleoductos`) abren medio capítulo.
+   Lo que puede mover la cobertura es vocabulario que nombre UNA partida, y
+   eso hay que pedírselo a César, empezando por si `domestico/cocina`
+   significa «o». Queda `clasificacion_39 --reclasificar` para medir el
+   siguiente intento con un solo comando.
 2. **Knowledge Graph** (hueco 4): ejecutar la proyección y darle un
    consumidor. Es lo único que le falta a INTELLIGENCE.
 3. **Ensayo en seco de la demo AJR:** recorrerla completa con Chrome headless
@@ -959,6 +962,7 @@ del 100 %; la cobertura está en 62.42 %.
 | [0022](adr/0022-sentinel-lee-las-notas-del-dof.md) | Sentinel lee las notas del DOF y las cruza con los clientes |
 | [0023](adr/0023-decretos-que-modifican-la-tarifa.md) | aplicar los decretos que modifican la Tarifa |
 | [0024](adr/0024-identidad-de-la-consola.md) | identidad de la consola, Panorama operativo y cabecera de expediente |
+| [0025](adr/0025-el-puente-no-entra-como-candidata.md) | el puente de vocabulario tampoco entra como candidata (medido y descartado) |
 
 ---
 
