@@ -488,6 +488,8 @@ def reclasificar(sesion: sa.orm.Session) -> int:
     ).all()
     hechas = 0
     for producto, fecha in filas:
+        if producto is None:  # el WHERE ya lo excluye; esto se lo dice a mypy
+            continue
         ficha = version_vigente(sesion, producto)
         borrador = cargar_borrador(sesion, producto)
         if ficha is None or borrador is None:
