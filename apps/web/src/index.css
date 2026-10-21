@@ -361,31 +361,6 @@ code {
 
 /* ── Classification ─────────────────────────────────────────────────────── */
 
-.veredicto {
-  padding: 1.4rem 1.6rem;
-  margin-bottom: 1.25rem;
-  background: var(--panel);
-  border: 1px solid var(--borde);
-  border-left: 4px solid var(--ok);
-  border-radius: 10px;
-}
-
-.veredicto--insufficient_information,
-.veredicto--human_review_required { border-left-color: var(--aviso); }
-.veredicto--blocked { border-left-color: var(--mal); }
-
-.veredicto__codigo {
-  font-family: var(--letra-mono);
-  font-size: 1.9rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  font-variant-numeric: tabular-nums;
-}
-
-.veredicto__codigo em { font-style: normal; color: var(--tenue); font-size: 1.1rem; margin-left: 0.4rem; }
-.veredicto__codigo--sin { font-size: 1.25rem; color: var(--aviso); }
-.veredicto__nota { margin: 0.35rem 0 0; color: var(--tenue); font-size: 0.87rem; }
-
 .revision {
   padding: 0.95rem 1.25rem;
   margin-bottom: 1.5rem;
@@ -1892,10 +1867,6 @@ code {
   color: var(--acento);
   white-space: nowrap;
 }
-
-/* El folio de §17 (AD-2026-000001): discreto, pero copiable. */
-.folio { margin: 0 0 0.25rem; color: var(--tenue); font-size: 0.85rem; }
-.folio code { user-select: all; }
 
 /* Casos comparables (ADR 0019): separados del fundamento, con su aviso. */
 .comparables { margin-top: 2rem; }

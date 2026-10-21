@@ -440,6 +440,105 @@ th[aria-sort='descending'] .orden__flecha { opacity: 1; }
 .chip--ok { color: var(--ok); background: rgba(27, 122, 72, 0.08); }
 .chip--mal { color: var(--mal); background: rgba(179, 40, 45, 0.08); }
 .chip--aviso { color: var(--aviso); background: rgba(143, 92, 0, 0.08); }
+.chip--neutro { color: var(--tenue); background: var(--realce); border-color: var(--borde); }
+
+/* ── Cabecera de expediente ─────────────────────────────────────────────── */
+
+.expediente {
+  margin-bottom: 1.25rem;
+  padding: 1rem 1.15rem;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-top: 3px solid var(--marino);
+  border-radius: var(--radio);
+  box-shadow: var(--sombra);
+}
+
+.expediente__fila {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem 1.25rem;
+  flex-wrap: wrap;
+}
+
+.expediente__tipo {
+  margin: 0;
+  color: var(--tenue);
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.expediente__folio {
+  color: var(--texto);
+  font-size: 0.85rem;
+  letter-spacing: 0;
+  text-transform: none;
+  user-select: all;
+}
+
+.expediente__titulo { margin: 0.2rem 0 0; font-size: 1.1rem; font-weight: 600; }
+
+.expediente__marcas { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+
+.expediente__datos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 0.6rem 1.25rem;
+  margin: 0.9rem 0 0;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--borde);
+}
+.expediente__datos dt { color: var(--tenue); font-size: 0.72rem; font-weight: 600; }
+.expediente__datos dd { margin: 0.1rem 0 0; font-size: 0.88rem; overflow-wrap: anywhere; }
+
+.expediente__acciones { margin-top: 0.85rem; }
+
+/* ── Declarado · sugerido · confirmado ──────────────────────────────────── */
+
+.voces {
+  list-style: none;
+  margin: 0 0 1.25rem;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.voz {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.9rem 1rem;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+}
+/* El borde distingue QUIÉN habla, no si tiene razón: eso lo dicen los chips. */
+.voz--declarado { border-top: 3px solid var(--tenue); }
+.voz--sugerido { border-top: 3px dashed var(--acento); }
+.voz--confirmado { border-top: 3px solid var(--acento); }
+
+.voz__cabecera { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; }
+.voz__titulo { margin: 0; font-size: 0.8rem; font-weight: 600; color: var(--tenue); letter-spacing: 0.02em; }
+
+.voz__codigo { margin: 0.15rem 0 0; font-size: 1.45rem; font-weight: 600; line-height: 1.2; }
+.voz__codigo--sin { font-size: 1.05rem; color: var(--tenue); font-weight: 500; }
+.voz__nico { margin-left: 0.45rem; color: var(--tenue); font-size: 1rem; font-weight: 400; }
+
+.voz__contraste { margin: 0; font-size: 0.8rem; font-weight: 600; }
+.voz__contraste--ok { color: var(--ok); }
+.voz__contraste--mal { color: var(--mal); }
+
+.voz__nota { margin: 0; color: var(--tenue); font-size: 0.8rem; }
+.voz__accion { margin-top: auto; }
+.voz__accion .boton--enlace { padding-left: 0; }
+
+@media (max-width: 1024px) {
+  .voces { grid-template-columns: minmax(0, 1fr); }
+}
 
 /* ── Estado del sistema ─────────────────────────────────────────────────── */
 
@@ -622,4 +721,13 @@ th[aria-sort='descending'] .orden__flecha { opacity: 1; }
   .campo input, .campo select { min-width: 0; width: 100%; }
 
   .atencion { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Un selector con opciones largas (la descripción de una mercancía) no puede
+   ensanchar la página: en un teléfono la empujaba a 928 px. */
+.selector { max-width: 100%; min-width: 0; }
+.selector select { max-width: 100%; min-width: 0; text-overflow: ellipsis; }
+@media (max-width: 640px) {
+  .selector { width: 100%; flex-wrap: wrap; }
+  .selector select { width: 100%; }
 }

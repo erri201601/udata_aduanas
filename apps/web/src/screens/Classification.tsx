@@ -27,7 +27,11 @@ import {
   useComparables,
   usePrecisionClasificacion,
 } from '../hooks/useClassifications'
-import type { PrecisionClasificacion } from '../api/client'
+import type { ClassificationDetail, PrecisionClasificacion } from '../api/client'
+import type { Navegar } from '../App'
+import { CabeceraExpediente, Voces } from '../components/Expediente'
+import { contrastar, fechaCorta } from '../components/expediente'
+import type { Voz } from '../components/expediente'
 
 interface PreguntaRGI {
   mercancia: string
@@ -57,6 +61,106 @@ const SIN_RESOLVER: Record<string, string> = {
 interface Props {
   /** Decisión recién creada. Abre en ella en vez de en la primera. */
   decisionInicial?: string | null
+  irA?: Navegar
+}
+
+const ESTADO_DEL_MOTOR: Record<string, string> = {
+  RESOLVED: 'Resuelta por el motor',
+  INSUFFICIENT_INFORMATION: 'Información insuficiente',
+  HUMAN_REVIEW_REQUIRED: 'Requiere revisión humana',
+  BLOCKED: 'Bloqueada',
+}
+
+/** Declarado, sugerido y confirmado: cada uno con su nombre y su estado. */
+function vocesDe(d: ClassificationDetail, irA?: Navegar): Voz[] {
+  const declarado = d.declarado?.[0]
+  const otras = (d.declarado?.length ?? 0) - 1
+  // El de esta fila o, si no lo tiene, el del caso: tras reclasificar, la
+  // decisión vigente no hereda el veredicto, pero la mercancía sigue revisada.
+  const dictamen = d.dictamen ?? d.dictamen_del_caso
+  const delCaso = !d.dictamen && !!d.dictamen_del_caso
+  const confirmada = dictamen?.fraction_code ?? null
+
+  return [
+    {
+      clave: 'declarado',
+      titulo: 'Declarado',
+      codigo: declarado?.fraction_code,
+      sinCodigo: declarado ? 'Declarada sin fracción' : 'No declarada',
+      nico: declarado?.nico_code,
+      estado: declarado
+        ? { texto: 'En pedimento', tono: 'neutro' }
+        : { texto: 'Sin declarar', tono: 'neutro' },
+      nota: declarado ? (
+        <>
+          Partida {declarado.line_number} del pedimento{' '}
+          <span className="mono">{declarado.pedimento_number}</span> ·{' '}
+          {fechaCorta(declarado.operation_date)}
+          {otras > 0 && ` · y en ${otras} ${otras === 1 ? 'partida más' : 'partidas más'}`}.
+          Lo declarado también puede estar mal: es lo que se revisa.
+        </>
+      ) : (
+        'Esta mercancía no aparece en ningún pedimento cargado.'
+      ),
+      accion:
+        declarado && irA ? (
+          <button
+            className="boton boton--enlace"
+            onClick={() => irA('pedimento-shadow', { pedimentoId: declarado.pedimento_id })}
+          >
+            Abrir el pedimento
+          </button>
+        ) : null,
+    },
+    {
+      clave: 'sugerido',
+      titulo: 'Sugerido por el motor',
+      codigo: d.fraction_code,
+      nico: d.nico_code,
+      estado: d.fraction_code
+        ? { texto: 'Sugerencia', tono: d.requires_human_review ? 'aviso' : 'neutro' }
+        : { texto: ESTADO_DEL_MOTOR[d.status] ?? d.status, tono: 'aviso' },
+      contraste: contrastar(d.fraction_code, declarado?.fraction_code, 'declarado'),
+      nota: d.fraction_code
+        ? dictamen
+          ? 'Propuesta del motor; su ruta de reglas está abajo. Lo que vale es lo confirmado.'
+          : 'Propuesta del motor con su ruta de reglas abajo. No está confirmada hasta que una persona la revise.'
+        : (SIN_RESOLVER[d.status] ?? 'El motor no propuso fracción.'),
+    },
+    {
+      clave: 'confirmado',
+      titulo: 'Confirmado en revisión interna',
+      codigo: confirmada,
+      sinCodigo: dictamen ? 'Sin fracción' : 'Pendiente',
+      estado: !dictamen
+        ? { texto: 'Sin confirmar', tono: 'aviso' }
+        : dictamen.en_catalogo === false
+          ? { texto: 'No está en la TIGIE', tono: 'mal' }
+          : confirmada
+            ? { texto: 'Confirmada', tono: 'ok' }
+            : { texto: 'Indeterminable', tono: 'aviso' },
+      contraste: contrastar(confirmada, d.fraction_code, 'sugerido'),
+      nota: !dictamen ? (
+        'Ninguna persona ha revisado esta decisión todavía.'
+      ) : (
+        <>
+          {confirmada
+            ? delCaso
+              ? 'Una persona revisó este caso en una corrida anterior del motor'
+              : 'Una persona revisó la decisión'
+            : 'Una persona coincidió en que no se puede determinar con lo disponible'}
+          {` el ${fechaCorta(dictamen.created_at)}`}
+          {dictamen.folio && (
+            <>
+              {' '}
+              (dictamen <span className="mono">{dictamen.folio}</span>)
+            </>
+          )}
+          . Es una revisión interna, no una resolución de la autoridad.
+        </>
+      ),
+    },
+  ]
 }
 
 /** La precisión del §39, con las DOS cifras y por qué son dos.
@@ -151,7 +255,7 @@ function Precision({ datos }: { datos: PrecisionClasificacion }) {
   )
 }
 
-export function Classification({ decisionInicial = null }: Props = {}) {
+export function Classification({ decisionInicial = null, irA }: Props = {}) {
   const { decisiones, error: errorLista, cargando: cargandoLista } = useClassifications()
   const { precision } = usePrecisionClasificacion()
   const [elegida, setElegida] = useState<string | null>(null)
@@ -188,8 +292,6 @@ export function Classification({ decisionInicial = null }: Props = {}) {
         </div>
       )}
 
-      {precision && <Precision datos={precision} />}
-
       {decisiones.length > 1 && (
         <label className="selector">
           <span>Decisión</span>
@@ -206,37 +308,31 @@ export function Classification({ decisionInicial = null }: Props = {}) {
 
       {detalle && (
         <>
+          {/* El folio de §17 encabeza el expediente: es con lo que se cita
+              esta decisión fuera de la consola —en un correo, en un
+              dictamen, por teléfono—. */}
+          <CabeceraExpediente
+            tipo="Decisión de clasificación"
+            folio={detalle.folio}
+            titulo={detalle.producto ?? 'Mercancía sin nombre comercial'}
+            datos={[
+              { etiqueta: 'SKU', valor: detalle.sku, mono: true },
+              { etiqueta: 'Fecha de operación', valor: fechaCorta(detalle.operation_date) },
+              {
+                etiqueta: 'Flujo',
+                valor: detalle.trade_flow === 'IMPORT' ? 'Importación' : 'Exportación',
+              },
+              {
+                etiqueta: 'Estado del motor',
+                valor: ESTADO_DEL_MOTOR[detalle.status] ?? detalle.status,
+              },
+              { etiqueta: 'Motor', valor: detalle.engine_version, mono: true },
+            ]}
+          />
+
+          <Voces voces={vocesDe(detalle, irA)} />
+
           <ComoSeLeeUnCodigo />
-
-          {/* El folio de §17: con lo que se cita esta decisión fuera de la
-              consola —en un correo, en un dictamen, por teléfono—. */}
-          <p className="folio">
-            Decisión <code>{detalle.folio}</code>
-          </p>
-
-          <div className={`veredicto veredicto--${detalle.status.toLowerCase()}`}>
-            {detalle.fraction_code ? (
-              <>
-                <span className="veredicto__codigo">
-                  {detalle.fraction_code}
-                  {detalle.nico_code && <em>{detalle.nico_code}</em>}
-                </span>
-                <p className="veredicto__nota">
-                  Fracción arancelaria propuesta · operación del{' '}
-                  {detalle.operation_date}
-                </p>
-              </>
-            ) : (
-              <>
-                <span className="veredicto__codigo veredicto__codigo--sin">
-                  Sin fracción
-                </span>
-                <p className="veredicto__nota">
-                  {SIN_RESOLVER[detalle.status] ?? detalle.status}
-                </p>
-              </>
-            )}
-          </div>
 
           {/* El dictamen va ANTES del aviso de revisión: si alguien ya se
               pronunció, enseñar primero «requiere que una persona lo revise»
@@ -524,6 +620,15 @@ export function Classification({ decisionInicial = null }: Props = {}) {
 
       {!detalle && !error && (cargando || cargandoLista) && (
         <p className="vacio">Cargando la decisión…</p>
+      )}
+
+      {/* Es del motor entero, no de este expediente: va al final y plegada
+          para que no se lea como un dato de la mercancía que se está viendo. */}
+      {precision && (
+        <details className="bloque desplegable">
+          <summary>Precisión del motor frente a las personas</summary>
+          <Precision datos={precision} />
+        </details>
       )}
 
       {!detalle && !cargando && !cargandoLista && !error && !errorLista && (

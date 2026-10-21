@@ -12,8 +12,9 @@ from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
 import pytest
-from apps.api.routers.dashboard import _siguiente_accion, panorama_operativo
+from apps.api.routers.dashboard import _siguiente_accion, operacion, panorama_operativo
 from database.models import Client, Pedimento, PedimentoItem, RiskFinding, ShadowReview
+from fastapi import HTTPException
 
 from tests.test_canonical_model import pg_session  # noqa: F401 — fixture reutilizada
 
@@ -147,3 +148,20 @@ def test_cuenta_solo_la_ultima_revision_y_sin_duplicar_lo_del_documento(
     atencion = {a.clave: a for a in panorama_operativo(pg_session).atencion}
     assert atencion["criticos"].tono == "mal"
     assert atencion["criticos"].pantalla == "finding-detail"
+
+
+@pytest.mark.integration
+def test_la_cabecera_es_la_misma_fila_que_el_panorama(pg_session: Session) -> None:  # noqa: F811
+    cliente = Client(legal_name="Prueba cabecera", country="MX", **SINTETICO)
+    pg_session.add(cliente)
+    pg_session.flush()
+    p = _pedimento(pg_session, cliente)
+
+    assert operacion(p.id, pg_session) == _fila(pg_session, p)
+
+
+@pytest.mark.integration
+def test_la_cabecera_de_un_pedimento_que_no_existe_es_404(pg_session: Session) -> None:  # noqa: F811
+    with pytest.raises(HTTPException) as error:
+        operacion(uuid.uuid4(), pg_session)
+    assert error.value.status_code == 404

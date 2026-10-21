@@ -1,0 +1,129 @@
+/**
+ * Piezas de un expediente: su cabecera y las voces que opinan sobre él.
+ *
+ * LAS TRES VOCES NO SE MEZCLAN
+ *
+ * Lo declarado (lo que dice el pedimento), lo sugerido (lo que propone el
+ * motor) y lo confirmado (lo que una persona revisó) son tres cosas, y cada
+ * una puede estar mal. Se enseñan en columnas separadas y con su nombre, para
+ * que nadie lea una sugerencia como si alguien la hubiera confirmado.
+ *
+ * Y «confirmado» es una revisión INTERNA: no es una resolución de la
+ * autoridad, ni un despacho, ni una clasificación oficial.
+ */
+
+import type { ReactNode } from 'react'
+
+import type { Operacion } from '../api/client'
+import type { Tono, Voz } from './expediente'
+
+
+export function Chip({ tono, children }: { tono: Tono; children: ReactNode }) {
+  return (
+    <span className={`chip chip--${tono}`}>
+      <span className="chip__punto" aria-hidden="true" />
+      {children}
+    </span>
+  )
+}
+
+/** El estado de la revisión espejo de un pedimento, igual en todas partes. */
+export function EstadoRevision({ o }: { o: Operacion }) {
+  if (o.revisado_en == null) return <Chip tono="aviso">Sin revisar</Chip>
+  const cuando = new Date(o.revisado_en).toLocaleString('es-MX', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  })
+  return (
+    <span title={`Revisión espejo interna · ${cuando}`}>
+      {o.revision_completa ? (
+        <Chip tono="ok">Completa</Chip>
+      ) : (
+        <Chip tono="aviso">Incompleta</Chip>
+      )}
+    </span>
+  )
+}
+
+export interface Dato {
+  etiqueta: string
+  valor: ReactNode
+  mono?: boolean
+}
+
+export function CabeceraExpediente({
+  tipo,
+  folio,
+  titulo,
+  datos,
+  marcas,
+  acciones,
+}: {
+  tipo: string
+  folio: string | null | undefined
+  titulo: ReactNode
+  datos: Dato[]
+  marcas?: ReactNode
+  acciones?: ReactNode
+}) {
+  return (
+    <section className="expediente" aria-label={`${tipo} ${folio ?? ''}`.trim()}>
+      <div className="expediente__fila">
+        <div className="expediente__identidad">
+          <p className="expediente__tipo">
+            {tipo}
+            {folio && (
+              <>
+                {' · '}
+                <code className="expediente__folio">{folio}</code>
+              </>
+            )}
+          </p>
+          <h2 className="expediente__titulo">{titulo}</h2>
+        </div>
+        {marcas && <div className="expediente__marcas">{marcas}</div>}
+      </div>
+      <dl className="expediente__datos">
+        {datos.map((d) => (
+          <div key={d.etiqueta}>
+            <dt>{d.etiqueta}</dt>
+            <dd className={d.mono ? 'mono' : undefined}>{d.valor ?? '—'}</dd>
+          </div>
+        ))}
+      </dl>
+      {acciones && <div className="expediente__acciones">{acciones}</div>}
+    </section>
+  )
+}
+
+export function Voces({ voces }: { voces: Voz[] }) {
+  return (
+    <ol className="voces" aria-label="Declarado, sugerido y confirmado">
+      {voces.map((v) => (
+        <li key={v.clave} className={`voz voz--${v.clave}`}>
+          <div className="voz__cabecera">
+            <h3 className="voz__titulo">{v.titulo}</h3>
+            <Chip tono={v.estado.tono}>{v.estado.texto}</Chip>
+          </div>
+          <p className={`voz__codigo ${v.codigo ? '' : 'voz__codigo--sin'}`}>
+            {v.codigo ? (
+              <>
+                <span className="mono">{v.codigo}</span>
+                {v.nico && <span className="mono voz__nico">{v.nico}</span>}
+              </>
+            ) : (
+              (v.sinCodigo ?? 'Sin fracción')
+            )}
+          </p>
+          {v.contraste && (
+            <p className={`voz__contraste voz__contraste--${v.contraste.tono}`}>
+              {v.contraste.texto}
+            </p>
+          )}
+          <p className="voz__nota">{v.nota}</p>
+          {v.accion && <div className="voz__accion">{v.accion}</div>}
+        </li>
+      ))}
+    </ol>
+  )
+}
