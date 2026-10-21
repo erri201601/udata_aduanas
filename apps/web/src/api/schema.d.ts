@@ -1545,6 +1545,47 @@ export interface components {
             muestra?: string[];
         };
         /**
+         * EventoConImpacto
+         * @description Una publicación del DOF y lo que toca de lo nuestro (ADR 0022).
+         */
+        EventoConImpacto: {
+            /** Titulo */
+            titulo: string;
+            /** Url */
+            url: string;
+            /** Publicado */
+            publicado: string | null;
+            /** Entra En Vigor */
+            entra_en_vigor: string | null;
+            /** Vigente Hasta */
+            vigente_hasta: string | null;
+            /** Nota Leida */
+            nota_leida: boolean;
+            /** Fracciones Citadas */
+            fracciones_citadas: number;
+            /** Noms */
+            noms?: string[];
+            /** Fracciones De Clientes */
+            fracciones_de_clientes?: string[];
+            /** Por Nom */
+            por_nom?: string[];
+            /**
+             * Total Afectadas
+             * @default 0
+             */
+            total_afectadas: number;
+            /**
+             * Partidas Afectadas
+             * @default 0
+             */
+            partidas_afectadas: number;
+            /**
+             * Todas Simuladas
+             * @default false
+             */
+            todas_simuladas: boolean;
+        };
+        /**
          * EvidenceKind
          * @description Tipo de evidencia en evidence_records. Espejo de core.evidence.kinds.EvidenceKind.
          * @enum {string}
@@ -2882,6 +2923,8 @@ export interface components {
              */
             vigilancia_automatica: boolean;
             impacto?: components["schemas"]["ImpactoEnDecisiones"];
+            /** Eventos */
+            eventos?: components["schemas"]["EventoConImpacto"][];
             /**
              * Corpus Sintetico
              * @default 0

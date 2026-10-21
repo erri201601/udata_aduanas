@@ -986,6 +986,11 @@ class RegulatoryEvent(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Regu
     affected_rule_ids: Mapped[list[uuid.UUID]] = mapped_column(
         ARRAY(sa.Uuid(as_uuid=True)), nullable=False, server_default="{}"
     )
+    note_content_hash: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    """Hash de la nota del DOF de la que salieron `affected_fraction_codes`,
+    las NOM de `keywords` y `effective_date` (ADR 0022). `NULL` = la nota aún
+    no se leyó: los campos vacíos no dicen «no afecta a nada», dicen «no se
+    sabe todavía»."""
 
 
 #: Dimensión del vector de embeddings. 1536 = OpenAI `text-embedding-3-small`,
