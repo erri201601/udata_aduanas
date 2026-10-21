@@ -70,18 +70,21 @@ LO QUE ESTABA EN ESA LISTA Y YA NO (13-oct, 20-oct)
                    relaciones. `(TariffFraction)-[:SUBJECT_TO]->(NOM)` une cada
                    versión de la fracción cuya vigencia se solapa con la de la
                    correlación.
-  RegulatoryEvent  la proyección está escrita y lee `regulatory_events`, que
-                   hoy está en 0 —el DOF Watcher de Persona 2 no ha arrancado—.
-                   No se crea ningún nodo vacío: el día que haya eventos,
-                   aparecen con `(TariffFraction)-[:AFFECTED_BY]->(RegulatoryEvent)`
-                   hacia la versión vigente en su fecha de efecto.
+  RegulatoryEvent  desde el 21-oct hay eventos con sus fracciones (ADR 0022):
+                   `(TariffFraction)-[:AFFECTED_BY]->(RegulatoryEvent)` hacia la
+                   versión vigente en su fecha de efecto. Los eventos que sólo
+                   nombran una NOM no tienen arista: las de hoy (NOM-077 y
+                   NOM-078-SSA1) no están en el Anexo 2.4.1, así que una arista
+                   NOM → evento no uniría nada.
 
 AL DÍA, Y SE DICE CUÁNDO
 
 La proyección es una foto. Al terminar deja un nodo `Proyeccion {id: "ultima"}`
 con la hora y cuántas decisiones había, para que quien consulte el grafo pueda
 decir lo vieja que es su respuesta. El 13-oct el grafo tenía 9 decisiones de
-miles porque nadie había vuelto a correrla: `make graph` la repite.
+miles porque nadie había vuelto a correrla, y el 21-oct seguía en la foto del
+20. Desde entonces la repite cada noche el timer `aduanero-grafo` (22:15);
+`make graph` la corre a mano, dos veces, para comprobar la idempotencia.
 
 DOS DESVÍOS CONSCIENTES DEL §28
 
@@ -451,7 +454,7 @@ def _relaciones(session: Session) -> list[tuple[str, str, str, list[tuple[str, s
     )
 
     # Un evento afecta a la versión de la fracción vigente en su fecha de
-    # efecto (o, sin ella, en su `valid_from`). Hoy la tabla está en 0.
+    # efecto (o, sin ella, en su `valid_from`).
     fecha_evento = sa.func.coalesce(RegulatoryEvent.effective_date, RegulatoryEvent.valid_from)
     codigo_afectado = (
         sa.select(

@@ -161,7 +161,7 @@ La laptop de Persona 1, `udata-nitro`. Se accede **sólo por Tailscale**.
 |---|---|---|
 | API (FastAPI) | `<IP-DEL-DEV-SERVER>:8080` | servicio systemd `aduanero-api` |
 | PostgreSQL 16 + pgvector | `<IP-DEL-DEV-SERVER>:5433` | **no 5432** |
-| Neo4j | `:7474` (browser) · `:7687` (bolt) | vacío, sin usar |
+| Neo4j | `:7474` (browser) · `:7687` (bolt) | Knowledge Graph: proyección de Postgres, 67 605 nodos (21-oct). Timer `aduanero-grafo` cada noche a las 22:15 |
 | Redis | `:6379` | sin usar |
 | MinIO | `:9000` (API) · `:9001` (consola) | `aduanero-raw` con 13 archivos (80 MB); `aduanero-docs` vacío |
 
@@ -716,7 +716,7 @@ el repo, equivocado en producción.
 | 1 | **La búsqueda de partida, cuando la tarifa no nombra la mercancía** | Ocho casos de la bandeja —un sartén de acero inoxidable y tres «utensilios»— acaban entre tubos y tornillos. La tarifa no dice «sartén» en ningún sitio: `poder_de_discriminacion` le da **cero** posiciones. Tres intentos de arreglarlo midiendo salieron peor ([ADR 0007](adr/0007-la-busqueda-de-partida-no-se-arregla-tocando-terminos.md)). La vía que queda es la que el §27 asigna al RAG, y es un cambio de arquitectura: **pide decisión de Persona 1**. |
 | 2 | **El puente de vocabulario no puede ensanchar ninguna búsqueda** | La tabla existe, el endpoint funciona y las respuestas entran firmadas, pero el puente cae siempre fuera del tope de seis términos. Dejarlo pasar costó 29 aciertos, porque además le da un punto de cobertura a la posición de cuyo texto salió. Hace falta que la cobertura distinga un término de la ficha de un puente — toca el puerto `TariffCatalog` y su SQL (#188). |
 | 3 | ~~Cinco fracciones del dictamen no existen en la TIGIE~~ | **Cerrado.** El clasificador dio las fracciones correctas el 6-oct (73051999 y 73051291) y ningún veredicto vigente tiene hoy una fracción fuera de la TIGIE de su fecha. |
-| 4 | **Knowledge Graph** | La proyección está escrita en `graph/` (~950 líneas, 21-sep) y **nada la consume** salvo el chequeo de salud. Falta ejecutarla contra la base y darle un consumidor. Es **proyección de Postgres, nunca fuente**: nada que fundamente jurídicamente puede citarse desde ahí. |
+| 4 | **Knowledge Graph** | **Al día y con consumidor (21-oct).** El Copilot lo usa para sugerir qué reglas citaron las decisiones de una fracción (`graph.busqueda`). La foto se había quedado en el 20-oct; ahora la reproyecta cada noche el timer `aduanero-grafo`: 67 605 nodos y 72 675 relaciones, idempotente. Lo que falta del §28 está bloqueado por datos, no por código: **Treaty** (no hay tratados cargados) y **Manufacturer** (sólo un nombre en texto libre, en 1 de 188 productos). Tampoco hay arista NOM → evento del DOF: las dos NOM de los avisos del 21-oct no están en el Anexo 2.4.1, así que hoy no daría ninguna relación. Es **proyección de Postgres, nunca fuente**. |
 | 5 | **Los identificadores del pedimento** | Contrato y comparación listos desde el 13-oct (ADR 0012). Falta que Persona 2 cargue las reglas estructurables (~12 claves); hasta entonces el Espejo lo declara como laguna. |
 | 6 | **Las fuentes vacías** | `anam`, `cbp_cross`, `datamexico`, `ebti`, `sat`, `vucem`, `wco`. Ninguna bloquea el camino crítico hoy. Las cuotas tienen 1 de 21 combinaciones con resolución primaria; las otras 18 siguen `NEEDS_VALIDATION`. |
 | 7 | **PED_SIM_005-001 tiene como ficha vigente una versión vacía** | El 30-sep se probó la extracción desde imagen sobre ese producto; dos lecturas devolvieron cero atributos y cada una quedó como vigente. Desde entonces el motor clasifica una ficha sin nada: «no hay términos de búsqueda». La guarda que lo impide entró el 2-oct (`guardar_dna`: una extracción vacía no desplaza a la anterior) pero no reparó lo guardado. Reparar = volver a hacer vigente la v1 del corpus (5 atributos); **pendiente de la decisión de Persona 1**, porque toca la base compartida. Las v2/v3 tampoco tienen evidencia enlazada. |
@@ -901,8 +901,10 @@ Orden acordado el 21-oct:
    eso hay que pedírselo a César, empezando por si `domestico/cocina`
    significa «o». Queda `clasificacion_39 --reclasificar` para medir el
    siguiente intento con un solo comando.
-2. **Knowledge Graph** (hueco 4): ejecutar la proyección y darle un
-   consumidor. Es lo único que le falta a INTELLIGENCE.
+2. ~~**Knowledge Graph**~~ **Al día el 21-oct** (hueco 4). Ya tenía
+   consumidor, el Copilot; lo que faltaba era que la foto no envejeciera, y
+   ahora la reproyecta cada noche `aduanero-grafo`. Lo que le falta del §28
+   (Treaty, Manufacturer) espera a que haya datos de los que proyectar.
 3. **Ensayo en seco de la demo AJR:** recorrerla completa con Chrome headless
    antes de fijar una fecha. La fecha la decide Persona 1.
 4. **NICO:** en 30 abstenciones, la ficha no trae la medida que pide la
