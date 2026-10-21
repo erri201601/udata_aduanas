@@ -1126,3 +1126,9 @@ class ComparableRuling(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Reg
     related_rulings: Mapped[list[str]] = mapped_column(
         ARRAY(sa.String(32)), nullable=False, server_default="{}"
     )
+
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
+    """Asunto más extracto literal, vectorizados con el mismo proveedor que el
+    RAG (ADR 0019). Ordena los casos por parecido con la ficha, que está en
+    español: el modelo es multilingüe. `NULL` = sin vectorizar; se ordena por
+    fecha y la respuesta lo dice."""

@@ -91,3 +91,26 @@ para una olla de presión (7615.10) salen una casa de hámster y unos braseros
 de aluminio. El orden es por vigencia y fecha, no por parecido. Ordenar por
 parecido con la ficha exige comparar textos en dos idiomas (fichas en español,
 resoluciones en inglés); es la siguiente mejora.
+
+## Actualización 2026-10-21 — ordenados por parecido con la ficha
+
+Se añadió `comparable_rulings.embedding`, con el mismo proveedor y dimensión
+que el RAG y un modelo multilingüe. Se vectoriza el **asunto más el extracto
+literal**, no el texto entero: membretes y cortesías sólo meten ruido. El
+backfill es idempotente: `python -m ingestion.cbp_cross.vectores --target local`.
+
+La consulta vectoriza el nombre y la descripción de la ficha (en español) y
+ordena las resoluciones de la HS6 por coseno: primero las vigentes y, sin
+vector, al final. El vector de la ficha se guarda en caché en el proceso. Si no
+hay proveedor, o la decisión no tiene ficha, se ordena por fecha y la
+respuesta lo dice (`orden`, `motivo_orden`), igual que el RAG degrada a término
+y lo declara.
+
+Medido a mano antes de construirlo, con el proveedor real:
+
+- **Olla de presión (7615.10):** suben «Aluminum cookware (Circulon)» y
+  «aluminum ware cook kit»; las persianas quedan al final.
+- **Sartén (7323.93):** el comedero de pájaros queda al final.
+
+Es una mejora moderada pero clara. El número de parecido viaja en la API y no
+se muestra en la pantalla, porque un 0.33 no le dice nada a un clasificador.

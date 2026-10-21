@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
+from functools import lru_cache
 from typing import Annotated
 
 import sqlalchemy as sa
@@ -360,6 +361,9 @@ class ComparableRead(BaseModel):
     extracto_de: str
     """`subpartida`, `holding`, `hechos` o `inicio`: de dónde salió el extracto."""
     data_origin: str
+    parecido: float | None = None
+    """Coseno con la ficha (0 a 1). `None` si se ordenó por fecha o si la
+    resolución aún no tiene vector."""
 
 
 class ComparablesRead(BaseModel):
@@ -369,6 +373,37 @@ class ComparablesRead(BaseModel):
     total: int = 0
     comparables: list[ComparableRead] = Field(default_factory=list)
     aviso: str = AVISO_COMPARABLES
+    orden: str = "fecha"
+    """`parecido` (con la ficha del producto) o `fecha`. Se dice siempre: un
+    orden que cambia sin avisar no se puede leer."""
+    motivo_orden: str | None = None
+    """Por qué se ordenó por fecha cuando se quería por parecido."""
+
+
+def _texto_del_producto(session: SessionDep, decision: ClassificationDecision) -> str | None:
+    """Lo que se compara con las resoluciones: el nombre y la descripción de la
+    ficha. Sin producto ligado no hay con qué comparar."""
+    if decision.product_id is None:
+        return None
+    producto = session.get(Product, decision.product_id)
+    if producto is None:
+        return None
+    partes = [producto.commercial_name, producto.description]
+    texto = " — ".join(p for p in partes if p)
+    return texto or None
+
+
+@lru_cache(maxsize=256)
+def _vector_de(texto: str) -> tuple[float, ...] | None:
+    """Un vector por texto de ficha, cacheado: la misma decisión se abre muchas
+    veces y la ficha no cambia. `None` si el proveedor no está o falló."""
+    from rag.embedder import embedder_opcional
+
+    embedder = embedder_opcional()
+    if embedder is None:
+        return None
+    vectores = embedder.embed([texto])
+    return tuple(vectores[0]) if vectores else None
 
 
 @router.get(
@@ -388,9 +423,19 @@ def comparables(
     if not decision.fraction_code:
         return ComparablesRead(hs6=None)
     hs6 = decision.fraction_code[:6]
-    total, filas = comparables_de(session, hs6, limite=limite)
+    texto = _texto_del_producto(session, decision)
+    vector = _vector_de(texto) if texto else None
+    if vector is None:
+        motivo = (
+            "la decisión no tiene ficha de producto con la que comparar"
+            if texto is None
+            else "no hay proveedor de embeddings disponible"
+        )
+    else:
+        motivo = None
+    total, filas = comparables_de(session, hs6, limite=limite, vector=vector)
     salida: list[ComparableRead] = []
-    for f in filas:
+    for f, parecido in filas:
         extracto, origen = criterio_de(f.full_text)
         salida.append(
             ComparableRead(
@@ -405,6 +450,13 @@ def comparables(
                 extracto=extracto,
                 extracto_de=origen,
                 data_origin=f.data_origin,
+                parecido=parecido,
             )
         )
-    return ComparablesRead(hs6=hs6, total=total, comparables=salida)
+    return ComparablesRead(
+        hs6=hs6,
+        total=total,
+        comparables=salida,
+        orden="parecido" if vector is not None else "fecha",
+        motivo_orden=motivo,
+    )
