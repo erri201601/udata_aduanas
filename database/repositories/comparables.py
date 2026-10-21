@@ -28,6 +28,9 @@ LARGO_EXTRACTO: Final = 420
 _SUBPARTIDA = re.compile(r"The applicable (?:sub)?heading for ", re.I)
 _HOLDING = re.compile(r"HOLDINGS?:\s*(.{40,}?)(?:\n\s*\n|$)", re.S)
 _HECHOS = re.compile(r"FACTS:\s*(.{40,}?)(?:\n\s*\n|$)", re.S)
+#: Las BTI (ADR 0020) traen la justificación bajo una etiqueta nuestra, en el
+#: idioma del país emisor.
+_JUSTIFICACION = re.compile(r"JUSTIFICACIÓN DE LA CLASIFICACIÓN:\s*(.+?)(?:\n\s*\n|$)", re.S)
 
 
 def _plano(texto: str) -> str:
@@ -42,8 +45,12 @@ def _recorte(texto: str) -> str:
 
 
 def criterio_de(texto: str) -> tuple[str, str]:
-    """`(extracto, de_dónde)`: la frase con la que CBP fija la subpartida, la
-    sección HOLDING o, si no hay ninguna, el inicio de los hechos."""
+    """`(extracto, de_dónde)`: la justificación de una BTI, la frase con la que
+    CBP fija la subpartida, la sección HOLDING o, si no hay ninguna, el inicio
+    de los hechos."""
+    m = _JUSTIFICACION.search(texto)
+    if m:
+        return _recorte(m.group(1)), "justificacion"
     m = _SUBPARTIDA.search(texto)
     if m:
         return _recorte(texto[m.start() : m.start() + LARGO_EXTRACTO * 2]), "subpartida"

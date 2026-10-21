@@ -9,6 +9,7 @@
 import type { ComparablesRead } from '../api/client'
 
 const DE_DONDE: Record<string, string> = {
+  justificacion: 'justificación de la clasificación (idioma del país emisor)',
   subpartida: 'frase en que fija la subpartida',
   holding: 'resolutivo (HOLDING)',
   hechos: 'hechos (FACTS)',

@@ -341,9 +341,9 @@ def caso_vigente(decision_id: uuid.UUID, session: SessionDep) -> CasoVigente:
 
 #: Lo que la pantalla tiene que decir siempre que enseña un comparable.
 AVISO_COMPARABLES = (
-    "Casos de otra aduana, no fundamento jurídico en México. Sólo coinciden los "
-    "seis dígitos del Sistema Armonizado; la fracción de EE. UU. no se traduce a "
-    "TIGIE."
+    "Casos de otras aduanas (EE. UU., Unión Europea), no fundamento jurídico en "
+    "México. Sólo coinciden los seis dígitos del Sistema Armonizado; sus códigos "
+    "nacionales no se traducen a TIGIE."
 )
 
 
@@ -359,7 +359,8 @@ class ComparableRead(BaseModel):
     extracto: str
     """Texto literal de la resolución, nunca generado (ADR 0019)."""
     extracto_de: str
-    """`subpartida`, `holding`, `hechos` o `inicio`: de dónde salió el extracto."""
+    """`justificacion`, `subpartida`, `holding`, `hechos` o `inicio`: de dónde
+    salió el extracto."""
     data_origin: str
     parecido: float | None = None
     """Coseno con la ficha (0 a 1). `None` si se ordenó por fecha o si la
