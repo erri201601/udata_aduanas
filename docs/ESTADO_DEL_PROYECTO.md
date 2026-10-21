@@ -18,12 +18,12 @@ sin tener que leer el historial de conversaciones. Si algo aquí contradice a
 Las secciones 1 a 8 conservan sus cifras con su fecha. Ésta resume lo que
 cambió después y manda sobre ellas donde se contradigan.
 
-**Avance frente al scorecard del §44: ≈ 86 %** (35 líneas con el mismo peso,
+**Avance frente al scorecard del §44: ≈ 88 %** (30.95 de 35) (35 líneas con el mismo peso,
 cada una puntuada contra lo que hay en la base y en el código).
 
 | Bloque | Puntaje | % | Qué falta |
 |---|---:|---:|---|
-| DATA (14) | 11.7 | 84 % | Tasas de la tarifa versionadas por decreto; ANAM y Data México no responden; cuotas sólo como índice |
+| DATA (14) | 12.15 | 87 % | LIGIE 0.9 (tasas no versionadas por decreto); EBTI 0.8 (sólo un mes de histórico); ANAM/SAT/Data México 0.35 (sólo SAT); cuotas 0.6 (índice) |
 | CORE (4) | 3.65 | 91 % | Cobertura de clasificación 62 %; NICO 68/98 |
 | SIMULATOR (8) | 7.9 | 99 % | — |
 | INTELLIGENCE (6) | 4.8 | 80 % | Sentinel a medias; Treaty y Manufacturer en el grafo; tratados |
