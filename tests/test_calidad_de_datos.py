@@ -38,6 +38,8 @@ CLAVES: dict[str, tuple[str, ...]] = {
     "regulatory.prosec_rates": ("sector_code", "fraction_code", "scope_note"),
     "regulatory.regla_8a_fractions": ("sector_code", "fraction_code"),
     "regulatory.comparable_rulings": ("authority", "ruling_number"),
+    # Una cifra por serie y mes: los meses de una serie no se solapan.
+    "regulatory.trade_statistics": ("source", "series"),
     "regulatory.compensatory_duty_listings": (
         "fraction_code",
         "origin_country",

@@ -31,6 +31,9 @@ dependencies = [
     "python-dateutil>=2.9",
     # Ingestión — fuentes oficiales publican XLSX (SNICE: LIGIE, NICO)
     "openpyxl>=3.1",
+    # El SAT publica sus cifras abiertas en .xls (BIFF), que openpyxl no lee
+    # (ADR 0021). Con techo: el 3.x podría volver a cambiar de formatos.
+    "xlrd>=2.0,<3",
     # Product DNA desde PDF (§16): se saca la capa de texto y se pasa por el
     # extractor de texto. Sin OCR: un PDF escaneado sin texto se rechaza con
     # «sin texto extraíble» (Persona 1, 13-oct). Con techo, por lo mismo que
@@ -50,6 +53,7 @@ dev = [
     "mypy>=1.13",
     "types-python-dateutil",
     "types-openpyxl",
+    "types-xlrd",
 ]
 
 [build-system]

@@ -55,6 +55,7 @@ from database.models.regulatory import (
     TariffFraction,
     TariffHeading,
     TariffHeadingGroup,
+    TradeStatistic,
     UnitOfMeasure,
 )
 
@@ -100,5 +101,6 @@ __all__ = [
     "TariffFraction",
     "TariffHeading",
     "TariffHeadingGroup",
+    "TradeStatistic",
     "UnitOfMeasure",
 ]
