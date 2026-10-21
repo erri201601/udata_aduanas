@@ -84,7 +84,7 @@ export function RegulatorySentinel() {
     <section className="pantalla">
       <header className="pantalla__encabezado">
         <div>
-          <h1>Regulatory Sentinel</h1>
+          <h1>Vigilancia normativa</h1>
           <p className="pantalla__sub">
             Qué ha cambiado en la norma, y qué de eso nos alcanza
           </p>

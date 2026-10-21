@@ -105,7 +105,7 @@ export function Evidence() {
     <section className="pantalla">
       <header className="pantalla__encabezado">
         <div>
-          <h1>Evidencia</h1>
+          <h1>Evidencia documental</h1>
           <p className="pantalla__sub">
             Las diez preguntas del §49 sobre una decisión
           </p>

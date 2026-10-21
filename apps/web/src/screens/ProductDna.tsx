@@ -55,7 +55,7 @@ export function ProductDna({ onClasificado }: Props = {}) {
     <section className="pantalla">
       <header className="pantalla__encabezado">
         <div>
-          <h1>Product DNA</h1>
+          <h1>Expedientes de mercancías</h1>
           <p className="pantalla__sub">
             Atributos de la mercancía, con el origen de cada dato
           </p>
@@ -206,11 +206,11 @@ export function ProductDna({ onClasificado }: Props = {}) {
       )}
 
       {!dna && !error && (cargando || cargandoCatalogo) && (
-        <p className="vacio">Cargando el Product DNA…</p>
+        <p className="vacio">Cargando los expedientes de mercancías…</p>
       )}
 
       {!dna && !cargando && !cargandoCatalogo && !error && !errorCatalogo && (
-        <p className="vacio">No hay productos con Product DNA todavía.</p>
+        <p className="vacio">Todavía no hay expedientes de mercancías.</p>
       )}
     </section>
   )
