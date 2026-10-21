@@ -31,6 +31,7 @@ from typing import Final
 import xlrd
 
 FUENTE: Final = "SAT"
+OCHO_DECIMALES: Final = Decimal("0.00000001")
 BASE: Final = "https://wu1agsprosta001.blob.core.windows.net/agsc-publicaciones/Datos_abiertos/Cifras_SAT/Documents"
 PAGINA: Final = "https://www.sat.gob.mx/minisitio/DatosAbiertos/dyp.html"
 
@@ -100,7 +101,10 @@ def _decimal(valor: object) -> Decimal | None:
     try:
         # xlrd entrega float: se pasa por `repr`, que es la representación
         # más corta que vuelve al mismo float, y de ahí a Decimal.
-        return Decimal(repr(valor)) if isinstance(valor, float) else Decimal(str(valor).strip())
+        crudo = Decimal(repr(valor)) if isinstance(valor, float) else Decimal(str(valor).strip())
+        # Ocho decimales, como la columna: millones de pesos hasta el centavo.
+        # Más allá sólo hay ruido binario del float («…440000004»).
+        return crudo.quantize(OCHO_DECIMALES)
     except InvalidOperation:
         return None
 

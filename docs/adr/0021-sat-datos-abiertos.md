@@ -57,3 +57,12 @@ El maestro (§11) las pide para «calibración, benchmarks, estadísticas».
 - Usarlas para calibrar el generador sintético.
 
 Cada una va en su propio PR, cuando haya quien las consuma.
+
+## Corrección 2026-10-21 — ocho decimales
+
+La primera carga dio 1 800 cifras, y la segunda **504 «cambiadas»** cuando
+debía dar 0. La recaudación viene en millones de pesos **con centavos**, así
+que tiene 8 decimales (30.84343944 = $30 843 439.44), y la columna
+`Numeric(20, 6)` redondeaba los centavos: cada recarga veía una cifra distinta.
+Ahora la columna es `Numeric(24, 8)` y el parser cuantiza a 8 decimales, el
+último dígito con sentido. Lo que viene después es ruido del float.
