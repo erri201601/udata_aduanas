@@ -1087,6 +1087,11 @@ export interface components {
             /** Declarado */
             declarado?: components["schemas"]["DeclaradoEnPartida"][];
             /**
+             * Declarado Total
+             * @default 0
+             */
+            declarado_total: number;
+            /**
              * Trace Available
              * @default false
              */

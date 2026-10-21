@@ -16,6 +16,8 @@ export interface Voz {
   /** «coincide con lo declarado», «difiere de lo sugerido»… */
   contraste?: { texto: string; tono: Tono } | null
   accion?: ReactNode
+  /** Lo que no cabe en la tarjeta: p. ej. todas las partidas declaradas. */
+  extra?: ReactNode
 }
 
 

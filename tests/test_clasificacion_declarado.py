@@ -108,3 +108,45 @@ def test_tras_reclasificar_el_caso_sigue_confirmado(pg_session: Session) -> None
     assert detalle.dictamen is None
     assert detalle.dictamen_del_caso is not None
     assert detalle.dictamen_del_caso.fraction_code == "73121005"
+
+
+def test_el_total_dice_cuantas_partidas_hay_aunque_la_lista_se_corte(
+    pg_session: Session,  # noqa: F811
+) -> None:
+    from apps.api.routers.classifications import LIMITE_DECLARADO
+
+    cliente = Client(legal_name="Prueba total", country="MX", **SINTETICO)
+    pg_session.add(cliente)
+    pg_session.flush()
+    producto = Product(
+        client_id=cliente.id, sku=f"T-{uuid.uuid4().hex[:8]}", commercial_name="x", **SINTETICO
+    )
+    pedimento = Pedimento(
+        client_id=cliente.id,
+        pedimento_number=f"PRUEBA-{uuid.uuid4().hex[:12]}",
+        trade_flow="IMPORT",
+        operation_date=date(2026, 10, 13),
+        is_simulation=True,
+        **SINTETICO,
+    )
+    pg_session.add_all([producto, pedimento])
+    pg_session.flush()
+    n = LIMITE_DECLARADO + 2
+    pg_session.add_all(
+        PedimentoItem(
+            pedimento_id=pedimento.id,
+            product_id=producto.id,
+            line_number=i,
+            description="x",
+            quantity=Decimal(1),
+            declared_fraction_code="73121099",
+            **SINTETICO,
+        )
+        for i in range(1, n + 1)
+    )
+    pg_session.flush()
+
+    detalle = obtener_decision(_decision(pg_session, producto).id, pg_session)
+
+    assert len(detalle.declarado) == LIMITE_DECLARADO
+    assert detalle.declarado_total == n

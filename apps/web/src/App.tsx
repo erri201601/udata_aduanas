@@ -109,7 +109,7 @@ export default function App() {
           <Classification decisionInicial={destino.decisionId ?? null} irA={irA} />
         )}
         {pantalla.id === 'finding-detail' && (
-          <Findings pedimentoInicial={destino.pedimentoId ?? null} />
+          <Findings pedimentoInicial={destino.pedimentoId ?? null} irA={irA} />
         )}
         {pantalla.id === 'evidence' && <Evidence />}
         {pantalla.id === 'human-review' && <HumanReview />}
