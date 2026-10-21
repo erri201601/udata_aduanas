@@ -1,6 +1,6 @@
 # ADUANERO OS — Estado del proyecto y backlog
 
-**Actualizado:** 2026-10-21 (sección 0); el resto, 2026-10-13  
+**Actualizado:** 2026-10-21, tarde (secciones 0 y 9); el resto, 2026-10-13  
 **Mantiene:** Persona 1 (Erick)
 
 Las cifras de este documento se verificaron contra la base y el repositorio el
@@ -18,16 +18,51 @@ sin tener que leer el historial de conversaciones. Si algo aquí contradice a
 Las secciones 1 a 8 conservan sus cifras con su fecha. Ésta resume lo que
 cambió después y manda sobre ellas donde se contradigan.
 
-**Avance frente al scorecard del §44: ≈ 88 %** (30.95 de 35) (35 líneas con el mismo peso,
-cada una puntuada contra lo que hay en la base y en el código).
+**Avance frente al scorecard del §44: ≈ 89 %** (31.25 de 35) (35 líneas con el mismo peso,
+cada una puntuada contra lo que hay en la base y en el código). Por la mañana
+era 88 % (30.95); lo que movió el puntaje está en «La tarde del 21-oct», abajo.
 
 | Bloque | Puntaje | % | Qué falta |
 |---|---:|---:|---|
-| DATA (14) | 12.15 | 87 % | LIGIE 0.9 (tasas no versionadas por decreto); EBTI 0.8 (sólo un mes de histórico); ANAM/SAT/Data México 0.35 (sólo SAT); cuotas 0.6 (índice) |
-| CORE (4) | 3.65 | 91 % | Cobertura de clasificación 62 %; NICO 68/98 |
+| DATA (14) | 12.25 | 88 % | EBTI 0.8 (sólo un mes de histórico); ANAM/SAT/Data México 0.35 (sólo SAT); cuotas 0.6 (índice, 1 de 21 combinaciones con resolución) |
+| CORE (4) | 3.65 | 91 % | Cobertura de clasificación 62 %; NICO 68 de 98 (30 abstenciones) |
 | SIMULATOR (8) | 7.9 | 99 % | — |
-| INTELLIGENCE (6) | 4.8 | 80 % | Sentinel a medias; Treaty y Manufacturer en el grafo; tratados |
+| INTELLIGENCE (6) | 5.0 | 83 % | Knowledge Graph sin consumidor; Treaty y Manufacturer en el grafo; tratados |
 | PRODUCT (3) | 2.45 | 82 % | Ensayo de la demo AJR de punta a punta |
+
+### La tarde del 21-oct
+
+- **Sentinel lee las notas del DOF** (ADR 0022). Cada nota va a RAW con su
+  hash; de ella salen las fracciones citadas, las NOM del título y la entrada
+  en vigor del transitorio, sólo si es inequívoca. Sentinel cruza los eventos
+  con lo que los clientes declaran o tienen clasificado, directamente o por
+  la NOM. INTELLIGENCE pasa de 4.8 a 5.0.
+- **La Tarifa se versiona por decreto** (ADR 0023). Los decretos que modifican
+  la Tarifa se aplican del más reciente al más antiguo:
+  - la 9803.00.01 queda exenta desde el 14-oct-2026;
+  - 1 699 fracciones dejan de afirmar una tasa anterior a su último decreto;
+  - ninguna partida del corpus cambió de tasa;
+  - el decreto de arancel-cupo del 22-abr-2024 no se aplicó, porque su
+    transitorio no es inequívoco.
+
+  LIGIE pasa de 0.9 a 1.0. Riesgo residual: un decreto que no esté en el
+  índice de SNICE (falta el de agosto de 2023) no se aplica.
+- **Detección:** el subtipo `NICO_EXIGE_FICHA` ya tiene detector. Resultado:
+  TP 59 · FP 0 · FN 1 (recall 98.33 %, F1 99.16).
+- **Consola rediseñada** (ADR 0024). No mueve el puntaje, porque Dashboard ya
+  contaba como hecho:
+  - abre en el Panorama operativo (qué requiere atención, operaciones y
+    siguiente acción);
+  - menú agrupado en español;
+  - identidad marino y petróleo;
+  - cabecera de expediente en Pedimentos, Hallazgos y Clasificación;
+  - declarado, sugerido y confirmado separados.
+
+  Al hacerlo apareció un fallo de datos: «Confirmado» decía «pendiente» en 65
+  de los 181 casos vigentes porque leía el dictamen de la fila y no el del
+  caso. Corregido con `dictamen_del_caso`.
+- **Medido y descartado:** la regla «sólo materia» para RGI 1 perdía 15
+  fregaderos y no arreglaba el sartén. No entró.
 
 **Datos nuevos o corregidos** (ADR entre paréntesis):
 
@@ -62,15 +97,17 @@ cada una puntuada contra lo que hay en la base y en el código).
   simulación contra la base real.
 - **Grafo:** 2 631 nodos `PROSECSector`.
 
-**Conteos (21-oct):** `tariff_fractions` 8 136 · `nicos` 11 503 ·
-`legal_chunks` 3 651 · `fraction_nom_requirements` 1 059 (603 vigentes) ·
-`compensatory_duty_listings` 447 · `prosec_rates` 2 631 · `comparable_rulings`
-5 858 · `trade_statistics` 1 800 · `pedimentos` 23 · `pedimento_items` 188 ·
-`classification_decisions` 6 414. Alembic en `ecedec726d14`. 42 entidades.
+**Conteos (21-oct, tarde):** `tariff_fractions` 9 794 versiones de 8 135
+fracciones (cada decreto cierra una versión y abre otra) · `nicos` 14 441
+(se copian a cada versión) · `legal_chunks` 3 651 ·
+`fraction_nom_requirements` 1 059 (603 vigentes) · `compensatory_duty_listings`
+447 · `prosec_rates` 2 631 · `comparable_rulings` 6 218 · `trade_statistics`
+1 800 · `regulatory_events` 5 · `pedimentos` 23 · `pedimento_items` 188 ·
+`classification_decisions` 6 414. Alembic en `7f5c0b396d7f`.
 
-**Medición vigente:** detección TP 57 · FP 0 · FN 3 (los 3 son `WRONG_NICO`
-de ficha técnica, que no tiene detector). Clasificación: fracción 98/98, NICO
-68/98.
+**Medición vigente:** detección TP 59 · FP 0 · FN 1. Clasificación: fracción
+98/98 contestadas (cobertura 62 %); NICO 68/68 contestados, con 30
+abstenciones.
 
 **Lecciones que costaron tiempo** (están en la memoria del agente):
 
@@ -853,28 +890,25 @@ rama suelta de `legal-chunks-legal-rule-id`.
 
 ## 9. La siguiente tarea
 
-**Decidir cómo se elige la partida cuando la tarifa no nombra la mercancía.**
+Orden acordado el 21-oct:
 
-Todo lo demás del camino crítico está cerrado y medido: el corpus cargado, el
-motor con precisión del 100 % sobre 98 contestadas de 157 medibles, el bucle de captura
-funcionando de punta a punta y 133 veredictos de un clasificador real dentro del
-sistema, con la bandeja a cero. Lo que queda es el techo de la cobertura, y es un techo de
-arquitectura, no de ajuste: está medido en el
-[ADR 0007](adr/0007-la-busqueda-de-partida-no-se-arregla-tocando-terminos.md)
-que tres intentos razonables de moverlo lo empeoraron.
+1. **Separar el puente de vocabulario de la cobertura** (hueco 2 de «Lo que
+   de verdad falta»). Hoy el puente cae siempre fuera del tope de seis
+   términos, y dejarlo pasar costó 29 aciertos, porque además le daba un
+   punto de cobertura a la posición de cuyo texto salió. Es lo que puede
+   mover la cifra que más importa, la cobertura del 62 %. Se mide antes y
+   después; si baja, se revierte.
+2. **Knowledge Graph** (hueco 4): ejecutar la proyección y darle un
+   consumidor. Es lo único que le falta a INTELLIGENCE.
+3. **Ensayo en seco de la demo AJR:** recorrerla completa con Chrome headless
+   antes de fijar una fecha. La fecha la decide Persona 1.
+4. **NICO:** en 30 abstenciones, la ficha no trae la medida que pide la
+   tarifa. Hay que preguntarlo, no deducirlo.
 
-La frase que el proyecto podrá decir el día que se resuelva, y hoy no puede:
-*«el motor clasifica el X % de las partidas sin ayuda humana, con precisión
-medida contra el dictamen de un clasificador»*. Hoy la mitad de esa frase ya es
-verdad —la precisión— y la otra mitad está en 62.42 %.
-
-En paralelo y sin esperar a nadie:
-
-1. **Separar el puente de la cobertura** (hueco 2). Es la diferencia entre una
-   mesa de vocabulario que crece y una que se llena de respuestas inertes.
-2. **El Knowledge Graph** (hueco 4), lo único que le falta a INTELLIGENCE.
-3. **La ficha vacía de PED_SIM_005-001** (hueco 7), que es una decisión, no un
-   desarrollo.
+La frase que el proyecto podrá decir el día que se cierre el punto 1 y hoy
+no puede: *«el motor clasifica el X % de las partidas sin ayuda humana, con
+precisión medida contra el dictamen de un clasificador»*. La precisión ya es
+del 100 %; la cobertura está en 62.42 %.
 
 ## 10. Documentos del repositorio
 
@@ -914,6 +948,17 @@ En paralelo y sin esperar a nadie:
 | [0011](adr/0011-contrato-de-prosec-y-regla-8a.md) | contrato de PROSEC y Regla 8ª, y cómo los consume el Opportunity Finder |
 | [0012](adr/0012-identificadores-exigidos.md) | qué identificadores exige una operación, sólo lo estructurable |
 | [0013](adr/0013-el-nico-de-la-clasificacion.md) | el NICO cuando la LIGIE da uno único |
+| [0014](adr/0014-peso-neto-y-rectificacion.md) | peso neto por partida y rectificación de pedimentos |
+| [0015](adr/0015-folio-de-decision.md) | el folio de una decisión: `AD-AAAA-NNNNNN` (§17) |
+| [0016](adr/0016-nico-por-medida.md) | el NICO cuando la LIGIE lo distingue sólo por medidas |
+| [0017](adr/0017-anexo-2-5-1-indice-de-cuotas.md) | el Anexo 2.5.1 como índice de cuotas compensatorias |
+| [0018](adr/0018-vigencia-de-la-ligie-2022.md) | la vigencia de la LIGIE 2022 y la tarifa como foto |
+| [0019](adr/0019-cbp-cross-casos-comparables.md) | CBP CROSS: casos comparables, nunca fundamento |
+| [0020](adr/0020-ebti-casos-comparables.md) | EBTI: las BTI de la UE como casos comparables |
+| [0021](adr/0021-sat-datos-abiertos.md) | SAT Datos Abiertos: cifras de comercio exterior |
+| [0022](adr/0022-sentinel-lee-las-notas-del-dof.md) | Sentinel lee las notas del DOF y las cruza con los clientes |
+| [0023](adr/0023-decretos-que-modifican-la-tarifa.md) | aplicar los decretos que modifican la Tarifa |
+| [0024](adr/0024-identidad-de-la-consola.md) | identidad de la consola, Panorama operativo y cabecera de expediente |
 
 ---
 
