@@ -44,18 +44,20 @@ if TYPE_CHECKING:
 
     from sqlalchemy.orm import Session
 
-#: Lo que dice el guion del 7-oct (`~/documentos_cliente_aduanero/DEMO_AJR.md`).
+#: Lo que dice el guion (`~/documentos_cliente_aduanero/DEMO_AJR.md`), al 21-oct.
 ESPERADO: dict[str, Any] = {
     "fracciones_vigentes": 8135,
-    "nicos": 11503,
+    "nicos": 11502,
     "normas": {
         "Reglas Generales de Comercio Exterior para 2026": 537,
         "Ley Aduanera": 274,
         "Ley de los Impuestos Generales de Importación y de Exportación (Tarifa)": 94,
     },
-    "correlaciones_nom": 456,
-    "dias_fix": 192,
-    "objetos_raw": 15,
+    "correlaciones_nom": 603,
+    #: Mínimos: los dos crecen solos (FIX cada día hábil, RAW con cada nota del
+    #: DOF). Una igualdad fallaría al día siguiente de escribir el guion.
+    "dias_fix": 203,
+    "objetos_raw": 1814,
     "laptop_estados": [
         "CONTINUE",
         "CONTINUE",
@@ -86,10 +88,10 @@ ESPERADO: dict[str, Any] = {
         "fallo": 0,
         "contra_dictamen": 43,
     },
-    "deteccion": {"tp": 52, "fp": 0, "fn": 3, "tn": 126},
+    "deteccion": {"tp": 59, "fp": 0, "fn": 1, "tn": 128},
     "contra_el_motor": {"coinciden": 47, "discrepan": 0, "se_abstiene": 65},
     "bandeja": 0,
-    "alcance_acero": (134, 181),
+    "alcance_acero": (141, 188),
 }
 
 RAIZ = Path(__file__).resolve().parents[2]
@@ -105,6 +107,20 @@ class Resultado:
 
 def comparar(nombre: str, esperado: object, obtenido: object) -> Resultado:
     return Resultado(nombre, esperado == obtenido, str(esperado), str(obtenido))
+
+
+def al_menos(nombre: str, minimo: int, obtenido: int | None) -> Resultado:
+    """Para lo que crece solo: el guion dice «al menos», no «exactamente»."""
+    return Resultado(
+        nombre, obtenido is not None and obtenido >= minimo, f"al menos {minimo}", str(obtenido)
+    )
+
+
+#: Vigente HOY, con el criterio de la regla 5. Contar `valid_to IS NULL` dejaba
+#: fuera la 9803.00.01: el decreto del 13-oct la deja exenta cinco años, así
+#: que su versión vigente SÍ tiene `valid_to` (2031-10-13). El chequeo decía
+#: 8 134 fracciones y el guion, que estaba bien, 8 135.
+VIGENTE_HOY = "valid_from <= current_date and (valid_to is null or valid_to >= current_date)"
 
 
 # ── Entorno ─────────────────────────────────────────────────────────────────
@@ -186,19 +202,23 @@ def datos(_api: str, s: Session) -> list[Resultado]:
         comparar(
             "fracciones vigentes",
             ESPERADO["fracciones_vigentes"],
-            q("select count(*) from regulatory.tariff_fractions where valid_to is null"),
+            q(f"select count(*) from regulatory.tariff_fractions where {VIGENTE_HOY}"),
         ),
-        comparar("NICO", ESPERADO["nicos"], q("select count(*) from regulatory.nicos")),
+        comparar(
+            "NICO vigentes",
+            ESPERADO["nicos"],
+            q(f"select count(*) from regulatory.nicos where {VIGENTE_HOY}"),
+        ),
         comparar("normas por documento", ESPERADO["normas"], normas),
         comparar(
             "correlaciones fracción → NOM",
             ESPERADO["correlaciones_nom"],
-            q("select count(*) from regulatory.fraction_nom_requirements"),
+            q(f"select count(*) from regulatory.fraction_nom_requirements where {VIGENTE_HOY}"),
         ),
-        comparar(
+        al_menos(
             "días de FIX", ESPERADO["dias_fix"], q("select count(*) from regulatory.exchange_rates")
         ),
-        comparar("objetos en RAW", ESPERADO["objetos_raw"], raw),
+        al_menos("objetos en RAW", ESPERADO["objetos_raw"], raw),
     ]
 
 
