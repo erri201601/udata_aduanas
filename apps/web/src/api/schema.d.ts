@@ -1138,7 +1138,7 @@ export interface components {
             comparables?: components["schemas"]["ComparableRead"][];
             /**
              * Aviso
-             * @default Casos de otra aduana, no fundamento jurídico en México. Sólo coinciden los seis dígitos del Sistema Armonizado; la fracción de EE. UU. no se traduce a TIGIE.
+             * @default Casos de otras aduanas (EE. UU., Unión Europea), no fundamento jurídico en México. Sólo coinciden los seis dígitos del Sistema Armonizado; sus códigos nacionales no se traducen a TIGIE.
              */
             aviso: string;
             /**
