@@ -901,6 +901,13 @@ Orden acordado el 21-oct:
    eso hay que pedírselo a César, empezando por si `domestico/cocina`
    significa «o». Queda `clasificacion_39 --reclasificar` para medir el
    siguiente intento con un solo comando.
+
+   **Lo que sí puede mover la cobertura (21-oct, ADR 0026):** una respuesta
+   firmada de César ya puede acotar al grupo de guion en la RGI 6. Sin
+   respuestas nuevas no cambia nada: 0 diferencias en 187 productos. Con tres
+   respuestas concretas, simuladas, la cobertura pasa de **63.41 % a 77.44 %**,
+   con 23 aciertos nuevos y ningún error. Las preguntas están pendientes de que
+   César las conteste.
 2. ~~**Knowledge Graph**~~ **Al día el 21-oct** (hueco 4). Ya tenía
    consumidor, el Copilot; lo que faltaba era que la foto no envejeciera, y
    ahora la reproyecta cada noche `aduanero-grafo`. Lo que le falta del §28
@@ -965,6 +972,7 @@ del 100 %; la cobertura está en 62.42 %.
 | [0023](adr/0023-decretos-que-modifican-la-tarifa.md) | aplicar los decretos que modifican la Tarifa |
 | [0024](adr/0024-identidad-de-la-consola.md) | identidad de la consola, Panorama operativo y cabecera de expediente |
 | [0025](adr/0025-el-puente-no-entra-como-candidata.md) | el puente de vocabulario tampoco entra como candidata (medido y descartado) |
+| [0026](adr/0026-un-si-firmado-acota-al-grupo.md) | un «sí» firmado acota al grupo de guion en la RGI 6 |
 
 ---
 

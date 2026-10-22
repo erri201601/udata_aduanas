@@ -21,7 +21,7 @@ from core.rgi_engine.states import TERMINAL, RGIStatus
 #: traza —una persona o una pantalla— tiene que poder distinguir un descarte
 #: que se sostiene en el texto legal de uno que se sostiene en la firma de un
 #: clasificador, sin parsear la frase.
-PorQueSeDescarto = Literal["NOTA_LEGAL", "MATERIA", "CONTRADICCION", "RESPUESTA_FIRMADA"]
+PorQueSeDescarto = Literal["NOTA_LEGAL", "MATERIA", "CONTRADICCION", "RESPUESTA_FIRMADA", "GRUPO"]
 
 
 class Descarte(BaseModel):
