@@ -750,6 +750,29 @@ class RGI6:
         # la lista entera, porque desempatar por `specificity` entre los
         # supervivientes es lo que convertiría una negativa honesta en una
         # fracción equivocada.
+        # PRIMERO EL GRUPO, DESPUÉS LO FIRMADO (ADR 0026)
+        #
+        # Un «no» firmado sólo resuelve si deja una sola. Evaluado sobre las
+        # siete subpartidas de 7305, «HFW no es arco sumergido» quitaba una y
+        # quedaban seis: no resolvía nada. Dentro del grupo que describe la
+        # mercancía —tres—, el mismo «no» deja dos, y «helicoidal no es
+        # soldado longitudinalmente» deja una. Las de fuera del grupo no se
+        # pierden: se registran como descartadas, con el motivo.
+        en_el_grupo = [
+            c for c in posibles if _el_grupo_la_describe(c, context.description, context)
+        ]
+        if en_el_grupo and len(en_el_grupo) < len(posibles):
+            de_subpartida += [
+                Descarte(
+                    code=c.code,
+                    motivo="fuera del grupo de guion que describe la mercancía",
+                    por="GRUPO",
+                )
+                for c in posibles
+                if c not in en_el_grupo
+            ]
+            posibles = en_el_grupo
+
         aprendidos = {c.code: m for c in posibles if (m := _lo_aprendido_la_descarta(c, context))}
         # Se registran aunque no resuelvan (más abajo, sólo resuelven si queda
         # una): que el motor no se apoye en ellas para ELEGIR no las hace
@@ -764,10 +787,42 @@ class RGI6:
             else ""
         )
         sobreviven_a_lo_firmado = [c for c in posibles if c.code not in aprendidos]
+        # EL RESIDUAL PURO TAMPOCO SOBREVIVE AQUÍ (ADR 0026)
+        #
+        # La misma regla que ya rige para las fracciones (#191), un nivel más
+        # arriba. Con «HFW no es arco sumergido» firmado, dentro del grupo de
+        # oleoductos quedan dos:
+        #
+        #     730512  «Los demás, soldados longitudinalmente.»  ← lo que dice la ficha
+        #     730519  «Los demás.»                              ← no califica nada
+        #
+        # Un residual puro no puede mantener vivo un empate contra la hermana
+        # que la ficha respalda. Mismos guardarraíles que en las fracciones:
+        # sólo si un descarte firmado quitó algo, sólo si queda UNA que
+        # califica, si algo de la ficha la sostiene y si constan sus ausencias.
+        # Sobre el texto PROPIO: el encabezado de guion es común a las dos.
+        if aprendidos and len(sobreviven_a_lo_firmado) > 1:
+            califican = [c for c in sobreviven_a_lo_firmado if not _es_residual_puro(_propia(c))]
+            if (
+                len(califican) == 1
+                and _algo_la_sostiene(_propia(califican[0]), context.description)
+                and _sus_ausencias_constan(califican[0], context)
+            ):
+                sobreviven_a_lo_firmado = califican
         if len(sobreviven_a_lo_firmado) == 1:
             posibles = sobreviven_a_lo_firmado
 
         elegida = _unica_o_mas_especifica(posibles, mercancia=context.description, context=context)
+        # LO QUE UNA PERSONA DECLARÓ IMPOSIBLE NO SE ELIGE (ADR 0026)
+        #
+        # Con varias supervivientes se vuelve a la lista entera para no
+        # desempatar entre ellas por especificidad, y eso es correcto. Pero el
+        # desempate podía caer justo en la descartada: con «HFW no es arco
+        # sumergido» firmado, la tubería HFW resolvía 730511 —«con arco
+        # sumergido»—. Once tuberías, simulado el 21-oct. Volver a la lista
+        # entera es para no ELEGIR por los descartes, no para desoírlos.
+        if elegida is not None and elegida.code in aprendidos:
+            elegida = None
         if elegida is None:
             return RGIResult(
                 rule_id=self.rule_id,
@@ -1778,7 +1833,9 @@ def _frase_en(frase: str, texto_plano: str) -> bool:
     return re.search(r"\b" + re.escape(aguja) + r"\b", texto_plano) is not None
 
 
-def _el_grupo_la_describe(candidata: TariffCandidate, mercancia: str) -> bool:
+def _el_grupo_la_describe(
+    candidata: TariffCandidate, mercancia: str, context: ClassificationContext | None = None
+) -> bool:
     """¿El encabezado de guion de esta posición habla de esta mercancía?
 
     SÓLO EL GRUPO, NO TODO EL TEXTO, Y HAY UNA RAZÓN CARA DETRÁS
@@ -1796,11 +1853,68 @@ def _el_grupo_la_describe(candidata: TariffCandidate, mercancia: str) -> bool:
     """
     if not candidata.group_text:
         return False
-    return bool(_palabras_con_singular(candidata.group_text) & _palabras_con_singular(mercancia))
+    if _palabras_con_singular(candidata.group_text) & _palabras_con_singular(mercancia):
+        return True
+    return (
+        context is not None and _una_respuesta_la_pone_en_el_grupo(candidata, context) is not None
+    )
+
+
+def _una_respuesta_la_pone_en_el_grupo(
+    candidata: TariffCandidate, context: ClassificationContext
+) -> str | None:
+    """¿Una respuesta FIRMADA dice que esta mercancía es lo que dice el grupo?
+
+    EL «SÍ» DE UN CLASIFICADOR NO ELEGÍA NADA (ADR 0026)
+
+    Hasta hoy una equivalencia firmada —«conducción de fluidos» ES «de los
+    tipos utilizados en oleoductos o gasoductos»— sólo servía para no volver a
+    preguntar. La tubería seguía empatada entre siete subpartidas de 7305,
+    porque la ficha no dice «oleoducto» y el encabezado de guion sí.
+
+    Ahora esa respuesta acota al grupo, igual que si la ficha dijera la
+    palabra. Con tres límites, y cada uno tiene su razón:
+
+    - SÓLO EL ENCABEZADO DE GUION, nunca el texto propio de una subpartida.
+      César firmó «acero inoxidable» = «de hierro o acero». Aplicado a textos
+      propios, metería al sartén en 732394 —«De hierro o acero, esmaltados»—
+      en vez de 732393 —«De acero inoxidable»—. El encabezado es el
+      discriminador que la LIGIE puso para separar hermanas (ADR 0004).
+    - SÓLO LO FIRMADO (`context.equivalencias` es `HUMAN_VALIDATED`). Los
+      puentes nuestros, `SYNTHETIC`, ya demostraron que abren medio capítulo
+      (ADR 0025).
+    - SÓLO SI ESTA FICHA DICE EL TÉRMINO (`la_ficha_dice`): una respuesta sobre
+      un producto no se derrama a los demás.
+
+    Acotar no es elegir: dentro del grupo siguen decidiendo las reglas de
+    siempre. Devuelve el término de la ficha que lo justifica, para la traza.
+    """
+    if not candidata.group_text:
+        return None
+    grupo = _plano(candidata.group_text)
+    for de_la_ficha, de_la_tarifa in context.equivalencias:
+        if la_ficha_dice(de_la_ficha, context) and _frase_en(de_la_tarifa, grupo):
+            return de_la_ficha
+    return None
 
 
 #: Lo que dice un residual cuando no dice nada más.
 _SOLO_RESIDUAL: frozenset[str] = frozenset({"los demas", "las demas", "otros", "otras"})
+
+
+def _propia(candidata: TariffCandidate) -> TariffCandidate:
+    """La candidata con su texto PROPIO, sin el encabezado de guion delante.
+
+    `subheadings()` antepone el grupo («Tubos de los tipos utilizados en
+    oleoductos o gasoductos. Los demás.»), y con él «Los demás.» deja de
+    parecer lo que es: un residual puro.
+    """
+    if not candidata.group_text:
+        return candidata
+    for prefijo in (f"{candidata.group_text.rstrip(': ')}. ", f"{candidata.group_text} "):
+        if candidata.text.startswith(prefijo):
+            return candidata.model_copy(update={"text": candidata.text[len(prefijo) :]})
+    return candidata
 
 
 def _es_residual_puro(candidata: TariffCandidate) -> bool:
@@ -1894,7 +2008,7 @@ def _unica_o_mas_especifica(
     # Si la comparten varias, no se elige. Y si no la comparte ninguna,
     # tampoco. La regla de siempre: sólo resuelve cuando queda una.
     if mercancia:
-        describen = [c for c in cands if _el_grupo_la_describe(c, mercancia)]
+        describen = [c for c in cands if _el_grupo_la_describe(c, mercancia, context)]
         if len(describen) == 1:
             return describen[0]
 

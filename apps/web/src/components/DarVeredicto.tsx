@@ -30,7 +30,7 @@ import { type CamposVeredicto, FormularioVeredicto, type Veredicto } from './For
 interface Descarte {
   code: string
   motivo: string
-  por: 'NOTA_LEGAL' | 'MATERIA' | 'CONTRADICCION' | 'RESPUESTA_FIRMADA'
+  por: 'NOTA_LEGAL' | 'MATERIA' | 'CONTRADICCION' | 'RESPUESTA_FIRMADA' | 'GRUPO'
 }
 
 /** De dónde sale un descarte, dicho para quien lo lee. */
@@ -39,6 +39,7 @@ const POR: Record<Descarte['por'], string> = {
   MATERIA: 'por la materia',
   CONTRADICCION: 'porque la ficha contradice su texto',
   RESPUESTA_FIRMADA: 'por una respuesta firmada de un clasificador',
+  GRUPO: 'porque no está en el grupo de la tarifa que describe la mercancía',
 }
 
 /** Todos los descartes de la traza. Las trazas anteriores al 6-oct no traen

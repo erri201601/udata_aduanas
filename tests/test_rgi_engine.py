@@ -2566,3 +2566,127 @@ def test_si_la_ficha_dice_la_ausencia_se_sigue_eligiendo() -> None:
     )
 
     assert traza.resolved_code == "73121005"
+
+
+# ── Un «sí» firmado acota al grupo de guion (ADR 0026) ──────────────────────
+
+
+def _catalogo_7305_con_fracciones() -> CatalogoFalso:
+    """El de arriba, con una fracción por subpartida del grupo de oleoductos."""
+    base = _catalogo_7305()
+    base._fractions = [
+        TariffCandidate(
+            code="73051102",
+            text="Soldados longitudinalmente con arco sumergido.",
+            level="FRACTION",
+            specificity=2,
+        ),
+        TariffCandidate(
+            code="73051291", text="Los demás, soldados longitudinalmente.", level="FRACTION"
+        ),
+        TariffCandidate(code="73051999", text="Los demás.", level="FRACTION"),
+    ]
+    return base
+
+
+def _tuberia_hfw(
+    *,
+    equivalencias: tuple[tuple[str, str], ...] = (),
+    exclusiones: tuple[tuple[str, str], ...] = (),
+) -> ClassificationContext:
+    """La del corpus: dice «conducción de fluidos», nunca «oleoducto»."""
+    return ClassificationContext(
+        description=(
+            "TUBERIA DE ACERO AL CARBONO SOLDADA LONGITUDINALMENTE HFW, DIAMETRO EXTERIOR "
+            "508 MM, PARA CONDUCCION DE FLUIDOS"
+        ),
+        operation_date=OPERACION,
+        facts=(
+            ProductFact(name="proceso_soldadura", value="HFW longitudinal", status="OBSERVED"),
+            ProductFact(name="uso", value="conduccion de fluidos", status="OBSERVED"),
+        ),
+        search_terms=("tubos",),
+        equivalencias=equivalencias,
+        exclusiones=exclusiones,
+    )
+
+
+OLEODUCTO_FIRMADO = (("conduccion", "oleoductos o gasoductos"),)
+HFW_NO_ES_ARCO = (("hfw", "arco sumergido"),)
+
+
+def test_un_si_firmado_acota_al_grupo_y_un_no_cierra_la_subpartida() -> None:
+    """La tubería HFW del corpus, con las dos respuestas: 73051291, el dictamen.
+
+    El «sí» deja las tres del grupo de oleoductos; el «no» quita 730511; y
+    entre 730512 —lo que dice la ficha— y 730519 —«Los demás.»— el residual
+    puro no sostiene el empate.
+    """
+    traza = classify(
+        _tuberia_hfw(equivalencias=OLEODUCTO_FIRMADO, exclusiones=HFW_NO_ES_ARCO),
+        catalog=_catalogo_7305_con_fracciones(),
+        notes=NotasFalsas(),
+    )
+
+    assert traza.final_status is RGIStatus.RESOLVED
+    assert traza.resolved_code == "73051291"
+
+
+def test_sin_el_si_firmado_la_tuberia_hfw_no_se_resuelve() -> None:
+    """El contraste: lo que resuelve es la respuesta, no otra cosa."""
+    traza = classify(
+        _tuberia_hfw(exclusiones=HFW_NO_ES_ARCO),
+        catalog=_catalogo_7305_con_fracciones(),
+        notes=NotasFalsas(),
+    )
+
+    assert traza.final_status is not RGIStatus.RESOLVED
+
+
+def test_lo_que_una_persona_declaro_imposible_no_se_elige() -> None:
+    """Sin la regla del residual, el desempate caía en 730511 —«con arco
+    sumergido»— con «HFW no es arco sumergido» firmado. Once tuberías,
+    simulado el 21-oct. Aunque no se resuelva, nunca puede salir 73051102."""
+    traza = classify(
+        _tuberia_hfw(equivalencias=OLEODUCTO_FIRMADO, exclusiones=HFW_NO_ES_ARCO),
+        catalog=_catalogo_7305_con_fracciones(),
+        notes=NotasFalsas(),
+    )
+
+    assert traza.resolved_code != "73051102"
+
+
+def test_un_si_firmado_solo_acota_por_el_encabezado_de_guion() -> None:
+    """César firmó «acero inoxidable» = «de hierro o acero». Si eso mirara el
+    texto PROPIO, metería al sartén en «De hierro o acero, esmaltados» en vez
+    de «De acero inoxidable». Sin encabezado de guion, no acota nada."""
+    from core.rgi_engine.rules import _el_grupo_la_describe
+
+    sarten = ClassificationContext(
+        description="SARTEN DE ACERO INOXIDABLE",
+        operation_date=OPERACION,
+        equivalencias=(("acero inoxidable", "de hierro o acero"),),
+    )
+    esmaltados = TariffCandidate(
+        code="732394", text="De hierro o acero, esmaltados.", level="SUBHEADING"
+    )
+
+    assert not _el_grupo_la_describe(esmaltados, sarten.description, sarten)
+
+
+def test_un_si_firmado_sobre_otra_ficha_no_se_aplica() -> None:
+    """La respuesta es sobre «conducción»: una ficha que no lo dice no la hereda."""
+    from core.rgi_engine.rules import _el_grupo_la_describe
+
+    otra = ClassificationContext(
+        description="TUBERIA DE ACERO AL CARBONO SOLDADA",
+        operation_date=OPERACION,
+        equivalencias=OLEODUCTO_FIRMADO,
+    )
+    de_oleoductos = next(
+        c
+        for c in _catalogo_7305().subheadings(on_date=OPERACION, heading="7305")
+        if c.code == "730512"
+    )
+
+    assert not _el_grupo_la_describe(de_oleoductos, otra.description, otra)
