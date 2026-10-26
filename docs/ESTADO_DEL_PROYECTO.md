@@ -906,8 +906,11 @@ Orden acordado el 21-oct:
    firmada de César ya puede acotar al grupo de guion en la RGI 6. Sin
    respuestas nuevas no cambia nada: 0 diferencias en 187 productos. Con tres
    respuestas concretas, simuladas, la cobertura pasa de **63.41 % a 77.44 %**,
-   con 23 aciertos nuevos y ningún error. Las preguntas están pendientes de que
-   César las conteste.
+   con 23 aciertos nuevos y ningún error. **César contestó el 26-oct:** con sus
+   respuestas reales, la medición de las decisiones guardadas pasa de
+   **62.42 % a 68.79 %**, con 108 aciertos de 108. Las 14 tuberías HFW salen
+   con su dictamen. Queda una pregunta sobre «conducción de agua industrial»
+   que, simulada, resuelve las 15 helicoidales.
 2. ~~**Knowledge Graph**~~ **Al día el 21-oct** (hueco 4). Ya tenía
    consumidor, el Copilot; lo que faltaba era que la foto no envejeciera, y
    ahora la reproyecta cada noche `aduanero-grafo`. Lo que le falta del §28

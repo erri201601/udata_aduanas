@@ -94,3 +94,37 @@ diferencia de un caso que el ADR 0025 dejó sin aislar.
   subpartida, un nivel más abajo.
 - **La olla de presión.** Su ficha no trae el material, y eso es un dato del
   proveedor.
+
+## Las respuestas reales (26-oct)
+
+César contestó las tres como se suponía y quedaron firmadas
+(`POST /review/vocabulario`, `HUMAN_VALIDATED`):
+
+| ficha | tarifa | respuesta |
+|---|---|---|
+| conduccion de fluidos | de los tipos utilizados en oleoductos o gasoductos | SÍ |
+| hfw | soldados longitudinalmente con arco sumergido | NO |
+| helicoidal | soldados longitudinalmente | NO |
+
+**Se registró su término tal cual: «conducción DE FLUIDOS».** La simulación
+usaba «conducción», y las tuberías helicoidales dicen «conducción agua
+industrial»: su respuesta no las alcanza. Ampliarla sería atribuirle algo que no
+dijo (lección del 5-oct, memoria «una respuesta tiene dos lados»).
+
+El endpoint no recalculó nada (`recalculando: 0`): recalcula los casos cuya
+traza llevaba la pregunta, y estas preguntas no las formuló el motor. Las 30
+tuberías cuya ficha dice alguno de los términos se reclasificaron por
+`POST /products/{id}/classify`:
+
+```
+                               contestó  acertó  falló  cobertura
+decisiones guardadas, antes      98/157     98      0    62.42 %
+después de las respuestas       108/157    108      0    68.79 %
+```
+
+- **Las 14 tuberías HFW** pasan a 73051291, su dictamen.
+- **La bandeja sigue en 0:** no se reabrió nada.
+- **Las 15 helicoidales** esperan una pregunta más: «¿conducción de agua
+  industrial es de los tipos utilizados en oleoductos o gasoductos?». Simulada,
+  las resuelve las 15 a 73051999, su dictamen.
+
