@@ -785,6 +785,22 @@ class CompensatoryDuty(UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, Reg
     este caso concreto, u otra acotación de la resolución que no cabe en las
     columnas de arriba. Mismo criterio que `FractionNomRequirement.scope_note`."""
 
+    product_terms: Mapped[list[str]] = mapped_column(
+        ARRAY(sa.Text), nullable=False, server_default="{}"
+    )
+    """Palabras que la descripción de la partida TIENE que decir para que la
+    cuota aplique. Vacío = no se acota por mercancía.
+
+    POR QUÉ HACE FALTA (26-oct)
+
+    Una fracción no es una mercancía. La 7615.10.02 son todos los artículos de
+    cocina de aluminio, y la cuota del 92.64 % es sólo de OLLAS DE PRESIÓN. La
+    única partida china 7615.10.02 del corpus es un estropajo de acero
+    inoxidable declarado ahí a propósito (anomalía sembrada): sin esto, el
+    Espejo le habría exigido la cuota de las ollas. Se compara sin acentos ni
+    mayúsculas y por inicio de palabra, igual que la búsqueda en la tarifa.
+    """
+
 
 class CompensatoryDutyListing(
     UUIDPrimaryKeyMixin, TimestampMixin, DataOriginMixin, RegulatoryMixin, Base
