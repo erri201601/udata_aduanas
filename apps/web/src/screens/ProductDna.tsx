@@ -13,6 +13,7 @@
 import { AttributeStatusBadge, ConfidenceMeter } from '../components/AttributeStatusBadge'
 import { ClassifyButton } from '../components/ClassifyButton'
 import { CargarFicha } from '../components/CargarFicha'
+import { CabeceraExpediente, Chip } from '../components/Expediente'
 import { SyntheticBanner } from '../components/DataOriginBadge'
 import { useProductDna, useProducts } from '../hooks/useProductDna'
 import type { AttributeStatus, ProductAttributeRead } from '../api/client'
@@ -50,6 +51,7 @@ export function ProductDna({ onClasificado }: Props = {}) {
 
   const atributos = [...(dna?.attributes ?? [])].sort(porCercania)
   const ausentes = atributos.filter((a) => a.status === 'MISSING')
+  const producto = productos.find((p) => p.id === activo)
 
   return (
     <section className="pantalla">
@@ -60,21 +62,16 @@ export function ProductDna({ onClasificado }: Props = {}) {
             Atributos de la mercancía, con el origen de cada dato
           </p>
         </div>
-        <button className="boton" onClick={recargar} disabled={cargando || !activo}>
+        <button
+          className="boton boton--secundario"
+          onClick={recargar}
+          disabled={cargando || !activo}
+        >
           {cargando ? 'Cargando…' : 'Actualizar'}
         </button>
       </header>
 
       <SyntheticBanner origin={dna?.data_origin} />
-
-      {activo && <CargarFicha productId={activo} onExtraido={recargar} />}
-
-      {activo && onClasificado && (
-        <ClassifyButton
-          productId={activo}
-          onClasificado={(r) => onClasificado(r.decision_id)}
-        />
-      )}
 
       {(errorCatalogo || error) && (
         <div className="alerta" role="alert">
@@ -104,41 +101,52 @@ export function ProductDna({ onClasificado }: Props = {}) {
 
       {dna && (
         <>
-          <div className="ficha">
-            <h2>{productos.find((p) => p.id === activo)?.commercial_name}</h2>
-            {dna.summary && <p className="ficha__resumen">{dna.summary}</p>}
-            <dl className="ficha__meta">
-              <div>
-                <dt>Versión</dt>
-                <dd>{dna.version}</dd>
-              </div>
-              <div>
-                <dt>Modelo</dt>
-                <dd>{dna.model_name ?? '—'}</dd>
-              </div>
-              <div>
-                <dt>Prompt</dt>
-                <dd>{dna.prompt_version ?? '—'}</dd>
-              </div>
-              <div>
-                <dt>Revisión humana</dt>
-                <dd>{dna.requires_human_review ? 'requerida' : 'no requerida'}</dd>
-              </div>
-              {/* `input_kinds` se escribía en la base desde el principio y
-                  ninguna pantalla lo leía. Importa: un atributo leído de una
-                  foto no es la misma evidencia que uno leído de una ficha
-                  técnica, y hasta ahora los dos salían en la misma tabla sin
-                  nada que los distinguiera. */}
-              <div>
-                <dt>Leído de</dt>
-                <dd>{dna.input_kinds.map((k) => ENTRADAS[k] ?? k).join(' + ') || '—'}</dd>
-              </div>
-            </dl>
-          </div>
+          {/* El orden es el de la demo y el del trabajo: qué mercancía, qué
+              se sabe de ella, y clasificarla. Antes «Clasificar» quedaba
+              ENCIMA del selector y no se veía sobre qué producto actuaba. */}
+          <CabeceraExpediente
+            tipo="Expediente de mercancía"
+            folio={producto?.sku}
+            titulo={producto?.commercial_name ?? 'Mercancía sin nombre comercial'}
+            marcas={
+              ausentes.length > 0 ? (
+                <Chip tono="aviso">
+                  {ausentes.length === 1 ? 'Falta 1 dato' : `Faltan ${ausentes.length} datos`}
+                </Chip>
+              ) : (
+                <Chip tono="ok">Sin datos faltantes</Chip>
+              )
+            }
+            datos={[
+              { etiqueta: 'Versión de la ficha', valor: String(dna.version) },
+              {
+                etiqueta: 'Leído de',
+                valor: dna.input_kinds.map((k) => ENTRADAS[k] ?? k).join(' + ') || '—',
+              },
+              { etiqueta: 'Modelo', valor: dna.model_name ?? '—', mono: true },
+              { etiqueta: 'Prompt', valor: dna.prompt_version ?? '—', mono: true },
+              {
+                etiqueta: 'Revisión humana',
+                valor: dna.requires_human_review ? 'Requerida' : 'No requerida',
+              },
+            ]}
+          />
+          {dna.summary && <p className="ficha__resumen">{dna.summary}</p>}
+
+          {activo && onClasificado && (
+            <ClassifyButton
+              productId={activo}
+              onClasificado={(r) => onClasificado(r.decision_id)}
+            />
+          )}
 
           {ausentes.length > 0 && (
             <div className="faltantes" role="note">
-              <strong>Faltan {ausentes.length} datos para clasificar.</strong>
+              <strong>
+                {ausentes.length === 1
+                  ? 'Falta 1 dato para clasificar.'
+                  : `Faltan ${ausentes.length} datos para clasificar.`}
+              </strong>
               <p>
                 Hay que pedírselos al importador. El sistema no los deduce: un
                 valor inventado cambiaría la fracción arancelaria.
@@ -211,6 +219,13 @@ export function ProductDna({ onClasificado }: Props = {}) {
 
       {!dna && !cargando && !cargandoCatalogo && !error && !errorCatalogo && (
         <p className="vacio">Todavía no hay expedientes de mercancías.</p>
+      )}
+      {/* Cargar una ficha nueva es otro trabajo: va al final y plegado. */}
+      {activo && (
+        <details className="bloque desplegable">
+          <summary>Cargar una ficha nueva (texto, PDF o imagen)</summary>
+          <CargarFicha productId={activo} onExtraido={recargar} />
+        </details>
       )}
     </section>
   )
