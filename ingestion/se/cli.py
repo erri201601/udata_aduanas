@@ -7,10 +7,10 @@ en el destino antes de escribir una sola fila (regla 7 CLAUDE.md).
 A diferencia de esos dos, aquí NO hay un documento único que crezca o un
 catálogo que se recargue completo: cada cuota compensatoria es SU PROPIA
 resolución del DOF (ver `ingestion.se.cuotas_compensatorias`), así que cada
-una tiene su propio flag. Por ahora sólo existe una: `--cable-acero-china`
-(ADR 0009). Las demás combinaciones del reconocimiento
-(`docs/RECONOCIMIENTO_CUOTAS_COMPENSATORIAS.md`) no tienen flag todavía
-porque no tienen resolución primaria verificada.
+una tiene su propio flag: `--cable-acero-china` (ADR 0009) y, desde el
+26-oct, `--cuotas-26-oct` con las ollas de presión de China y la tubería de
+la India (ADR 0027). Las demás combinaciones del corpus no tienen cuota
+vigente en agosto de 2026, y el ADR 0027 dice por qué con su fuente.
 
 `--anexo-2-5-1` carga el índice del Anexo 2.5.1 (DOF 25-nov-2022): dónde hay
 cuota, con el texto tal cual y sin importe (ADR 0017).
@@ -54,6 +54,21 @@ log = structlog.stdlib.get_logger("ingestion.se.cli")
 
 CABLE_ACERO_CHINA_MINIO_KEY = "se/cuota_compensatoria_cable_acero_china_ec32-24.html"
 PROSEC_MINIO_KEY = "se/decreto_prosec_20240826.pdf"
+#: Una por resolución, con su fecha de DOF: cada cuota es un documento propio.
+CUOTAS_26_OCT: tuple[tuple[str, str, str, str], ...] = (
+    (
+        "ollas_de_presion_china",
+        "se/cuota_compensatoria_ollas_presion_china_20260306.html",
+        "OLLAS_PRESION_CHINA_SOURCE_URL",
+        "OLLAS_PRESION_CHINA_SOURCE_DOCUMENT",
+    ),
+    (
+        "tuberia_india",
+        "se/cuota_compensatoria_tuberia_india_20221003.html",
+        "TUBERIA_INDIA_SOURCE_URL",
+        "TUBERIA_INDIA_SOURCE_DOCUMENT",
+    ),
+)
 
 
 def _database_url(target: str) -> str:
@@ -117,6 +132,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--cuotas-26-oct",
+        action="store_true",
+        help="Ollas de presión de China y tubería de la India, verificadas el 26-oct (ADR 0027).",
+    )
+    parser.add_argument(
         "--raw-only",
         action="store_true",
         help="Solo sube y verifica el RAW en --target; no toca la base.",
@@ -135,6 +155,8 @@ def main(argv: list[str] | None = None) -> int:
         return _anexo_2_4_1(args)
     if args.regla_8a:
         return _regla_8a(args)
+    if args.cuotas_26_oct:
+        return _cuotas_26_oct(args)
     if not args.raw_only and not args.cable_acero_china:
         raise SystemExit(
             "--cable-acero-china, --prosec, --anexo-2-4-1, --anexo-2-5-1 o --regla-8a "
@@ -178,6 +200,38 @@ def main(argv: list[str] | None = None) -> int:
         f"OK ({args.target}): {n_insertadas} cuotas compensatorias insertadas (de {len(filas)} leídas)."
     )
     log.info("se.cli.done", target=args.target, parseadas=len(filas), insertadas=n_insertadas)
+    return 0
+
+
+def _cuotas_26_oct(args: argparse.Namespace) -> int:
+    """RAW → PARSED → DATABASE de cada resolución, una por una (ADR 0027)."""
+    database_url = None if args.raw_only else _database_url(args.target)
+    minio_target = _minio_target(args.target)
+    total = 0
+    for funcion, minio_key, url_attr, doc_attr in CUOTAS_26_OCT:
+        url = getattr(cuotas_compensatorias, url_attr)
+        capture = raw.store_raw_bytes(
+            raw.fetch(url), source_url=url, minio_key=minio_key, target=minio_target
+        )
+        raw.verify_stored(target=minio_target, minio_key=minio_key)
+        if args.raw_only:
+            print(f"RAW OK ({args.target}): {capture.minio_key}  sha256={capture.content_hash}")
+            continue
+        filas = getattr(cuotas_compensatorias, funcion)()
+        assert database_url is not None
+        with Session(create_engine(database_url)) as session:
+            n = load.cargar_cuotas_compensatorias(
+                session,
+                filas,
+                content_hash=capture.content_hash,
+                source_url=url,
+                source_document=getattr(cuotas_compensatorias, doc_attr),
+                retrieved_at=capture.retrieved_at,
+            )
+            session.commit()
+        total += n
+        print(f"{funcion}: {n} filas insertadas (de {len(filas)} leídas).")
+    log.info("se.cli.done", target=args.target, cuotas_26_oct=total)
     return 0
 
 

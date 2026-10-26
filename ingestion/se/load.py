@@ -261,6 +261,7 @@ def cargar_cuotas_compensatorias(
                 rate_currency=fila.rate_currency,
                 rate_unit=fila.rate_unit,
                 scope_note=fila.scope_note,
+                product_terms=list(fila.product_terms),
                 # OFFICIAL: sale de la resolución publicada en el DOF, no
                 # de nosotros.
                 data_origin="OFFICIAL",

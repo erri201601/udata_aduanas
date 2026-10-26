@@ -61,6 +61,7 @@ cuesta. Inventar un cero daría una cifra plausible y falsa.
 from __future__ import annotations
 
 import re
+import unicodedata
 import uuid
 from collections.abc import Sequence
 from datetime import date
@@ -455,6 +456,23 @@ def _tipo_de_cambio_esperado(
 _CLAVE_APENDICE_7_POR_UNIDAD_DE_CUOTA: Final = {"KG": "1"}
 
 
+def _la_partida_dice(descripcion: str | None, terminos: Sequence[str] | None) -> bool:
+    """¿Nombra la partida todas las palabras de la mercancía de la cuota?
+
+    Sin acentos ni mayúsculas y por inicio de palabra, como la búsqueda en la
+    tarifa: «OLLA DE PRESIÓN» casa con («olla», «presion»); un estropajo, no.
+    Sin términos, la cuota no se acota por mercancía.
+    """
+    if not terminos:
+        return True
+    # Los acentos se quitan ANTES de partir en palabras: descompuesta, la tilde
+    # de «PRESIÓN» no es letra para `\w` y la partía en «presio» + «n».
+    descompuesta = unicodedata.normalize("NFKD", descripcion or "").casefold()
+    plana = "".join(c for c in descompuesta if not unicodedata.combining(c))
+    palabras = re.findall(r"\w+", plana)
+    return all(any(p.startswith(t) for p in palabras) for t in terminos)
+
+
 def _cuota_compensatoria_esperada(
     session: SessionDep, partida: PedimentoItem, fecha: date
 ) -> tuple[bool | None, Decimal | None]:
@@ -485,6 +503,9 @@ def _cuota_compensatoria_esperada(
         origin_country=partida.country_of_origin,
         fraction_code=partida.declared_fraction_code,
     )
+    # Una fracción no es una mercancía (ADR 0027): la cuota de ollas de presión
+    # no cae sobre un estropajo declarado en la misma fracción.
+    filas = [f for f in filas if _la_partida_dice(partida.description, f.product_terms)]
     if not filas:
         return None, None
 
@@ -503,6 +524,12 @@ def _cuota_compensatoria_esperada(
         fila = next((f for f in filas if f.exporter_name is None), None)
     if fila is None:
         return None, None
+
+    # Ad valorem: tasa × valor en aduana, en la moneda del valor (ADR 0027).
+    if fila.rate_unit == "PCT":
+        if partida.customs_value is None:
+            return True, None
+        return True, (partida.customs_value * fila.rate / 100).quantize(_CENTAVOS)
 
     clave_unidad = _CLAVE_APENDICE_7_POR_UNIDAD_DE_CUOTA.get(fila.rate_unit)
     if clave_unidad is None or partida.commercial_unit != clave_unidad:
