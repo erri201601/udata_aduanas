@@ -323,6 +323,26 @@ function Partida({
   )
 }
 
+/** El dinero en juego, arriba: es lo primero que pregunta quien lee un pedimento.
+ *
+ * La misma cifra y la misma advertencia que la tarjeta del tablero —sólo lo
+ * que tiene monto, y lo pagado de más aparte—, para que no se lea como una
+ * deuda cierta. Sin revisión, o con monedas mezcladas, no hay cifra: se
+ * enseñaría un número que no existe. */
+function exposicionDe(datos: PedimentoEspejo | null, elegido: string | null) {
+  if (!datos?.revision || datos.pedimento_id !== elegido || datos.monedas_mezcladas) return null
+  const valor = formatearMonto(datos.exposicion_cuantificada, datos.exposicion_moneda)
+  if (!valor) return null
+  return {
+    etiqueta: 'Exposición cuantificada',
+    valor,
+    nota:
+      datos.sobrepagos > 0
+        ? `Sólo lo que se debe. ${datos.sobrepagos} de más, aparte.`
+        : 'Sólo lo que tiene monto. Lo demás no se estima.',
+  }
+}
+
 export function PedimentoShadow({
   pedimentoInicial = null,
   irA,
@@ -476,6 +496,7 @@ export function PedimentoShadow({
           o={operacion}
           irA={irA}
           enlace={{ texto: 'Ver los hallazgos de este pedimento', pantalla: 'finding-detail' }}
+          cifra={exposicionDe(datos, elegido)}
         />
       )}
 

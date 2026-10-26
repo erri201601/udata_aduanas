@@ -4,6 +4,13 @@ import type { ReactNode } from 'react'
 
 export type Tono = 'ok' | 'mal' | 'aviso' | 'neutro'
 
+/** Una cifra destacada en la cabecera, con lo que hace falta para no malinterpretarla. */
+export interface Cifra {
+  etiqueta: string
+  valor: string
+  nota?: string
+}
+
 export interface Voz {
   clave: 'declarado' | 'sugerido' | 'confirmado'
   titulo: string

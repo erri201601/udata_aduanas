@@ -1846,7 +1846,7 @@ code {
   background: rgba(19, 111, 104, 0.05);
   border-radius: 0 8px 8px 0;
 }
-.redaccion--revisar { border-left-color: var(--mal); }
+.redaccion--revisar { border-left-color: var(--aviso); background: rgba(143, 92, 0, 0.05); }
 .redaccion__texto { margin: 0; line-height: 1.6; font-size: 0.92rem; }
 .redaccion .cita a { font-weight: 600; text-decoration: none; }
 .redaccion__meta { display: flex; flex-wrap: wrap; gap: 0.4rem 1.4rem; margin: 0.7rem 0 0; font-size: 0.76rem; }

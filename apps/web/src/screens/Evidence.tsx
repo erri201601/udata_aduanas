@@ -19,6 +19,7 @@
 import { useState } from 'react'
 
 import { SyntheticBanner } from '../components/DataOriginBadge'
+import { CabeceraExpediente, Chip } from '../components/Expediente'
 import { useDecisionesAuditables, useDossier } from '../hooks/useDossier'
 import type { DossierRead } from '../api/client'
 
@@ -87,6 +88,19 @@ function Respuesta({ valor }: { valor: unknown }) {
       </dl>
     )
   }
+  // El ensamblado une los pasos con « · »: «RGI-1: … · RGI-2: … · RGI-6: …».
+  // En un párrafo era un muro de doce líneas; uno por renglón se lee como lo
+  // que es, una secuencia. El texto es el mismo, sólo se separa.
+  const partes = String(valor).split(' · ')
+  if (partes.length > 1) {
+    return (
+      <ul className="respuesta-lista">
+        {partes.map((parte, i) => (
+          <li key={i}>{parte}</li>
+        ))}
+      </ul>
+    )
+  }
   return <p>{String(valor)}</p>
 }
 
@@ -97,6 +111,7 @@ export function Evidence() {
   const { dossier, error, cargando } = useDossier(activa)
 
   const sinResponder = dossier?.unanswered ?? []
+  const decisionActiva = decisiones.find((d) => d.id === activa)
   const respondidas = dossier
     ? PREGUNTAS.filter((p) => tieneRespuesta(p.campo, dossier[p.campo], sinResponder)).length
     : 0
@@ -137,6 +152,32 @@ export function Evidence() {
 
       {dossier && (
         <>
+          <CabeceraExpediente
+            tipo="Expediente de defensa"
+            folio={dossier.folio}
+            titulo={decisionActiva?.producto ?? 'Mercancía sin nombre comercial'}
+            marcas={
+              dossier.is_complete ? (
+                <Chip tono="ok">Completo</Chip>
+              ) : (
+                <Chip tono="aviso">Incompleto · {respondidas} de 10</Chip>
+              )
+            }
+            datos={[
+              { etiqueta: 'SKU', valor: decisionActiva?.sku, mono: true },
+              {
+                etiqueta: 'Fracción de la decisión',
+                valor: decisionActiva?.fraction_code ?? 'Sin fracción',
+                mono: true,
+              },
+              { etiqueta: 'Preguntas contestadas', valor: `${respondidas} de 10` },
+              {
+                etiqueta: 'Revisión humana',
+                valor: dossier.requires_human_review ? 'Requerida' : 'No requerida',
+              },
+            ]}
+          />
+
           {/* Lo primero: si el dossier está completo o tiene huecos. */}
           <div
             className={`dossier-estado ${dossier.is_complete ? 'dossier-estado--completo' : 'dossier-estado--incompleto'}`}

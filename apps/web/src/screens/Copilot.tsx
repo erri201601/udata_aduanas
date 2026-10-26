@@ -28,6 +28,7 @@
  * cuando no lo es.
  */
 
+import { Chip } from '../components/Expediente'
 import { useEffect, useState } from 'react'
 
 import { consultarCopilot, fetchCoberturaCopilot } from '../api/client'
@@ -86,7 +87,9 @@ function Redaccion({ datos }: { datos: RespuestaCopilot }) {
         </div>
         <div>
           <dt>Revisión humana</dt>
-          <dd>{datos.requires_human_review ? 'requerida' : 'no requerida'}</dd>
+          <dd>
+            {datos.requires_human_review ? <Chip tono="aviso">requerida</Chip> : 'no requerida'}
+          </dd>
         </div>
         {datos.prompt_version && (
           <div>

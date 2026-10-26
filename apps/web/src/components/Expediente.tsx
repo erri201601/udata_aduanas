@@ -18,7 +18,7 @@ import type { Operacion } from '../api/client'
 import type { Navegar } from '../App'
 import { formatearMonto } from './severity'
 import { fechaCorta } from './expediente'
-import type { Tono, Voz } from './expediente'
+import type { Cifra, Tono, Voz } from './expediente'
 
 
 export function Chip({ tono, children }: { tono: Tono; children: ReactNode }) {
@@ -61,6 +61,7 @@ export function CabeceraExpediente({
   datos,
   marcas,
   acciones,
+  cifra,
 }: {
   tipo: string
   folio: string | null | undefined
@@ -68,6 +69,8 @@ export function CabeceraExpediente({
   datos: Dato[]
   marcas?: ReactNode
   acciones?: ReactNode
+  /** La cifra que se lee primero: en un pedimento, el dinero en juego. */
+  cifra?: Cifra | null
 }) {
   return (
     <section className="expediente" aria-label={`${tipo} ${folio ?? ''}`.trim()}>
@@ -84,7 +87,16 @@ export function CabeceraExpediente({
           </p>
           <h2 className="expediente__titulo">{titulo}</h2>
         </div>
-        {marcas && <div className="expediente__marcas">{marcas}</div>}
+        <div className="expediente__lado">
+          {marcas && <div className="expediente__marcas">{marcas}</div>}
+          {cifra && (
+            <div className="expediente__cifra">
+              <span className="expediente__cifra-etiqueta">{cifra.etiqueta}</span>
+              <span className="expediente__cifra-valor mono">{cifra.valor}</span>
+              {cifra.nota && <span className="expediente__cifra-nota">{cifra.nota}</span>}
+            </div>
+          )}
+        </div>
       </div>
       <dl className="expediente__datos">
         {datos.map((d) => (
@@ -137,16 +149,19 @@ export function CabeceraPedimento({
   o,
   irA,
   enlace,
+  cifra,
 }: {
   o: Operacion
   irA?: Navegar
   /** A dónde lleva el botón: Pedimentos enlaza a Hallazgos y viceversa. */
   enlace?: { texto: string; pantalla: string }
+  cifra?: Cifra | null
 }) {
   const [clave, ...resto] = (o.aduana ?? '').split(' · ')
   return (
     <CabeceraExpediente
       tipo="Pedimento"
+      cifra={cifra}
       folio={o.pedimento_number}
       titulo={o.cliente ?? 'Sin cliente registrado'}
       marcas={

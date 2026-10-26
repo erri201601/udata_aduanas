@@ -16,6 +16,10 @@ body {
 h1, h2, h3 { color: var(--texto); letter-spacing: -0.01em; }
 
 .mono { font-family: var(--letra-mono); font-variant-numeric: tabular-nums; }
+
+/* Los enlaces en la paleta: el azul del navegador no es de esta consola. */
+a { color: var(--acento); text-underline-offset: 2px; }
+a:hover { color: var(--acento-fuerte); }
 .tenue { color: var(--tenue); }
 .nowrap { white-space: nowrap; }
 .num { text-align: right; }
@@ -482,6 +486,31 @@ th[aria-sort='descending'] .orden__flecha { opacity: 1; }
 .expediente__titulo { margin: 0.2rem 0 0; font-size: 1.1rem; font-weight: 600; }
 
 .expediente__marcas { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+
+.expediente__lado {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.6rem;
+}
+
+/* El dinero en juego: lo primero que se lee de un pedimento. */
+.expediente__cifra {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  padding: 0.5rem 0.8rem;
+  background: var(--realce);
+  border-radius: var(--radio-chico);
+  text-align: right;
+}
+.expediente__cifra-etiqueta { color: var(--tenue); font-size: 0.72rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.expediente__cifra-valor { font-size: 1.55rem; font-weight: 600; line-height: 1.2; color: var(--texto); }
+.expediente__cifra-nota { color: var(--tenue); font-size: 0.74rem; max-width: 18rem; }
+
+@media (max-width: 640px) {
+  .expediente__lado, .expediente__cifra { align-items: flex-start; text-align: left; }
+}
 
 .expediente__datos {
   display: grid;
