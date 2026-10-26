@@ -283,3 +283,22 @@ def test_la_nota_se_compara_con_la_fecha_en_formato_del_dof() -> None:
     assert "to_char" in sql.lower()
     assert "reform_note" in sql
     assert "coalesce" in sql.lower(), "sin nota no consta reforma: NULL tiene que dar falso"
+
+
+def test_tener_fecha_de_fin_no_es_haber_dejado_de_regir() -> None:
+    """Las RGCE 2026 rigen hasta el 31-dic: en octubre no están «fuera de vigencia».
+
+    Con `valid_to IS NOT NULL` la pantalla decía 552 normas «ya no vigentes»
+    donde eran 15 (26-oct). El filtro tiene que comparar con la fecha.
+    """
+    from datetime import date
+
+    from apps.api.routers.sentinel import _dejo_de_regir
+    from sqlalchemy.dialects import postgresql
+
+    sql = str(
+        _dejo_de_regir(date(2026, 10, 26)).compile(
+            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+        )
+    )
+    assert "valid_to < '2026-10-26'" in sql
