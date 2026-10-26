@@ -175,7 +175,7 @@ export function HumanReview() {
           </p>
         </div>
         <button
-          className="boton boton--plano"
+          className="boton boton--secundario"
           onClick={() => void cargar()}
           disabled={cargando}
         >
@@ -192,22 +192,27 @@ export function HumanReview() {
         </div>
       )}
 
-      <label className="revisor">
-        <span>Quién revisa</span>
-        <input
-          value={revisor}
-          onChange={(e) => setRevisor(e.target.value)}
-          placeholder="tu nombre"
-          maxLength={64}
-        />
-        <em>Una corrección anónima no es auditable.</em>
-      </label>
+      {/* Pedir el nombre sólo tiene sentido si hay algo que firmar. */}
+      {restantes.length > 0 && (
+        <label className="revisor">
+          <span>Quién revisa</span>
+          <input
+            value={revisor}
+            onChange={(e) => setRevisor(e.target.value)}
+            placeholder="tu nombre"
+            maxLength={64}
+          />
+          <em>Una corrección anónima no es auditable.</em>
+        </label>
+      )}
 
       {restantes.length === 0 && !cargando ? (
-        <p className="vacio">
+        // Una bandeja vacía es una buena noticia y se dice como tal: todo lo
+        // que el motor no pudo sostener solo ya tiene el criterio de alguien.
+        <p className="vacio vacio--ok">
           {pendientes.length > 0
             ? 'Bandeja al día. Las revisiones quedaron registradas.'
-            : 'No hay decisiones esperando revisión.'}
+            : 'Bandeja al día: ninguna decisión espera a un clasificador. Las que el motor no pudo sostener solo ya tienen dictamen.'}
         </p>
       ) : (
         <ul className="revisiones">

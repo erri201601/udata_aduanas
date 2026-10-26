@@ -447,7 +447,19 @@ def _clasificar_olas(
     return reformas, entradas
 
 
-def _fuera_de_vigencia(session: Session) -> list[NormaFueraDeVigencia]:
+def _dejo_de_regir(on_date: date) -> sa.ColumnElement[bool]:
+    """Dejó de regir ANTES de `on_date`.
+
+    No `valid_to IS NOT NULL`: tener fecha de fin no es haber terminado. Las
+    537 reglas de las RGCE 2026 rigen hasta el 31-dic-2026, y con ese filtro la
+    pantalla las listaba como «normas que dejaron de estar vigentes» en
+    octubre —552 «ya no vigentes» donde eran 15—. Es la regla 5: la vigencia
+    se evalúa en una fecha, nunca por la mera existencia de un final.
+    """
+    return sa.and_(LegalRule.valid_to.isnot(None), LegalRule.valid_to < on_date)
+
+
+def _fuera_de_vigencia(session: Session, on_date: date) -> list[NormaFueraDeVigencia]:
     filas = session.execute(
         sa.select(
             LegalRule.rule_number,
@@ -458,7 +470,7 @@ def _fuera_de_vigencia(session: Session) -> list[NormaFueraDeVigencia]:
         )
         .select_from(LegalRule)
         .join(LegalDocument, LegalDocument.id == LegalRule.legal_document_id)
-        .where(LegalRule.valid_to.isnot(None))
+        .where(_dejo_de_regir(on_date))
         .order_by(LegalRule.valid_to.desc(), LegalRule.rule_number)
         .limit(TOPE_FUERA_DE_VIGENCIA)
     ).all()
@@ -546,7 +558,7 @@ def centinela(
     )
     caducas = (
         session.scalar(
-            sa.select(sa.func.count()).select_from(LegalRule).where(LegalRule.valid_to.isnot(None))
+            sa.select(sa.func.count()).select_from(LegalRule).where(_dejo_de_regir(on_date))
         )
         or 0
     )
@@ -565,7 +577,7 @@ def centinela(
         total_olas=len(reformas),
         entradas_en_vigor=entradas[:TOPE_ENTRADAS],
         total_entradas_en_vigor=len(entradas),
-        fuera_de_vigencia=_fuera_de_vigencia(session),
+        fuera_de_vigencia=_fuera_de_vigencia(session, on_date),
         eventos_dof=eventos,
         vigilancia_automatica=eventos > 0,
         impacto=_impacto(session),
