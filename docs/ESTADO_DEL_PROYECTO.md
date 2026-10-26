@@ -18,13 +18,13 @@ sin tener que leer el historial de conversaciones. Si algo aquí contradice a
 Las secciones 1 a 8 conservan sus cifras con su fecha. Ésta resume lo que
 cambió después y manda sobre ellas donde se contradigan.
 
-**Avance frente al scorecard del §44: ≈ 90 %** (31.35 de 35) (35 líneas con el mismo peso,
+**Avance frente al scorecard del §44: ≈ 90 %** (31.65 de 35) (35 líneas con el mismo peso,
 cada una puntuada contra lo que hay en la base y en el código). Por la mañana
 era 88 % (30.95); lo que movió el puntaje está en «La tarde del 21-oct», abajo.
 
 | Bloque | Puntaje | % | Qué falta |
 |---|---:|---:|---|
-| DATA (14) | 12.25 | 88 % | EBTI 0.8 (sólo un mes de histórico); ANAM/SAT/Data México 0.35 (sólo SAT); cuotas 0.6 (índice, 1 de 21 combinaciones con resolución) |
+| DATA (14) | 12.55 | 90 % | EBTI 0.8 (sólo un mes de histórico); ANAM/SAT/Data México 0.35 (sólo SAT); cuotas 0.9 (las 25 combinaciones del corpus con veredicto y fuente, ADR 0027; falta la de artículos para cocinar, con precio de referencia) |
 | CORE (4) | 3.75 | 94 % | Cobertura de clasificación 77 % (era 62 % hasta el 26-oct); NICO 91 de 121 (30 abstenciones); el sartén y el utensilio no llegan a su partida |
 | SIMULATOR (8) | 7.9 | 99 % | — |
 | INTELLIGENCE (6) | 5.0 | 83 % | Knowledge Graph sin consumidor; Treaty y Manufacturer en el grafo; tratados |
@@ -980,6 +980,7 @@ del 100 %; la cobertura está en 62.42 %.
 | [0024](adr/0024-identidad-de-la-consola.md) | identidad de la consola, Panorama operativo y cabecera de expediente |
 | [0025](adr/0025-el-puente-no-entra-como-candidata.md) | el puente de vocabulario tampoco entra como candidata (medido y descartado) |
 | [0026](adr/0026-un-si-firmado-acota-al-grupo.md) | un «sí» firmado acota al grupo de guion en la RGI 6 |
+| [0027](adr/0027-cuotas-del-corpus-verificadas.md) | las cuotas compensatorias del corpus, verificadas una por una |
 
 ---
 
