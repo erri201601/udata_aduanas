@@ -84,12 +84,12 @@ ESPERADO: dict[str, Any] = {
     "clasificacion": {
         "medibles": 157,
         "sin_fundamento": 11,
-        "acerto": 98,
+        "acerto": 121,
         "fallo": 0,
-        "contra_dictamen": 43,
+        "contra_dictamen": 66,
     },
     "deteccion": {"tp": 59, "fp": 0, "fn": 1, "tn": 128},
-    "contra_el_motor": {"coinciden": 47, "discrepan": 0, "se_abstiene": 65},
+    "contra_el_motor": {"coinciden": 72, "discrepan": 0, "se_abstiene": 40},
     "bandeja": 0,
     "alcance_acero": (141, 188),
 }

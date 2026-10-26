@@ -18,14 +18,14 @@ sin tener que leer el historial de conversaciones. Si algo aquí contradice a
 Las secciones 1 a 8 conservan sus cifras con su fecha. Ésta resume lo que
 cambió después y manda sobre ellas donde se contradigan.
 
-**Avance frente al scorecard del §44: ≈ 89 %** (31.25 de 35) (35 líneas con el mismo peso,
+**Avance frente al scorecard del §44: ≈ 90 %** (31.35 de 35) (35 líneas con el mismo peso,
 cada una puntuada contra lo que hay en la base y en el código). Por la mañana
 era 88 % (30.95); lo que movió el puntaje está en «La tarde del 21-oct», abajo.
 
 | Bloque | Puntaje | % | Qué falta |
 |---|---:|---:|---|
 | DATA (14) | 12.25 | 88 % | EBTI 0.8 (sólo un mes de histórico); ANAM/SAT/Data México 0.35 (sólo SAT); cuotas 0.6 (índice, 1 de 21 combinaciones con resolución) |
-| CORE (4) | 3.65 | 91 % | Cobertura de clasificación 62 %; NICO 68 de 98 (30 abstenciones) |
+| CORE (4) | 3.75 | 94 % | Cobertura de clasificación 77 % (era 62 % hasta el 26-oct); NICO 91 de 121 (30 abstenciones); el sartén y el utensilio no llegan a su partida |
 | SIMULATOR (8) | 7.9 | 99 % | — |
 | INTELLIGENCE (6) | 5.0 | 83 % | Knowledge Graph sin consumidor; Treaty y Manufacturer en el grafo; tratados |
 | PRODUCT (3) | 2.45 | 82 % | Ensayo de la demo AJR de punta a punta |
@@ -105,9 +105,9 @@ fracciones (cada decreto cierra una versión y abre otra) · `nicos` 14 441
 1 800 · `regulatory_events` 5 · `pedimentos` 23 · `pedimento_items` 188 ·
 `classification_decisions` 6 414. Alembic en `7f5c0b396d7f`.
 
-**Medición vigente:** detección TP 59 · FP 0 · FN 1. Clasificación: fracción
-98/98 contestadas (cobertura 62 %); NICO 68/68 contestados, con 30
-abstenciones.
+**Medición vigente (26-oct):** detección TP 59 · FP 0 · FN 1. Clasificación:
+fracción 121/121 contestadas (cobertura 77.07 %); NICO 91/91 contestados, con
+30 abstenciones.
 
 **Lecciones que costaron tiempo** (están en la memoria del agente):
 
@@ -910,7 +910,11 @@ Orden acordado el 21-oct:
    respuestas reales, la medición de las decisiones guardadas pasa de
    **62.42 % a 68.79 %**, con 108 aciertos de 108. Las 14 tuberías HFW salen
    con su dictamen. Queda una pregunta sobre «conducción de agua industrial»
-   que, simulada, resuelve las 15 helicoidales.
+   que, simulada, resuelve las 15 helicoidales. **La contestó el mismo
+   26-oct: cobertura 77.07 %, 121 aciertos de 121**, 29 tuberías resueltas con
+   cuatro respuestas suyas. Classification sube de 0.65 a 0.75 en el
+   scorecard: lo que falta es la búsqueda de partida (sartén, utensilio) y el
+   NICO por ficha.
 2. ~~**Knowledge Graph**~~ **Al día el 21-oct** (hueco 4). Ya tenía
    consumidor, el Copilot; lo que faltaba era que la foto no envejeciera, y
    ahora la reproyecta cada noche `aduanero-grafo`. Lo que le falta del §28
